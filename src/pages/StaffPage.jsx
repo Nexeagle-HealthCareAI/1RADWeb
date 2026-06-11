@@ -873,8 +873,13 @@ export default function StaffPage() {
       fetchPersonnel();
     } catch (err) {
       console.error('[STAFF] Save failed', err);
-      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to save staff record.';
-      showNotif('error', 'Save failed', msg);
+      const raw = err.response?.data?.message || err.response?.data?.error || 'Failed to save staff record.';
+      if (String(raw).startsWith('USER_LIMIT_REACHED')) {
+        showNotif('error', 'User limit reached',
+          'Your current plan has no seats left for new staff. Upgrade to a higher tier in Subscription → Choose a Plan to add more users.');
+      } else {
+        showNotif('error', 'Save failed', raw);
+      }
     } finally {
       setSavingStaff(false);
     }

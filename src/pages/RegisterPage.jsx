@@ -103,6 +103,7 @@ function PackageCard({ pkg, plan, cycle, selected, onSelect }) {
         {pkg.tag && <span style={{ fontSize: '10px', fontWeight: 700, color: '#34d399', border: '1px solid rgba(52,211,153,0.4)', borderRadius: '6px', padding: '1px 6px' }}>{pkg.tag}</span>}
         {plan && (
           <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <span style={{ color: '#8a94a6', fontSize: '10px' }}>from </span>
             <span style={{ color: '#e6ebf2', fontSize: '15px', fontWeight: 700 }}>{fmtINR(plan.price)}</span>
             <span style={{ color: '#8a94a6', fontSize: '11px' }}>/{cycle === 'Yearly' ? 'yr' : 'mo'}</span>
           </span>

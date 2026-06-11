@@ -335,15 +335,16 @@ const SubscriptionPage = () => {
   const pendingStatus = subscription?.pendingRequestStatus ?? null;
   const isPaidPlan = !isTrial && (subStatus === 'Active' || subStatus === 'Expiring');
 
-  // ── Edition-aware pricing (per-SKU + metered storage) ──────────────────────
+  // ── Edition-aware pricing (per-SKU tiers + metered storage + PAYG) ─────────
   const [plans, setPlans] = useState([]);
   const [estimate, setEstimate] = useState(null);
+  const [selectedPlanId, setSelectedPlanId] = useState(null); // chosen tier/PAYG
   useEffect(() => {
     apiClient.get('/subscriptions/plans').then(r => setPlans(r?.data?.data || [])).catch(() => {});
   }, []);
 
-  // The center renews/pays for its current edition. Derive it from the modules
-  // the subscription enables.
+  // Default to the center's current edition; the user can pick a different
+  // edition/tier/PAYG via the selector.
   const currentEdition = (() => {
     const m = (subscription?.modules || []).map(x => String(x).toUpperCase());
     const hasR = m.includes('RIS'), hasP = m.includes('PACS');
@@ -352,16 +353,29 @@ const SubscriptionPage = () => {
     if (hasP) return 'PACS';
     return 'RIS+PACS';
   })();
+  const [selectedEdition, setSelectedEdition] = useState(null);
+  const editionInView = selectedEdition || currentEdition;
   const cycleName = billingCycle === 'yearly' ? 'Yearly' : 'Monthly';
-  const currentPlan = plans.find(p => p.edition === currentEdition && p.name === cycleName);
+  // Subscription tier cards for the edition+cycle in view (Starter→Clinic, asc).
+  const editionTiers = plans
+    .filter(p => p.edition === editionInView && p.billingMode !== 'PerStudy' && !p.isCustom && p.name === cycleName)
+    .sort((a, b) => a.price - b.price);
+  // PAYG + Chain plans for the edition in view (cycle-independent).
+  const editionPayg = plans.find(p => p.edition === editionInView && p.billingMode === 'PerStudy');
+  const editionChain = plans.find(p => p.edition === editionInView && p.isCustom);
+  // Everything self-serve-selectable (tiers + PAYG, never the bespoke Chain).
+  const selectablePlans = plans.filter(p => !p.isCustom && (p.billingMode === 'PerStudy' || p.name === cycleName));
+  const defaultPlan = editionTiers[0] || null; // cheapest tier of the edition in view
+  const activePlan = selectablePlans.find(p => p.planId === selectedPlanId) || defaultPlan;
 
-  // Metered amount-due estimate for the resolved plan (base + storage overage).
+  // Metered amount-due estimate for the active plan (base + storage overage, or
+  // PAYG studies × rate).
   useEffect(() => {
-    if (!currentPlan?.planId) { setEstimate(null); return; }
-    apiClient.get('/subscriptions/estimate', { params: { planId: currentPlan.planId } })
+    if (!activePlan?.planId) { setEstimate(null); return; }
+    apiClient.get('/subscriptions/estimate', { params: { planId: activePlan.planId } })
       .then(r => setEstimate(r?.data?.success ? r.data.data : null))
       .catch(() => setEstimate(null));
-  }, [currentPlan?.planId]);
+  }, [activePlan?.planId]);
 
   const handleBillingCycle = (cycle) => {
     setBillingCycle(cycle);
@@ -457,7 +471,7 @@ const SubscriptionPage = () => {
         isOpen={!!paymentModal}
         plan={premiumPlan}
         billingCycle={paymentModal || 'monthly'}
-        planId={currentPlan?.planId}
+        planId={activePlan?.planId}
         estimate={estimate}
         currentUser={currentUser}
         onClose={() => setPaymentModal(null)}
@@ -576,6 +590,19 @@ const SubscriptionPage = () => {
                     <div style={{ height: '100%', borderRadius: '99px', background: 'linear-gradient(90deg, #38bdf8, #1d4ed8)', width: `${Math.min(100, (daysLeft / (billingCycleFromServer === 'Yearly' ? 365 : 30)) * 100)}%`, transition: 'width 0.6s ease' }} />
                   </div>
                 </div>
+
+                {/* PAYG running charge (only when on pay-per-study) */}
+                {subscription?.billingMode === 'PerStudy' && (
+                  <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(56,189,248,0.08)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.2)' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 900, color: '#38bdf8', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Pay-per-study — this cycle</p>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'white' }}>
+                      {(subscription?.paygStudiesThisCycle ?? 0)} finalized {(subscription?.paygStudiesThisCycle === 1) ? 'study' : 'studies'} · ₹{Number(subscription?.paygAmountDue ?? 0).toLocaleString('en-IN')} due
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.6 }}>
+                      Billed in arrears. Pay this amount via the normal payment-request flow at the end of the cycle.
+                    </p>
+                  </div>
+                )}
 
                 {/* Features List */}
                 <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
@@ -756,82 +783,132 @@ const SubscriptionPage = () => {
             </div>
           </div>
 
+          {/* Edition switcher — RIS / Cloud PACS / RIS+PACS */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
+            {[{ k: 'RIS', label: 'RIS' }, { k: 'PACS', label: 'Cloud PACS' }, { k: 'RIS+PACS', label: 'RIS + Cloud PACS' }].map(e => {
+              const on = editionInView === e.k;
+              return (
+                <button key={e.k} onClick={() => { setSelectedEdition(e.k); setSelectedPlanId(null); }}
+                  style={{ padding: '8px 16px', borderRadius: '9px', border: `1px solid ${on ? '#1d4ed8' : '#e2e8f0'}`, background: on ? '#eff6ff' : 'white', color: on ? '#1d4ed8' : '#475569', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
+                  {e.label}{e.k === currentEdition && <span style={{ marginLeft: 6, fontSize: '10px', color: '#10b981' }}>● current</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tier cards for the edition + cycle in view */}
           <div className="plans-grid">
-            {/* Free Trial Card */}
-            <div className="sub-card">
-              <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>Free Trial</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '8px' }}>
-                <span style={{ fontSize: '36px', fontWeight: 700, color: '#0a1628', letterSpacing: '-1px' }}>₹0</span>
-                <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: 500 }}>/ 14 days</span>
-              </div>
-              <p style={{ margin: '0 0 20px', color: '#6b7280', fontSize: '13px', lineHeight: 1.6 }}>Get started with all features for 14 days. No payment needed.</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
-                {['All modules included', 'Basic DICOM Viewer', 'Single Clinic', 'Email Support'].map(f => (
-                  <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ color: '#94a3b8', flexShrink: 0 }}><Icons.Check /></div>
-                    <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500 }}>{f}</span>
+            {editionTiers.map((p, i) => {
+              const on = activePlan?.planId === p.planId;
+              const popular = i === 1; // middle tier (Growth)
+              const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+              return (
+                <div key={p.planId} onClick={() => setSelectedPlanId(p.planId)}
+                  style={{ background: on ? '#0a1628' : 'white', color: on ? 'white' : '#0a1628', padding: '26px', borderRadius: '20px', border: `2px solid ${on ? '#1d4ed8' : '#e2e8f0'}`, cursor: 'pointer', position: 'relative', overflow: 'hidden', transition: 'all 0.2s', boxShadow: on ? '0 20px 40px -10px rgba(10,22,40,0.3)' : 'none' }}>
+                  {popular && <div style={{ position: 'absolute', top: '14px', right: '14px', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px' }}>POPULAR</div>}
+                  <p style={{ fontSize: '10px', fontWeight: 900, color: on ? '#38bdf8' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>{p.tier}</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px' }}>{fmt(p.price)}</span>
+                    <span style={{ fontSize: '13px', color: on ? '#94a3b8' : '#6b7280', fontWeight: 500 }}>/ {cycleName === 'Yearly' ? 'yr' : 'mo'}</span>
                   </div>
-                ))}
-              </div>
-              <button disabled style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontSize: '13px', fontWeight: 600, cursor: 'default', width: '100%' }}>
-                {isTrial ? 'Current Plan' : 'Trial Used'}
-              </button>
-            </div>
-
-            {/* Premium Card */}
-            <div style={{ background: '#0a1628', padding: '30px', borderRadius: '24px', border: '1px solid #1e293b', boxShadow: '0 20px 40px -10px rgba(10,22,40,0.3)', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #38bdf8, #1d4ed8)' }} />
-              <div style={{ position: 'absolute', top: '16px', right: '16px', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px' }}>POPULAR</div>
-
-              <p style={{ fontSize: '10px', fontWeight: 900, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>1Rad Premium</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '36px', fontWeight: 700, color: 'white', letterSpacing: '-1px' }}>₹{premiumPlan.priceMonthly}</span>
-                <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>/ mo</span>
-              </div>
-              {billingCycle === 'yearly' && (
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', marginBottom: '8px' }}>
-                  ✓ Billed yearly — ₹{premiumPlan.price} total (save ₹5,988)
-                </div>
-              )}
-              <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: '13px', lineHeight: 1.6 }}>Unlimited access to all advanced features and priority support.</p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
-                {premiumPlan.features.map(f => (
-                  <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ color: '#38bdf8', flexShrink: 0 }}><Icons.Check /></div>
-                    <span style={{ fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>{f}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '18px 0' }}>
+                    {[
+                      `${p.maxUsers == null ? 'Unlimited' : `Up to ${p.maxUsers}`} users`,
+                      `${p.maxSites == null ? 'Unlimited' : p.maxSites} site${p.maxSites === 1 ? '' : 's'}`,
+                      p.includedStorageGb > 0 ? `${p.includedStorageGb} GB cloud storage` : (p.edition === 'RIS' ? 'No image storage (RIS)' : 'Storage included'),
+                    ].map(f => (
+                      <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ color: on ? '#38bdf8' : '#94a3b8', flexShrink: 0 }}><Icons.Check /></div>
+                        <span style={{ fontSize: '13px', color: on ? '#e2e8f0' : '#374151', fontWeight: 500 }}>{f}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-
-              {/* Payment info strip */}
-              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '14px', marginBottom: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>How it works</div>
-                <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.7 }}>
-                  1. Contact Nexeagle Administrator to get the official UPI ID for payment<br />
-                  2. Pay ₹{billingCycle === 'yearly' ? '53,988' : '4,999'} to the provided UPI ID<br />
-                  3. Click "Submit Payment" and enter your transaction details<br />
-                  4. Our team reviews and activates within 24 hours
+                  <button onClick={(ev) => { ev.stopPropagation(); setSelectedPlanId(p.planId); }}
+                    style={{ padding: '10px 18px', borderRadius: '9px', border: on ? 'none' : '1px solid #e2e8f0', background: on ? '#1d4ed8' : '#f8fafc', color: on ? 'white' : '#475569', fontSize: '13px', fontWeight: 700, cursor: 'pointer', width: '100%' }}>
+                    {on ? 'Selected' : 'Select'}
+                  </button>
                 </div>
-              </div>
+              );
+            })}
 
+            {/* Pay-as-you-go card */}
+            {editionPayg && (() => {
+              const on = activePlan?.planId === editionPayg.planId;
+              return (
+                <div onClick={() => setSelectedPlanId(editionPayg.planId)}
+                  style={{ background: on ? '#0a1628' : 'white', color: on ? 'white' : '#0a1628', padding: '26px', borderRadius: '20px', border: `2px solid ${on ? '#1d4ed8' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s', boxShadow: on ? '0 20px 40px -10px rgba(10,22,40,0.3)' : 'none' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 900, color: on ? '#38bdf8' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>Pay per study</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px' }}>₹{Number(editionPayg.perStudyPrice || 0).toLocaleString('en-IN')}</span>
+                    <span style={{ fontSize: '13px', color: on ? '#94a3b8' : '#6b7280', fontWeight: 500 }}>/ finalized study</span>
+                  </div>
+                  <p style={{ margin: '14px 0 18px', color: on ? '#94a3b8' : '#6b7280', fontSize: '13px', lineHeight: 1.6 }}>
+                    No monthly base. Billed monthly in arrears for every finalized report — ideal for low or variable volume.
+                  </p>
+                  <button onClick={(ev) => { ev.stopPropagation(); setSelectedPlanId(editionPayg.planId); }}
+                    style={{ padding: '10px 18px', borderRadius: '9px', border: on ? 'none' : '1px solid #e2e8f0', background: on ? '#1d4ed8' : '#f8fafc', color: on ? 'white' : '#475569', fontSize: '13px', fontWeight: 700, cursor: 'pointer', width: '100%' }}>
+                    {on ? 'Selected' : 'Select'}
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* Chain / enterprise — contact us */}
+            {editionChain && (
+              <div style={{ background: 'white', padding: '26px', borderRadius: '20px', border: '2px dashed #e2e8f0' }}>
+                <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>Chain</p>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', marginBottom: '4px' }}>Custom</div>
+                <p style={{ margin: '14px 0 18px', color: '#6b7280', fontSize: '13px', lineHeight: 1.6 }}>
+                  Unlimited users, multi-site, and bespoke storage for hospital chains. Talk to us for a tailored quote.
+                </p>
+                <button disabled style={{ padding: '10px 18px', borderRadius: '9px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontSize: '13px', fontWeight: 700, cursor: 'default', width: '100%' }}>
+                  Contact us
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Selected-plan summary + submit */}
+          {activePlan && (
+            <div style={{ marginTop: '24px', background: '#0a1628', borderRadius: '20px', padding: '24px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>You selected</div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: 'white' }}>
+                  {editionInView === 'PACS' ? 'Cloud PACS' : editionInView} · {activePlan.tier}
+                  {activePlan.billingMode === 'PerStudy' && ' · Pay per study'}
+                </div>
+                {activePlan.billingMode === 'PerStudy' ? (
+                  <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
+                    {estimate?.studiesCount != null
+                      ? `${estimate.studiesCount} finalized ${estimate.studiesCount === 1 ? 'study' : 'studies'} this cycle × ₹${Number(activePlan.perStudyPrice).toLocaleString('en-IN')} = ₹${Number(estimate.total || 0).toLocaleString('en-IN')} due`
+                      : `₹${Number(activePlan.perStudyPrice).toLocaleString('en-IN')} per finalized study, billed monthly`}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
+                    ₹{Number(estimate?.total ?? activePlan.price).toLocaleString('en-IN')} due
+                    {estimate && estimate.overageAmount > 0 && ` (incl. ₹${Number(estimate.overageAmount).toLocaleString('en-IN')} storage overage)`}
+                    {' '}· per {cycleName === 'Yearly' ? 'year' : 'month'}
+                  </div>
+                )}
+              </div>
               {hasPending ? (
-                <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(59,130,246,0.15)', color: '#93c5fd', fontSize: '13px', fontWeight: 700, textAlign: 'center', border: '1px solid rgba(59,130,246,0.2)' }}>
+                <div style={{ padding: '12px 18px', borderRadius: '10px', background: 'rgba(59,130,246,0.15)', color: '#93c5fd', fontSize: '13px', fontWeight: 700, border: '1px solid rgba(59,130,246,0.2)' }}>
                   ⏳ Payment Under Review
-                </div>
-              ) : isPaidPlan ? (
-                <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', color: '#34d399', fontSize: '13px', fontWeight: 700, textAlign: 'center', border: '1px solid rgba(16,185,129,0.2)' }}>
-                  ✓ Current Plan Active
                 </div>
               ) : (
                 <button
                   onClick={() => setPaymentModal(billingCycle)}
-                  style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(29,78,216,0.3)', transition: 'all 0.2s', width: '100%' }}>
+                  style={{ padding: '13px 28px', borderRadius: '10px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '14px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(29,78,216,0.3)' }}>
                   Submit Payment →
                 </button>
               )}
             </div>
-          </div>
+          )}
+
+          {/* Trial footnote */}
+          <p style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8', textAlign: 'center' }}>
+            {isTrial ? 'You are on the 14-day free trial — pick a plan to continue after it ends.' : 'Pay the shown amount to the provided UPI ID, then Submit Payment with your transaction reference. Activated within 24 hours of review.'}
+          </p>
         </div>
       )}
     </div>
