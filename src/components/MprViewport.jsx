@@ -30,6 +30,7 @@ import {
   eventTarget,
   utilities as csUtilities,
   ProgressiveRetrieveImages,
+  metaData,
 } from '@cornerstonejs/core';
 import {
   addTool,
@@ -218,6 +219,15 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
       }
 
       // ── Build the streaming volume ───────────────────────────────────
+      // Pre-check: volume construction destructures imagePixelModule from the
+      // metadata provider and crashes with an UNCATCHABLE async TypeError
+      // ("Cannot destructure 'pixelRepresentation'") if the slices never
+      // successfully loaded (e.g. invalid/non-P10 source bytes). Verify
+      // metadata exists for the first slice and bail to stack mode cleanly.
+      if (!metaData.get('imagePixelModule', imageIds[0])) {
+        bailToStack('slice metadata unavailable — the series has not finished loading or failed to parse');
+        return;
+      }
       const volumeId = `cornerstoneStreamingImageVolume:mpr_${uid}_${Date.now()}`;
       volumeIdRef.current = volumeId;
       let volume;

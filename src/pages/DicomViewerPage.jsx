@@ -180,15 +180,41 @@ const DicomViewerPage = () => {
     return () => { cancelled = true; };
   }, [urlAppointmentId, urlStudyId, stateFiles, stateAllSeries, hydratedSeries, hydrationAttempt]);
 
-  // Auto-refresh while extraction is still in flight — re-fetch the manifest
-  // every few seconds (study OR appointment launch) until the slices are ready,
-  // so the user doesn't have to hit RETRY. Stops once hydrated or all-failed.
+  // Auto-refresh while extraction is still in flight. Polls the LIGHTWEIGHT
+  // extraction-status endpoint (assetId + status only) every few seconds and
+  // only re-fetches the full manifest (all slice rows + metadata) once
+  // something is actually Extracted — the previous version re-ran the heavy
+  // manifest query on every tick. Stops once hydrated or all-failed.
   useEffect(() => {
     if (hydratedSeries) return;
     if (!urlAppointmentId && !urlStudyId) return;
     const stillWorking = pendingExtractionAssets.some((a) => a.extractionStatus !== 'Failed');
     if (!stillWorking) return;
-    const t = setInterval(() => setHydrationAttempt((n) => n + 1), 6000);
+    const statusUrl = urlStudyId
+      ? `/Study/by-study/${urlStudyId}/extraction-status`
+      : `/Study/${urlAppointmentId}/extraction-status`;
+    const t = setInterval(async () => {
+      try {
+        const res = await apiClient.get(statusUrl);
+        const assets = res?.data?.data?.assets || [];
+        const anyReady = assets.some((a) => a.extractionStatus === 'Extracted' || a.extractionStatus === 'NotApplicable');
+        const anyInFlight = assets.some((a) => !a.extractionStatus || a.extractionStatus === 'Queued' || a.extractionStatus === 'Running');
+        if (anyReady || !anyInFlight) {
+          // Something finished (or everything settled) — fetch the real manifest.
+          setHydrationAttempt((n) => n + 1);
+        } else {
+          // Still grinding — refresh the per-asset statuses shown in the UI.
+          setPendingExtractionAssets(assets.map((a) => ({
+            assetId: a.assetId,
+            fileName: a.fileName,
+            extractionStatus: a.extractionStatus || 'Pending',
+          })));
+        }
+      } catch {
+        // Status endpoint unavailable (old API?) — fall back to a manifest refetch.
+        setHydrationAttempt((n) => n + 1);
+      }
+    }, 6000);
     return () => clearInterval(t);
   }, [hydratedSeries, pendingExtractionAssets, urlAppointmentId, urlStudyId]);
 
@@ -278,10 +304,15 @@ const DicomViewerPage = () => {
       allSeriesData: allSeries
     });
     
-    // Validate files
+    // Validate files. While the manifest is still hydrating (or extraction is
+    // pending) an empty file list is EXPECTED — don't cry wolf in the console.
     if (!currentFiles || !Array.isArray(currentFiles) || currentFiles.length === 0) {
-      console.error('[DICOM VIEWER] ❌ No files available!');
-      console.error('[DICOM VIEWER] Location state:', location.state);
+      if (hydrating || pendingExtractionAssets.length > 0) {
+        console.log('[DICOM VIEWER] Files not ready yet (hydrating/extraction in progress).');
+      } else {
+        console.error('[DICOM VIEWER] ❌ No files available!');
+        console.error('[DICOM VIEWER] Location state:', location.state);
+      }
     } else {
       console.log('[DICOM VIEWER] ✅ Files loaded successfully:', currentFiles.length, 'files');
       if (hasMultipleSeries) {
@@ -293,7 +324,7 @@ const DicomViewerPage = () => {
         })));
       }
     }
-  }, [currentFiles, appointmentData, location.state, hasMultipleSeries, allSeries, activeSeriesIndex, currentSeries]);
+  }, [currentFiles, appointmentData, location.state, hasMultipleSeries, allSeries, activeSeriesIndex, currentSeries, hydrating, pendingExtractionAssets]);
 
   // DICOM VIEWER KEYBOARD SHORTCUTS
   useEffect(() => {

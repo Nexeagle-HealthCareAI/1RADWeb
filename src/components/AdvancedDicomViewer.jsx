@@ -184,14 +184,31 @@ function queueSlicePersist(key, blob) {
   slicePersistTimer = setTimeout(flushSlicePersist, SLICE_PERSIST_DEBOUNCE_MS);
 }
 
+// Fetch slice bytes with a hard timeout + one retry. A stalled connection
+// previously waited forever (no AbortController) and a single transient
+// CDN/origin hiccup surfaced as a decode error.
+const SLICE_FETCH_TIMEOUT_MS = 30000;
+async function fetchSliceWithRetry(httpsUrl) {
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(httpsUrl, { signal: AbortSignal.timeout(SLICE_FETCH_TIMEOUT_MS) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.blob();
+    } catch (e) {
+      lastErr = e;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  throw new Error(`Slice fetch failed (${lastErr?.message || 'unknown'}) for ${httpsUrl.slice(0, 80)}`);
+}
+
 // Load one manifest slice with the IndexedDB compressed cache in front.
 async function loadManifestSliceCached(httpsUrl, options) {
   let blob = null;
   try { blob = await DicomCache.getSlice(httpsUrl); } catch { blob = null; }
   if (!blob) {
-    const res = await fetch(httpsUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching slice ${httpsUrl.slice(0, 80)}`);
-    blob = await res.blob();
+    blob = await fetchSliceWithRetry(httpsUrl);
     queueSlicePersist(httpsUrl, blob);
   }
   // Hand cornerstone a LOCAL object URL so its wadouri loader worker-decodes
@@ -269,13 +286,15 @@ async function initCornerstone() {
       console.warn("[DICOM] Volume loader registration failed (will fall back to stack viewport):", vlErr?.message);
     }
 
-    // Configure request pool for maximum diagnostic throughput. The defaults
-    // are very conservative — for a 160-slice study you want most of the work
-    // to be already-decoded by the time the user scrolls.
+    // Configure request pool. NOTE: more is not faster — 120 concurrent
+    // prefetches saturate bandwidth/CPU and compete with the slice the
+    // radiologist is actually looking at (measured: pushed first paint past
+    // 3s on large CTs). Over HTTP/2 via Front Door ~24 keeps the pipe full
+    // without starving the interaction lane.
     requestPoolManager.maxRequestsPerOrigin = {
-      interaction: 200, // visible/active slice — must be near-instant
-      thumbnail: 20,
-      prefetch: isMobileDevice ? 60 : 120, // background slice decode
+      interaction: 20,  // visible/active slice — must be near-instant
+      thumbnail: 10,
+      prefetch: isMobileDevice ? 10 : 24, // background slice decode
     };
 
     // Pre-warm the first codec worker so the very first slice decode doesn't
@@ -1472,10 +1491,28 @@ const AdvancedDicomViewer = ({
         // shape doesn't carry that method.
         const arrayBuffer = await readDicomBytes(files[0]);
         console.log('[DICOM METADATA] ArrayBuffer size:', arrayBuffer.byteLength);
-        
+
         const byteArray = new Uint8Array(arrayBuffer);
         console.log('[DICOM METADATA] Parsing DICOM...');
-        const dataSet = dicomParser.parseDicom(byteArray);
+        let dataSet;
+        try {
+          dataSet = dicomParser.parseDicom(byteArray);
+        } catch (parseErr) {
+          // The bytes are not P10 DICOM — sniff what we actually got so the
+          // error tells the user (and us) the REAL problem instead of a
+          // cryptic "DICM prefix not found".
+          const head = String.fromCharCode(...byteArray.slice(0, 64)).trimStart();
+          if (head.startsWith('PK')) {
+            throw new Error('This file is a ZIP archive, not a DICOM instance. The study is still being extracted on the server — retry in a moment.');
+          }
+          if (head.startsWith('<')) {
+            throw new Error('The image URL returned a web page (HTML/XML) instead of DICOM data — the storage/CDN link is misconfigured or the blob is missing. Contact support.');
+          }
+          if (head.startsWith('{') || head.startsWith('[')) {
+            throw new Error('The image URL returned JSON instead of DICOM data — the study has not finished processing on the server. Retry in a moment.');
+          }
+          throw new Error('This file is not a standard DICOM (P10) instance — it may have been exported without the DICM header. Re-upload it; the server now normalises such files automatically.');
+        }
         console.log('[DICOM METADATA] DICOM parsed successfully');
 
         const pixelElement = dataSet.elements['x7fe00010'];
@@ -1770,7 +1807,29 @@ const AdvancedDicomViewer = ({
             });
           } catch (timeoutErr) {
             console.error(`[DICOM] Caught error during load:`, timeoutErr);
-            
+
+            // The 45s budget covers NETWORK + DECODE. Before concluding the
+            // decoder is broken (and falling back to slow main-thread
+            // decoding), probe whether the bytes are even reachable. A slow
+            // connection must NOT get the decoder blamed.
+            const rawProbeUrl = String(firstLoadId).replace('wadouri:', '');
+            if (/^https?:\/\//i.test(rawProbeUrl)) {
+              let bytesReachable = false;
+              try {
+                const probe = await fetch(rawProbeUrl, { signal: AbortSignal.timeout(20000) });
+                if (probe.ok) {
+                  const blob = await probe.blob();
+                  // Persist so the retry decode is a pure cache hit — no
+                  // second download.
+                  try { await DicomCache.putSlices([{ key: rawProbeUrl, blob, size: blob.size }]); } catch { /* cache best-effort */ }
+                  bytesReachable = true;
+                }
+              } catch { /* network genuinely slow or down */ }
+              if (!bytesReachable) {
+                throw new Error('NETWORK_TIMEOUT: The image bytes could not be downloaded — the connection is too slow or the storage link is unreachable. The decoder is fine; retry when connectivity improves.');
+              }
+            }
+
             // If timeout and workers are enabled, try without web workers as fallback
             if (DICOM_CONFIG.USE_WEB_WORKERS) {
               console.warn("[DICOM] First attempt timed out, retrying without web workers...");
@@ -1803,6 +1862,22 @@ const AdvancedDicomViewer = ({
               ]);
 
               console.log(`[DICOM] Retry successful!`);
+
+              // Workers were disabled only to rescue THIS image. Restore them
+              // so the rest of the session decodes in parallel off the main
+              // thread — leaving them off permanently made every subsequent
+              // slice (scrolling included) main-thread slow.
+              try {
+                await cornerstoneDICOMImageLoader.init({
+                  maxWebWorkers: DICOM_CONFIG.MAX_WEB_WORKERS,
+                  startWebWorkersOnDemand: false,
+                  decodeConfig: { usePDFJS: false, strict: false, useNorm16Texture: true },
+                  taskConfiguration: { decodeTask: { initializeCodecsOnStartup: true, strict: false } },
+                });
+                console.log('[DICOM] Web workers restored after no-worker rescue.');
+              } catch (reinitErr) {
+                console.warn('[DICOM] Could not restore web workers:', reinitErr?.message);
+              }
             } else {
               // Workers already disabled, just throw the error
               throw timeoutErr;
@@ -1837,8 +1912,11 @@ const AdvancedDicomViewer = ({
         // setStack / setImageIdIndex are STACK-only — volume viewport's slices
         // are addressed via the 3D texture, not an imageId list.
         if (!isVolumeMode) {
-          console.log(`[DICOM_TRACE] setupEngine: calling viewport.setStack(${imageIds.length} ids)`);
-          await viewport.setStack(imageIds);
+          console.log(`[DICOM_TRACE] setupEngine: calling viewport.setStack(${imageIds.length} ids, start=${middleIdx})`);
+          // Pass the middle index directly — setStack defaults to index 0,
+          // which kicks off a WASTED fetch+decode of slice 0 right before we
+          // jump to the (already-cached) middle slice.
+          await viewport.setStack(imageIds, middleIdx);
           if (!isMounted || !elementRef.current) {
             console.log('[DICOM_TRACE] setupEngine: BAILED after setStack — isMounted/elementRef gone');
             return;
@@ -1853,7 +1931,7 @@ const AdvancedDicomViewer = ({
             console.log(`[DICOM_TRACE] setupEngine: applying deferred append (${pending.length} files)`);
             try {
               const pendingIds = pending.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
-              await viewport.setStack(pendingIds);
+              await viewport.setStack(pendingIds, middleIdx);
               console.log('[DICOM_TRACE] setupEngine: deferred append setStack done');
             } catch (e) {
               console.warn('[DICOM_TRACE] setupEngine: deferred append failed:', e?.message);
