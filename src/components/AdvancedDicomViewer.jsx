@@ -879,6 +879,73 @@ const AdvancedDicomViewer = ({
     return () => { try { el.removeEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ } };
   }, []);
 
+  // PRELOAD the tiny preview JPEGs into the browser cache so the overlay above is
+  // INSTANT while scrolling. Without this, each new slice's preview is fetched
+  // on demand (~50-100ms) → a visible lag/blank during fast scroll. Previews are
+  // ~2 KB each, so even a few hundred is < 1 MB. Background + low-priority +
+  // connection-aware (skipped on Save-Data/2G), warmed from the middle outward
+  // (matching the slice load order), batched + paced so it never bursts.
+  const previewsWarmedRef = useRef(null);
+  useEffect(() => {
+    if (!Array.isArray(files) || files.length === 0) return;
+    const key = files[0]?.previewUrl || null;
+    if (!key || previewsWarmedRef.current === key) return; // once per series
+    const urls = files.map((f) => f?.previewUrl).filter(Boolean);
+    if (urls.length === 0) return;
+    const tier = getConnectionTier();
+    if (tier === 'slow') return; // don't fight the visible slice on 2G/Save-Data
+    previewsWarmedRef.current = key;
+
+    // middle-outward order so the slices you're most likely to scroll to warm first
+    const mid = Math.floor(urls.length / 2);
+    const order = [];
+    for (let off = 0; off < urls.length; off++) {
+      const a = mid + off, b = mid - off - 1;
+      if (a < urls.length) order.push(a);
+      if (b >= 0) order.push(b);
+    }
+    const batchSize = tier === 'medium' ? 6 : 12;
+    let i = 0, cancelled = false;
+    const pump = () => {
+      if (cancelled) return;
+      for (const idx of order.slice(i, i + batchSize)) {
+        const img = new Image();
+        try { img.decoding = 'async'; img.fetchPriority = 'low'; } catch { /* noop */ }
+        img.src = urls[idx]; // browser fetches + caches; the overlay then hits cache
+      }
+      i += batchSize;
+      if (i < order.length) setTimeout(pump, 120);
+    };
+    pump();
+    return () => { cancelled = true; };
+  }, [files]);
+
+  // SCROLL-DIRECTION PREFETCH: keep SHARP slices decoding ahead of where you're
+  // scrolling. Cornerstone v4 has no built-in stack prefetcher, so without this,
+  // scrolling past the initial window hits un-decoded slices → blurry-preview
+  // lingers longer than it should. Fires on every slice change (STACK_NEW_IMAGE
+  // drives currentImageIndex), biases the travel direction, warms a couple
+  // behind too (in case you reverse). Cornerstone dedupes cached slices and the
+  // request pool bounds concurrency, so it's safe to call on every tick.
+  const lastScrollIdxRef = useRef(0);
+  useEffect(() => {
+    if (mprMode || !Array.isArray(files) || files.length === 0) return;
+    const prev = lastScrollIdxRef.current;
+    const dir = currentImageIndex >= prev ? 1 : -1;
+    lastScrollIdxRef.current = currentImageIndex;
+    const tier = getConnectionTier();
+    const ahead = tier === 'slow' ? 3 : tier === 'medium' ? 6 : 12;
+    const warm = (idx, priority) => {
+      if (idx < 0 || idx >= files.length) return;
+      const url = getOrCreateBlobUrl(files[idx]);
+      if (!url) return;
+      try { cornerstone.imageLoader.loadAndCacheImage(`wadouri:${url}`, { priority }).catch(() => {}); } catch { /* noop */ }
+    };
+    for (let k = 1; k <= ahead; k++) warm(currentImageIndex + dir * k, k);   // ahead, closest first
+    warm(currentImageIndex - dir * 1, ahead + 1);                            // 1-2 behind for reversals
+    warm(currentImageIndex - dir * 2, ahead + 2);
+  }, [currentImageIndex, files, mprMode]);
+
   // Fullscreen and tablet support states
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
