@@ -667,21 +667,24 @@ export default function TechnicianPage() {
   }, [activeAssetIndex]);
 
 
-  const persistStudyAsset = async (file) => {
+  // Uploads `file` to the backend for `activeStudy`. Reports progress via
+  // `onProgress({ stage, pct })` and RETURNS a result so the caller can show
+  // proper success/failure UI (previously this was fire-and-forget, so a single
+  // .dcm upload had zero on-screen feedback and looked like nothing happened).
+  const persistStudyAsset = async (file, onProgress) => {
     const appointmentId = activeStudy?.appointmentId;
     if (!appointmentId) {
       console.warn('[TECH] No appointmentId — skipping backend persistence.');
-      return;
+      return { ok: false, error: 'No active study selected — open a study before uploading.' };
     }
+    const forward = (stage, pct) => { try { onProgress?.({ stage, pct }); } catch { /* noop */ } };
     // Path A: direct browser → Azure via SAS (skips backend bytes hop).
     try {
       console.log(`[TECH] 📤 Direct SAS upload: ${file.name} (${(file.size / 1048576).toFixed(1)} MB)`);
       await uploadStudyAssetDirect(file, appointmentId, (p) => {
-        if (p?.stage?.startsWith('uploading')) {
-          const mb = (p.loaded / 1048576).toFixed(1);
-          const total = (p.total / 1048576).toFixed(1);
-          console.log(`[TECH] upload ${p.stage}: ${mb} / ${total} MB (${(p.pct * 100).toFixed(0)}%)`);
-        }
+        if (p?.stage === 'requesting-token') forward('Preparing upload…', 0.02);
+        else if (p?.stage?.startsWith('uploading')) forward('Uploading to cloud…', Math.max(0.05, (p.pct || 0) * 0.9));
+        else if (p?.stage === 'finalising') forward('Binding to study…', 0.95);
       }, {
         // Stamp the asset with the active service on a multi-service
         // visit so the viewer can strictly filter by AppointmentServiceId
@@ -691,6 +694,7 @@ export default function TechnicianPage() {
         appointmentServiceId: activeServiceId || null,
       });
       console.log(`[TECH] ✅ Direct upload completed: ${file.name}`);
+      forward('Done', 1);
       fetchWorklist();
       // NOTE: we deliberately do NOT reload assets from the backend manifest
       // here. The slices we just decoded locally are already on screen; the
@@ -698,30 +702,29 @@ export default function TechnicianPage() {
       // swap the working viewer for an un-extracted ZIP entry and force a full
       // re-download + re-decode — the visible "blink"/reload. The backend copy
       // is for other sessions / the next open, which fetch it fresh anyway.
-      return;
+      return { ok: true };
     } catch (sasErr) {
       console.warn('[TECH] Direct SAS upload failed, falling back to legacy multipart:', sasErr?.message);
     }
     // Path B fallback: legacy multipart POST.
     try {
+      forward('Uploading (fallback)…', 0.3);
       const formData = new FormData();
       formData.append('AppointmentId', appointmentId);
       if (activeServiceId) formData.append('AppointmentServiceId', activeServiceId);
       formData.append('File', file);
       console.log(`[TECH] 📤 (fallback) multipart upload: ${file.name}`);
       await apiClient.post('/Study/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => { if (e.total) forward('Uploading (fallback)…', Math.max(0.3, (e.loaded / e.total) * 0.95)); },
       });
       console.log(`[TECH] ✅ (fallback) Backend save completed: ${file.name}`);
+      forward('Done', 1);
       fetchWorklist();
-      // NOTE: we deliberately do NOT reload assets from the backend manifest
-      // here. The slices we just decoded locally are already on screen; the
-      // server copy is still mid-extraction for ~seconds, so reloading would
-      // swap the working viewer for an un-extracted ZIP entry and force a full
-      // re-download + re-decode — the visible "blink"/reload. The backend copy
-      // is for other sessions / the next open, which fetch it fresh anyway.
+      return { ok: true };
     } catch (err) {
       console.error('[TECH] Persistence failed (both paths)', err);
+      return { ok: false, error: err?.response?.data?.error || err?.message || 'Upload failed — please retry.' };
     }
   };
 
@@ -863,23 +866,48 @@ export default function TechnicianPage() {
     } else {
       const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
 
-      persistStudyAsset(file);
+      // Show proper upload feedback. Previously this was fire-and-forget with no
+      // UI — the screen looked idle while the upload + bind ran in the
+      // background, so the technician thought nothing happened and re-uploaded.
+      setLoading(true);
+      setProcessingStatus('Preparing upload…');
+      setLoadingProgress({ stage: 'uploading', current: 0, total: 100, pctMode: true });
+      try {
+        const result = await persistStudyAsset(file, ({ stage, pct }) => {
+          setProcessingStatus(stage);
+          setLoadingProgress({ stage, current: Math.round((pct || 0) * 100), total: 100, pctMode: true });
+        });
 
-      setUploadedFiles(prev => {
-        const updated = [...prev, {
-          name: file.name,
-          type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
-          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-          time: new Date().toLocaleTimeString(),
-          previewUrl: isDicom ? null : URL.createObjectURL(file),
-          isZip: false,
-          rawFiles: isDicom ? [file] : null
-        }];
-        console.log(`[TECH] ✅ File uploaded: ${file.name}. Total files: ${updated.length}`);
-        return updated;
-      });
-
-      resetFileInput(); // Reset file input after upload
+        if (!result.ok) {
+          showNotif('error', 'UPLOAD FAILED', result.error || 'Could not upload the DICOM file. Please retry.');
+        } else {
+          // Optimistically show it in the working viewer (the local bytes are
+          // already in hand); the server copy finishes extracting in the
+          // background.
+          setUploadedFiles(prev => {
+            const updated = [...prev, {
+              name: file.name,
+              type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
+              size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+              time: new Date().toLocaleTimeString(),
+              previewUrl: isDicom ? null : URL.createObjectURL(file),
+              isZip: false,
+              rawFiles: isDicom ? [file] : null
+            }];
+            console.log(`[TECH] ✅ File uploaded: ${file.name}. Total files: ${updated.length}`);
+            return updated;
+          });
+          showNotif('success', 'UPLOAD COMPLETE', `${file.name} was uploaded and bound to the study. It will be available to the radiologist shortly.`);
+        }
+      } catch (err) {
+        console.error('[TECH] Single-file upload failed', err);
+        showNotif('error', 'UPLOAD FAILED', err?.message || 'Could not upload the DICOM file. Please retry.');
+      } finally {
+        setLoading(false);
+        setProcessingStatus('');
+        setLoadingProgress({ stage: '', current: 0, total: 0 });
+        resetFileInput(); // Reset file input after upload
+      }
     }
   };
 
@@ -1863,12 +1891,12 @@ export default function TechnicianPage() {
               
               <div style={{ textAlign: 'center', maxWidth: '400px' }}>
                 <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '10px' }}>
-                  Processing DICOM data...
+                  {loadingProgress.pctMode ? 'Uploading study…' : 'Processing DICOM data...'}
                 </div>
                 <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px' }}>
                   {processingStatus || 'Initializing...'}
                 </div>
-                
+
                 {loadingProgress.total > 0 && (
                   <div style={{ width: '300px', margin: '0 auto' }}>
                     <div style={{
@@ -1888,8 +1916,10 @@ export default function TechnicianPage() {
                       }}></div>
                     </div>
                     <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                      {loadingProgress.current} / {loadingProgress.total} files processed
-                      {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series found`}
+                      {loadingProgress.pctMode
+                        ? `${loadingProgress.current}% uploaded`
+                        : <>{loadingProgress.current} / {loadingProgress.total} files processed
+                            {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series found`}</>}
                     </div>
                   </div>
                 )}

@@ -244,6 +244,19 @@ async function fetchSliceWithRetry(httpsUrl) {
 async function loadManifestSliceCached(httpsUrl, options) {
   let blob = null;
   try { blob = await DicomCache.getSlice(httpsUrl); } catch { blob = null; }
+  if (blob) {
+    // Validate the CACHED bytes too. A prior load under a misconfigured CDN
+    // could have cached an HTML error page (older builds) or a truncated
+    // blob; serving that to the decoder makes it spin to a 45s+30s
+    // DECODER_TIMEOUT. Sniff it; if it's not DICOM, drop it and re-fetch
+    // fresh (which re-persists, overwriting the poisoned entry).
+    try {
+      await assertDicomBlob(blob, httpsUrl);
+    } catch {
+      try { await DicomCache.deleteManySlices([httpsUrl]); } catch { /* best-effort */ }
+      blob = null;
+    }
+  }
   if (!blob) {
     blob = await fetchSliceWithRetry(httpsUrl);
     queueSlicePersist(httpsUrl, blob);
@@ -2338,17 +2351,33 @@ const AdvancedDicomViewer = ({
           }
         });
         
-        // Activate default navigation tool (WindowLevel) with Primary mouse button
+        // Activate default navigation tool (WindowLevel): primary mouse drag AND
+        // 1-finger touch drag, so the viewer is immediately usable on a phone/tablet.
         const windowLevelToolName = WindowLevelTool.toolName || 'WindowLevel';
         toolGroup.setToolActive(windowLevelToolName, {
-          bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
+          bindings: [
+            { mouseButton: toolsEnums.MouseBindings.Primary },
+            { numTouchPoints: 1 },
+          ]
         });
-        
-        // Set other navigation tools to passive (will be activated when selected)
+
+        // Pan + Zoom stay PASSIVE for the mouse (toolbar selects them), but are
+        // ALWAYS active for TWO-FINGER touch — so pinch-to-zoom and two-finger
+        // pan work regardless of which tool is selected, exactly like a native
+        // image viewer. Cornerstone disambiguates the pinch (zoom) from the
+        // translate (pan) within the same 2-finger gesture. These get re-asserted
+        // after every tool switch (see the tool-change effect) so switching to a
+        // measurement tool never kills touch zoom/pan.
         const zoomToolName = ZoomTool.toolName || 'Zoom';
         const panToolName = PanTool.toolName || 'Pan';
-        toolGroup.setToolPassive(zoomToolName);
-        toolGroup.setToolPassive(panToolName);
+        try {
+          toolGroup.setToolActive(panToolName, { bindings: [{ numTouchPoints: 2 }] });
+          toolGroup.setToolActive(zoomToolName, { bindings: [{ numTouchPoints: 2 }] });
+        } catch (touchErr) {
+          console.warn('[DICOM] touch pan/zoom bindings not set:', touchErr?.message);
+          toolGroup.setToolPassive(zoomToolName);
+          toolGroup.setToolPassive(panToolName);
+        }
         try { toolGroup.setToolPassive('PlanarRotate'); } catch { /* optional */ }
 
         // Always-on physical scale bar (bottom of viewport) — reads pixel
@@ -2675,12 +2704,26 @@ const AdvancedDicomViewer = ({
       
       // Enable the tool (required for annotation tools)
       toolGroupRef.current.setToolEnabled(actualToolName);
-      
-      // Activate with Primary mouse button
+
+      // Activate with Primary mouse button AND 1-finger touch, so the selected
+      // tool (W/L, measurement, etc.) works on touch screens too.
       toolGroupRef.current.setToolActive(actualToolName, {
-        bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
+        bindings: [
+          { mouseButton: toolsEnums.MouseBindings.Primary },
+          { numTouchPoints: 1 },
+        ]
       });
-      
+
+      // Re-assert the always-on TWO-FINGER pan + pinch-zoom. The deactivation
+      // pass above set Pan/Zoom passive, which would otherwise kill touch
+      // zoom/pan whenever the user picks a measurement tool.
+      if (actualToolName !== 'Pan' && actualToolName !== 'Zoom') {
+        try {
+          toolGroupRef.current.setToolActive('Pan',  { bindings: [{ numTouchPoints: 2 }] });
+          toolGroupRef.current.setToolActive('Zoom', { bindings: [{ numTouchPoints: 2 }] });
+        } catch (e) { console.warn('[DICOM] re-assert touch pan/zoom failed:', e?.message); }
+      }
+
       console.log(`[TOOL SUCCESS] Activated: ${actualToolName} (from UI: ${activeTool})`);
       
       // Verify activation

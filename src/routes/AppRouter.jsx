@@ -6,6 +6,7 @@ import { ROLE_HOME } from '../data/roles';
 import AppLayout from '../layouts/AppLayout';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
+import SharedStudyPage from '../pages/SharedStudyPage';
 import ForgotPassword from '../pages/ForgotPassword';
 import AccessDenied from '../pages/AccessDenied';
 import AppointmentBoard from '../pages/AppointmentBoard';
@@ -81,6 +82,8 @@ export default function AppRouter() {
       <Route path="/track/:id" element={<StatusTracking />} />
       {/* Public doctor referral portal — anonymous, signed token in ?t= (#3) */}
       <Route path="/r/:id" element={<DoctorReferralPortal />} />
+      {/* Public secure study share — anonymous, signed 24h token in the path. */}
+      <Route path="/share/:token" element={<SharedStudyPage />} />
       <Route path="/waiting-board" element={<WaitingAreaBoard />} />
       <Route 
         path="/register" 

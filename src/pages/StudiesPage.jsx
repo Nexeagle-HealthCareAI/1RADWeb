@@ -96,6 +96,12 @@ export default function StudiesPage() {
   const [apptResults, setApptResults] = useState([]);
   const [assignBusy, setAssignBusy] = useState(false);
 
+  // Share-link modal
+  const [shareFor, setShareFor] = useState(null);   // study being shared
+  const [shareLink, setShareLink] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
   // Delete confirm + toast
   const [deleteFor, setDeleteFor] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -229,6 +235,41 @@ export default function StudiesPage() {
   };
   const assignToPatient = (patientId) => doAssign({ PatientId: patientId });
   const assignToAppointment = (appointmentId) => doAssign({ AppointmentId: appointmentId });
+
+  // ── Secure 24h share link ──────────────────────────────────────────────
+  const openShare = async (s) => {
+    setShareFor(s);
+    setShareLink('');
+    setShareCopied(false);
+    setShareBusy(true);
+    try {
+      const res = await apiClient.post(`/Study/studies/${s.imagingStudyId}/share`);
+      const token = res?.data?.data?.token;
+      if (!token) throw new Error('No share token returned.');
+      setShareLink(`${window.location.origin}/share/${token}`);
+    } catch (e) {
+      showToast('err', e?.response?.data?.error || e.message || 'Could not create share link.');
+      setShareFor(null);
+    } finally {
+      setShareBusy(false);
+    }
+  };
+  const copyShare = async () => {
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch {
+      showToast('err', 'Copy failed — select and copy the link manually.');
+    }
+  };
+  const nativeShare = async () => {
+    const msg = `View this radiology study on 1Rad (secure link, expires in 24h):\n${shareLink}\n\nPowered by NexEagle 1Rad — fast, secure cloud DICOM.`;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Radiology study · NexEagle 1Rad', text: msg, url: shareLink });
+      else { await navigator.clipboard.writeText(msg); showToast('ok', 'Share message copied.'); }
+    } catch { /* user cancelled */ }
+  };
 
   const exportStudy = async (s) => {
     try {
@@ -565,6 +606,7 @@ export default function StudiesPage() {
                       <button className="st-btn st-btn-primary" disabled={s.status !== 'Ready'} onClick={() => navigate(`/dicom-viewer?studyId=${s.imagingStudyId}`)}>View</button>
                       <button className="st-btn" onClick={() => navigate(`/reporting?studyId=${s.imagingStudyId}`)}>Report</button>
                       {isInbox(s) && <button className="st-btn" onClick={() => setAssignFor(s)}>Assign</button>}
+                      <button className="st-btn" disabled={s.status !== 'Ready'} title="Create a 24-hour secret link" onClick={() => openShare(s)}>Share</button>
                       <button className="st-btn" onClick={() => exportStudy(s)}>Export</button>
                       {/* Delete is PACS-only (backend blocks appointment-linked studies). */}
                       {!s.appointmentId && <button className="st-btn st-btn-danger" onClick={() => setDeleteFor(s)}>Delete</button>}
@@ -706,6 +748,48 @@ export default function StudiesPage() {
                 {deleteBusy ? 'Deleting…' : 'Delete permanently'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share-link modal */}
+      {shareFor && (
+        <div className="st-backdrop" onClick={() => setShareFor(null)}>
+          <div className="st-modal" role="dialog" aria-label="Share study" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle" style={{ width: 30, height: 30, objectFit: 'contain', borderRadius: 7 }} />
+              <h3 style={{ margin: 0 }}>Share study securely</h3>
+            </div>
+            <div className="st-modal-sub">
+              {shareFor.patientName || 'Study'} · {shareFor.modality || '—'} · {fmtDate(shareFor.studyDate)}
+            </div>
+
+            {shareBusy ? (
+              <div className="st-sub" style={{ padding: '24px 0', textAlign: 'center' }}>Generating secure link…</div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <input className="st-input plain" readOnly value={shareLink} onFocus={(e) => e.target.select()} style={{ flex: 1, fontSize: 12 }} />
+                  <button className="st-btn st-btn-primary" onClick={copyShare}>{shareCopied ? '✓ Copied' : 'Copy'}</button>
+                </div>
+
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '10px 14px', fontSize: 12, color: '#92400e', lineHeight: 1.6, marginBottom: 14 }}>
+                  🔒 This is a secret link that <strong>expires in 24 hours</strong>. Anyone with the link can view this study on mobile, tablet or desktop — no login needed. After it expires the viewer shows an expiry notice.
+                </div>
+
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8', letterSpacing: 0.5, marginBottom: 4 }}>POWERED BY NEXEAGLE 1Rad</div>
+                  <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
+                    Faster reads, rock-solid data security and instant cloud sharing. Ask your centre about 1Rad to speed up reporting and collaborate with referring doctors effortlessly.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button className="st-btn" onClick={() => setShareFor(null)}>Close</button>
+                  <button className="st-btn st-btn-primary" onClick={nativeShare}>Share via…</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -182,6 +182,9 @@ export default function RegisterPage() {
   // user. The inline error band was easy to miss at the bottom of step 4,
   // so we surface it as a blocking dialog with explicit next-step CTAs.
   const [identityClash, setIdentityClash] = useState({ open: false, message: '' });
+  // Per-step achievement reward — a unique celebratory burst when the user
+  // completes a step, so the signup feels like levelling up rather than a chore.
+  const [reward, setReward] = useState(null); // { title, sub, pct, emoji }
 
   const set = (key, val) => setFormData(p => ({ ...p, [key]: val }));
 
@@ -189,6 +192,24 @@ export default function RegisterPage() {
   // `step` stays an absolute id (1..5); the sequence drives numbering/progress.
   const stepSeq = formData.role === 'admindoctor' ? [1, 2, 3, 4, 5] : [1, 2, 4, 5];
   const stepIndex = Math.max(0, stepSeq.indexOf(step));
+
+  // Motivational copy per completed step — keyed by the absolute step id.
+  const STEP_REWARDS = {
+    1: { emoji: '🎯', title: 'Mobile verified!', sub: "You're officially on the grid." },
+    2: { emoji: '🔐', title: 'Identity secured!', sub: 'Your account is taking shape.' },
+    3: { emoji: '🩺', title: 'Credentials locked in!', sub: 'Doctor mode activated.' },
+    4: { emoji: '🏥', title: 'Centre registered!', sub: 'One last step — pick your plan.' },
+  };
+  // Fire the reward for `completedStep`, auto-dismiss after a beat. `pct` is how
+  // far through the (role-aware) sequence the user now is.
+  const celebrate = (completedStep) => {
+    const r = STEP_REWARDS[completedStep];
+    if (!r) return;
+    const doneCount = stepSeq.filter(n => n <= completedStep).length;
+    const pct = Math.round((doneCount / stepSeq.length) * 100);
+    setReward({ ...r, pct });
+    setTimeout(() => setReward(null), 2200);
+  };
 
   const validateGSTIN = g => !g || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(g);
   const validatePAN   = p => !p || /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(p);
@@ -223,7 +244,7 @@ export default function RegisterPage() {
     setLoading(false);
     if (res.success) {
       if (res.type === 'Login') navigate('/login');
-      else { setStep(2); }
+      else { celebrate(1); setStep(2); }
     } else setError(res.error);
   };
 
@@ -236,12 +257,12 @@ export default function RegisterPage() {
         return setError('Password must be at least 6 characters.');
       if (formData.password !== formData.confirmPassword)
         return setError('Passwords do not match.');
-      setStep(formData.role === 'admindoctor' ? 3 : 4); return;
+      celebrate(2); setStep(formData.role === 'admindoctor' ? 3 : 4); return;
     }
     if (step === 3) {
       if (!formData.specialization || !formData.licenseNo || !formData.degree)
         return setError('Please complete all clinical credential fields.');
-      setStep(4); return;
+      celebrate(3); setStep(4); return;
     }
     if (step === 4) {
       // Centre details first — validate, then move on to plan selection.
@@ -251,7 +272,7 @@ export default function RegisterPage() {
         return setError('Invalid GSTIN format. Expected: 22AAAAA0000A1Z5');
       if (!validatePAN(formData.panNumber))
         return setError('Invalid PAN format. Expected: ABCDE1234F');
-      setStep(5); return;
+      celebrate(4); setStep(5); return;
     }
     if (step === 5) {
       // Plan step — a package always has a default selection; submit registration.
@@ -298,61 +319,77 @@ export default function RegisterPage() {
     </div>
   );
 
+  const overallPct = Math.round(((stepIndex) / stepSeq.length) * 100);
+
   return (
-    <div className="auth-immersive-container">
+    <div className="auth-immersive-container" style={{ display: 'block', overflowY: 'auto', padding: '0', background: 'radial-gradient(ellipse at 20% 10%, #0b1530 0%, #060a12 45%), radial-gradient(ellipse at 85% 90%, #131a3a 0%, transparent 50%)' }}>
       <RadiologyWorkflowBG />
 
-      {/* ── Left panel ── */}
-      <div className="immersive-brand">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          <img
-            src={`${import.meta.env.BASE_URL}Logo.png`}
-            alt="NexEagle"
-            style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '8px' }}
-          />
-          <div>
-            <div style={{ fontSize: '22px', fontWeight: 700, color: 'white', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
-              NexEagle
-            </div>
-            <div style={{ fontSize: '11px', fontWeight: 600, color: '#60a5fa', letterSpacing: '0.3px' }}>
-              1Rad
-            </div>
-          </div>
-        </div>
-        <div className="immersive-tagline" style={{ color: 'rgba(255,255,255,0.55)', fontSize: '13px', marginTop: '4px' }}>
-          Radiology management platform
-        </div>
-
-        {/* Steps overview (role-aware: Ops Directors skip the clinical step) */}
-        <div style={{ marginTop: '32px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {stepSeq.map((n, i) => (
-            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{
-                width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
-                background: step > n ? '#3b82f6' : step === n ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)',
-                border: step === n ? '2px solid #3b82f6' : '2px solid transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '10px', fontWeight: 700, color: step > n ? 'white' : step === n ? '#60a5fa' : 'rgba(255,255,255,0.3)',
-              }}>
-                {step > n ? '✓' : i + 1}
-              </div>
-              <span style={{
-                fontSize: '13px', fontWeight: step === n ? 600 : 400,
-                color: step === n ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.35)',
-                fontFamily: '"Segoe UI", sans-serif',
-              }}>{STEP_LABELS[n - 1]}</span>
-            </div>
-          ))}
-        </div>
+      {/* Premium animated background — soft brand-coloured glow orbs drifting
+          behind the panel + a subtle grid sheen, for a richer, less-flat feel. */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 2, pointerEvents: 'none', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-12%', left: '-8%', width: 520, height: 520, borderRadius: '50%', background: 'radial-gradient(circle, rgba(56,189,248,0.18), transparent 65%)', filter: 'blur(40px)', animation: 'regOrbA 16s ease-in-out infinite' }} />
+        <div style={{ position: 'absolute', bottom: '-15%', right: '-10%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(167,139,250,0.16), transparent 65%)', filter: 'blur(46px)', animation: 'regOrbB 20s ease-in-out infinite' }} />
+        <div style={{ position: 'absolute', top: '40%', left: '55%', width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle, rgba(52,211,153,0.10), transparent 65%)', filter: 'blur(40px)', animation: 'regOrbA 24s ease-in-out infinite reverse' }} />
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)', backgroundSize: '46px 46px', maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)' }} />
+        <style>{`
+          @keyframes regOrbA { 0%,100% { transform: translate(0,0); } 50% { transform: translate(40px, 30px); } }
+          @keyframes regOrbB { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-50px, -34px); } }
+        `}</style>
       </div>
 
-      {/* ── Form card — each step is sized to fit the viewport; on very short
-            screens the card scrolls internally rather than the page. ── */}
-      <div className="glass-card" style={{ maxWidth: '540px', maxHeight: '92vh', overflowY: 'auto' }}>
-        <StepDots />
+      {/* Full-screen centred wide panel (replaces the cramped 1/3 side card). */}
+      <div style={{
+        position: 'relative', zIndex: 20, minHeight: '100vh',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 'clamp(16px, 3vw, 40px)', boxSizing: 'border-box',
+      }}>
+        <div style={{
+          width: '100%', maxWidth: '900px',
+          background: 'rgba(10,15,28,0.74)',
+          backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.08)', borderRadius: '26px',
+          boxShadow: '0 40px 100px -20px rgba(0,0,0,0.6)',
+          padding: 'clamp(24px, 4vw, 48px)', boxSizing: 'border-box',
+        }}>
+          {/* Brand header + live step counter */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', marginBottom: '22px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle" style={{ width: '42px', height: '42px', objectFit: 'contain', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', padding: '4px' }} />
+              <div>
+                <div style={{ fontSize: '21px', fontWeight: 800, color: 'white', letterSpacing: '-0.3px', lineHeight: 1.1 }}>NexEagle</div>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#60a5fa', letterSpacing: '1.5px' }}>1Rad</div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '1px' }}>STEP {stepIndex + 1} OF {stepSeq.length}</div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>{STEP_LABELS[step - 1]}</div>
+            </div>
+          </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'white', margin: '0 0 4px', fontFamily: '"Segoe UI", sans-serif' }}>
+          {/* Premium segmented progress with milestone ticks */}
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+            {stepSeq.map((n, i) => {
+              const done = step > n, current = step === n;
+              return (
+                <div key={n} style={{ flex: 1, height: '6px', borderRadius: '99px', overflow: 'hidden', background: 'rgba(255,255,255,0.10)' }}>
+                  <div style={{
+                    height: '100%', borderRadius: '99px',
+                    width: done ? '100%' : current ? '55%' : '0%',
+                    background: 'linear-gradient(90deg, #38bdf8, #3b82f6)',
+                    boxShadow: (done || current) ? '0 0 12px rgba(56,189,248,0.6)' : 'none',
+                    transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1)',
+                  }} />
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ textAlign: 'right', fontSize: '10px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', letterSpacing: '1px', marginBottom: '22px' }}>
+            {overallPct}% COMPLETE
+          </div>
+
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'white', margin: '0 0 4px', fontFamily: '"Segoe UI", sans-serif', letterSpacing: '-0.4px' }}>
             {step === 1 ? 'Create your account' :
              step === 2 ? 'Your details' :
              step === 3 ? 'Clinical information' :
@@ -583,7 +620,7 @@ export default function RegisterPage() {
                   ))}
                 </div>
               </div>
-              <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(248px, 1fr))', gap: '12px', marginBottom: '12px', alignItems: 'stretch' }}>
                 {PACKAGES.map(p => (
                   <PackageCard key={p.modules} pkg={p} plan={planFor(p.edition)} cycle={formData.cycle}
                     selected={formData.modules === p.modules}
@@ -631,7 +668,11 @@ export default function RegisterPage() {
             </Link>
           </p>
         </form>
+        </div>
       </div>
+
+      {/* Per-step achievement reward */}
+      {reward && <StepReward {...reward} />}
 
       <AuthErrorModal
         open={identityClash.open}
@@ -885,6 +926,72 @@ function WelcomeCelebration({ name, centerName, onContinue }) {
           0%   { transform: translateY(0)     rotate(0deg);   opacity: 1; }
           100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
         }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * StepReward — a brief, non-blocking "achievement unlocked" burst shown each
+ * time the user completes a registration step. A medal stamps in over radiating
+ * energy rings + a sparkle burst, with a motivational line and the running
+ * setup %. Non-interactive (pointer-events:none) so the next step is already
+ * usable underneath. Auto-dismissed by the parent after ~1.7s.
+ */
+function StepReward({ emoji, title, sub, pct }) {
+  const sparks = Array.from({ length: 14 }, (_, i) => ({ id: i, angle: (i * (360 / 14)) * (Math.PI / 180), color: ['#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#f472b6'][i % 5], dist: 120 + (i % 3) * 26 }));
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100040, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', animation: 'srFade 0.22s ease' }}>
+      {/* Strong dark scrim so the achievement reads clearly over the form. */}
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, rgba(2,6,23,0.78) 0%, rgba(2,6,23,0.92) 100%)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} />
+
+      {/* Glassy achievement card — gives the burst definition + premium feel. */}
+      <div style={{
+        position: 'relative', width: '90%', maxWidth: 380, textAlign: 'center',
+        background: 'linear-gradient(160deg, rgba(30,41,59,0.85), rgba(15,23,42,0.92))',
+        border: '1px solid rgba(56,189,248,0.28)', borderRadius: 26,
+        padding: '40px 30px 30px',
+        boxShadow: '0 40px 90px -20px rgba(2,6,23,0.85), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.08)',
+        animation: 'srPop 0.5s cubic-bezier(0.34,1.56,0.64,1)',
+      }}>
+        {/* Top conic glow accent */}
+        <div style={{ position: 'absolute', top: -1, left: '15%', right: '15%', height: 3, borderRadius: 99, background: 'linear-gradient(90deg, transparent, #38bdf8, #a78bfa, transparent)' }} />
+
+        {/* Medal + radiating rings + sparkles */}
+        <div style={{ position: 'relative', width: 104, height: 104, margin: '0 auto 22px' }}>
+          {[0, 0.16, 0.32].map((d, i) => (
+            <span key={i} style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2.5px solid rgba(56,189,248,0.55)', animation: `srRing 1.2s ${d}s cubic-bezier(0.2,0.8,0.2,1) forwards` }} />
+          ))}
+          {sparks.map((s) => (
+            <span key={s.id} style={{ position: 'absolute', top: '50%', left: '50%', width: 8, height: 8, marginTop: -4, marginLeft: -4, borderRadius: '50%', background: s.color, boxShadow: `0 0 8px ${s.color}`, '--dx': `${Math.cos(s.angle) * s.dist}px`, '--dy': `${Math.sin(s.angle) * s.dist}px`, animation: 'srSpark 1s 0.08s ease-out forwards' }} />
+          ))}
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'linear-gradient(135deg, #38bdf8, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48, boxShadow: '0 16px 44px -8px rgba(37,99,235,0.85), inset 0 2px 0 rgba(255,255,255,0.35)', animation: 'srStamp 0.6s cubic-bezier(0.34,1.56,0.64,1)' }}>
+            {emoji}
+          </div>
+        </div>
+
+        <div style={{ animation: 'srRise 0.5s 0.18s both' }}>
+          <div style={{ display: 'inline-block', padding: '5px 16px', borderRadius: 999, background: 'rgba(56,189,248,0.18)', border: '1px solid rgba(56,189,248,0.4)', fontSize: 10, fontWeight: 900, letterSpacing: 2.5, color: '#7dd3fc', marginBottom: 14 }}>
+            ★ ACHIEVEMENT UNLOCKED
+          </div>
+          <div style={{ fontSize: 26, fontWeight: 900, color: 'white', letterSpacing: '-0.5px', marginBottom: 8, lineHeight: 1.1 }}>{title}</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.78)', marginBottom: 22, lineHeight: 1.5 }}>{sub}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, height: 8, borderRadius: 99, background: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 99, background: 'linear-gradient(90deg,#34d399,#38bdf8)', boxShadow: '0 0 12px rgba(56,189,248,0.7)', animation: 'srBar 0.7s 0.2s ease both' }} />
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 900, color: '#34d399', minWidth: 64, textAlign: 'right' }}>{pct}% done</span>
+          </div>
+        </div>
+      </div>
+      <style>{`
+        @keyframes srFade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes srPop  { 0% { opacity: 0; transform: scale(0.85) translateY(20px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes srStamp { 0% { opacity: 0; transform: scale(0) rotate(-30deg); } 60% { opacity: 1; transform: scale(1.14) rotate(7deg); } 100% { transform: scale(1) rotate(0); } }
+        @keyframes srRing { 0% { opacity: 0.95; transform: scale(0.5); } 100% { opacity: 0; transform: scale(2.6); } }
+        @keyframes srSpark { 0% { opacity: 1; transform: translate(0,0) scale(1.2); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.2); } }
+        @keyframes srRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes srBar  { from { width: 0; } }
       `}</style>
     </div>
   );

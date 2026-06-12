@@ -794,65 +794,10 @@ const DicomViewerPage = () => {
   const hasAnyData =
     (currentFiles && currentFiles.length > 0) ||
     (allSeries && allSeries.some(s => Array.isArray(s.files) && s.files.length > 0));
-  if (!hasAnyData) {
-    return (
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#0f172a',
-        color: 'white'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
-          <h2>No DICOM Data Available</h2>
-          <p style={{ marginBottom: '20px', color: '#94a3b8' }}>
-            No DICOM files were provided for viewing.
-          </p>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button
-              onClick={() => {
-                const appointmentId = appointmentData?.appointmentId || appointmentData?.id;
-                if (appointmentId) {
-                  navigate(`/reporting/${appointmentId}`);
-                } else {
-                  navigate('/doctor-board');
-                }
-              }}
-              style={{
-                background: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Return to Reporting
-            </button>
-            <button
-              onClick={() => navigate('/doctor-board')}
-              style={{
-                background: '#6b7280',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Doctor Board
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Launched by URL (study/appointment id) vs. by navigation state. URL-launched
+  // studies must show LOADING (not the empty state) until hydration resolves —
+  // otherwise "No DICOM available" flashes for a beat before the viewer appears.
+  const isUrlLaunched = !!(urlAppointmentId || urlStudyId);
 
   // Show loading screen while hydrating from /Study/{id}/assets (URL-launched mode)
   if (hydrating) {
@@ -937,6 +882,20 @@ const DicomViewerPage = () => {
 
   // Show error if no files are available
   if (!currentFiles || !Array.isArray(currentFiles) || currentFiles.length === 0) {
+    // URL-launched study still resolving (the hydrate effect runs right after
+    // mount and the manifest poll may still be in flight): show LOADING, never
+    // the "No DICOM" error — that's what caused the empty-state flash before
+    // the viewer appeared.
+    if (isUrlLaunched) {
+      return (
+        <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+          <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'dvspin 0.8s linear infinite', marginBottom: '20px' }} />
+          <div style={{ fontSize: '14px', fontWeight: 800, color: '#3b82f6', letterSpacing: '2px' }}>LOADING STUDY</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '12px', letterSpacing: '1.5px', fontWeight: 700 }}>PREPARING VIEWER</div>
+          <style>{`@keyframes dvspin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      );
+    }
     return (
       <div style={{
         height: '100vh',
@@ -1052,25 +1011,37 @@ const DicomViewerPage = () => {
             flexDirection: 'column',
             justifyContent: 'center'
           }}>
-            <div style={{
-              color: 'white',
-              fontSize: isMobile ? '12px' : (isTablet ? '14px' : '16px'),
-              fontWeight: 900,
-              letterSpacing: '1px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              <span style={{ fontSize: isMobile ? '14px' : (isTablet ? '18px' : '20px') }}>📊</span>
-              SERIES
+            {/* NexEagle 1Rad branding — replaces the plain "SERIES" header. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '10px' }}>
+              <img
+                src={`${import.meta.env.BASE_URL}Logo.png`}
+                alt="NexEagle"
+                style={{
+                  width: isMobile ? '26px' : (isTablet ? '30px' : '34px'),
+                  height: isMobile ? '26px' : (isTablet ? '30px' : '34px'),
+                  objectFit: 'contain',
+                  borderRadius: '7px',
+                  background: 'rgba(255,255,255,0.12)',
+                  padding: '3px',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ lineHeight: 1.1, minWidth: 0 }}>
+                <div style={{ color: 'white', fontSize: isMobile ? '13px' : (isTablet ? '15px' : '17px'), fontWeight: 900, letterSpacing: '0.3px' }}>
+                  NexEagle
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: isMobile ? '9px' : '11px', fontWeight: 700, letterSpacing: '1.5px' }}>
+                  1Rad
+                </div>
+              </div>
             </div>
             <div style={{
               color: 'rgba(255,255,255,0.8)',
               fontSize: isMobile ? '9px' : (isTablet ? '10px' : '11px'),
-              marginTop: '3px',
+              marginTop: isMobile ? '4px' : '8px',
               fontWeight: 600
             }}>
-              {allSeries.length} available
+              {allSeries.length} series available
             </div>
           </div>
 

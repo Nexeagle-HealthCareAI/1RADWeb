@@ -101,10 +101,12 @@ apiClient.interceptors.request.use((config) => {
     // one-time fallback so an in-flight tab can finish its request after the
     // deploy without an unsolicited 401.
     const token = isRegistrationRoute
+      // Registration routes are gated by the InitiationOnly policy (requires the
+      // type=initiation claim). Send ONLY the initiation token — never fall back
+      // to a (stale) login access token, or the policy rejects it with a 403.
+      // No initiation token → send nothing → a clean 401 the form can handle.
       ? (localStorage.getItem('1rad_initiation_token')
-        || sessionStorage.getItem('1rad_initiation_token')
-        || localStorage.getItem('1rad_token')
-        || sessionStorage.getItem('1rad_token'))
+        || sessionStorage.getItem('1rad_initiation_token'))
       : (localStorage.getItem('1rad_token')
         || localStorage.getItem('1rad_initiation_token')
         || sessionStorage.getItem('1rad_token')

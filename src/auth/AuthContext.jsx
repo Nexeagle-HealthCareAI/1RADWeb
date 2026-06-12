@@ -630,12 +630,23 @@ export function AuthProvider({ children }) {
       // After deployment, user needs to login or we auto-login
       return { success: true };
     } catch (error) {
+      const status = error.response?.status;
       const resp = error.response?.data;
+      // 401/403 on the registration stages means the initiation token is
+      // missing/expired/rejected — the OTP verification didn't carry through.
+      // Give an actionable message instead of a generic failure.
+      if (status === 401 || status === 403) {
+        return {
+          success: false,
+          error: 'Your mobile verification has expired. Please go back and verify your mobile number again to continue.',
+          errorCode: 'INITIATION_EXPIRED',
+        };
+      }
       const errorMsg = resp?.error || resp?.message || resp?.detail || 'Registration sequence failed.';
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: errorMsg,
-        errorCode: resp?.errorCode 
+        errorCode: resp?.errorCode
       };
     }
   }, []);
