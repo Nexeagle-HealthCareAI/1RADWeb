@@ -863,13 +863,13 @@ const AdvancedDicomViewer = ({
   // and the viewer behaves exactly as before.
   const [slicePreview, setSlicePreview] = useState({ src: null, show: false });
   useEffect(() => {
-    const pv = currentFiles?.[currentImageIndex]?.previewUrl;
+    const pv = files?.[currentImageIndex]?.previewUrl;
     if (!pv) { setSlicePreview((p) => (p.show ? { ...p, show: false } : p)); return; }
     setSlicePreview({ src: pv, show: true });
     // Safety net in case the render event is missed — never leave it covering.
     const t = setTimeout(() => setSlicePreview((p) => ({ ...p, show: false })), 2500);
     return () => clearTimeout(t);
-  }, [currentImageIndex, currentFiles]);
+  }, [currentImageIndex, files]);
   useEffect(() => {
     const el = elementRef.current;
     if (!el) return;
