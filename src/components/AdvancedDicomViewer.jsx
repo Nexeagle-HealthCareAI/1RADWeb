@@ -111,6 +111,24 @@ if (typeof SharedArrayBuffer === 'undefined') {
   console.warn("[DICOM] SharedArrayBuffer is not available. Some compressed DICOMs may fail to decode.");
 }
 
+// Classify the network so prefetch can adapt: 'slow' (2G / Save-Data) loads a
+// sparse whole-study skeleton so the radiologist can scan everything coarsely;
+// 'fast' (4g+) can afford a denser window. Robust + cheap — just changes load
+// ordering/aggressiveness, never the decode path.
+function getConnectionTier() {
+  try {
+    const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!c) return 'normal';
+    if (c.saveData) return 'slow';
+    const t = c.effectiveType;
+    if (t === 'slow-2g' || t === '2g') return 'slow';
+    if (t === '3g') return 'medium';
+    return 'fast'; // 4g and up
+  } catch {
+    return 'normal';
+  }
+}
+
 // Session-wide blob URL cache: same File -> same blob URL across remounts.
 // This keeps Cornerstone's decoded-image cache useful when switching series and
 // re-visiting them. URLs live for the page lifetime (cleared on full reload).
@@ -835,7 +853,32 @@ const AdvancedDicomViewer = ({
     autoMprSeriesRef.current = seriesName;
     setMprMode(true);
   }, [autoMpr, mprEligibility.ok, seriesName]);
-  
+
+  // ── Two-tier progressive preview (blurry → sharp) ────────────────────────
+  // Show the current slice's tiny preview JPEG (from the manifest) the instant
+  // we scroll to it, while the full HTJ2K slice streams + decodes; hide it the
+  // moment Cornerstone paints the real image. PURELY ADDITIVE + fail-safe:
+  // pointer-events none, only shows when a previewUrl exists, and auto-hides on
+  // render or a safety timeout — so if anything is off it simply never appears
+  // and the viewer behaves exactly as before.
+  const [slicePreview, setSlicePreview] = useState({ src: null, show: false });
+  useEffect(() => {
+    const pv = currentFiles?.[currentImageIndex]?.previewUrl;
+    if (!pv) { setSlicePreview((p) => (p.show ? { ...p, show: false } : p)); return; }
+    setSlicePreview({ src: pv, show: true });
+    // Safety net in case the render event is missed — never leave it covering.
+    const t = setTimeout(() => setSlicePreview((p) => ({ ...p, show: false })), 2500);
+    return () => clearTimeout(t);
+  }, [currentImageIndex, currentFiles]);
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    // Any real paint means the sharp image is up → drop the preview.
+    const onRendered = () => setSlicePreview((p) => (p.show ? { ...p, show: false } : p));
+    try { el.addEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ }
+    return () => { try { el.removeEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ } };
+  }, []);
+
   // Fullscreen and tablet support states
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
@@ -2019,12 +2062,34 @@ const AdvancedDicomViewer = ({
         // Priority arg is best-effort — Cornerstone3D's queue may or may not
         // honour `options.priority` depending on version, but enqueue order
         // dominates in practice. Closest slices fire first.
-        const OUTWARD_PREFETCH_WINDOW = 30;
+        // Connection-aware: on a slow link keep the dense window small so the
+        // visible slice + its near neighbours aren't starved; lean on the sparse
+        // whole-study skeleton below for reach. On a fast link, a wider window.
+        const connTier = getConnectionTier();
+        const OUTWARD_PREFETCH_WINDOW =
+          connTier === 'slow' ? 12 : connTier === 'medium' ? 20 : 30;
         if (!isVolumeMode && imageIds.length > 1) {
           const maxOffset = Math.min(OUTWARD_PREFETCH_WINDOW, imageIds.length);
           // Offsets 3..maxOffset-1 — the ±1..2 inner ring was already enqueued
           // during the cold-start warm above (Cornerstone dedupes regardless).
           warmNeighbors(middleIdx, 3, maxOffset - 1, true);
+        }
+
+        // DECIMATED WHOLE-STUDY SKELETON (low-bandwidth + large-study win):
+        // after the dense window, enqueue a COARSE set spanning the ENTIRE study
+        // at lowest priority — so scrolling anywhere lands on (or next to) a warm
+        // slice and the radiologist can scan the whole study coarsely fast, long
+        // before the dense fill arrives. Enqueued last, so it never beats the
+        // visible slice / near window; the request pool caps its concurrency and
+        // it uses the 'prefetch' lane (not 'interaction'), so it can't starve a
+        // user-driven scroll. Step widens on slower links (cheaper coverage).
+        if (!isVolumeMode && imageIds.length > OUTWARD_PREFETCH_WINDOW * 2) {
+          const step = connTier === 'slow' ? 24 : connTier === 'medium' ? 14 : 8;
+          for (let i = 0; i < imageIds.length; i += step) {
+            if (!isMounted) break;
+            if (Math.abs(i - middleIdx) <= OUTWARD_PREFETCH_WINDOW) continue; // already dense-covered
+            cornerstone.imageLoader.loadAndCacheImage(imageIds[i], { priority: 100000 }).catch(() => {});
+          }
         }
 
         // Safety net: hide the loader after a longer delay regardless of the render
@@ -3086,6 +3151,21 @@ const AdvancedDicomViewer = ({
             zIndex: 5,
             pointerEvents: 'none',
             transition: 'opacity 0.25s ease-out',
+          }}
+        />
+      )}
+      {/* Per-slice progressive preview — a blurry stand-in for the CURRENT slice
+          while its full HTJ2K data streams in; removed the instant the sharp
+          image paints. Only after the first image (cold start uses the
+          placeholder above). Fail-safe: never blocks interaction. */}
+      {slicePreview.show && slicePreview.src && hasRenderedFirstImage && (
+        <img
+          src={slicePreview.src}
+          alt=""
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'contain', zIndex: 6, pointerEvents: 'none',
+            filter: 'blur(1px)', transition: 'opacity 0.15s ease-out',
           }}
         />
       )}

@@ -108,6 +108,7 @@ const DicomViewerPage = () => {
                   size: 0,
                   type: 'application/dicom',
                   dicomUrl: slice.url,
+                  previewUrl: slice.previewUrl || null, // tiny progressive preview
                   sopInstanceUID: slice.sopInstanceUID,
                   instanceNumber: slice.instanceNumber,
                 };
