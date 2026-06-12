@@ -43,6 +43,7 @@ import {
   WindowLevelTool,
   Enums as toolsEnums,
 } from '@cornerstonejs/tools';
+import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane';
 import { validateVolumeGeometry } from '../utils/dicomVolume';
 import { notifyToast } from '../utils/toast';
 
@@ -148,6 +149,12 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
   // mip/minip/average over `slabThicknessMm` — the standard angio/airway slab.
   const [slabMode, setSlabMode] = useState('off');
   const [slabThicknessMm, setSlabThicknessMm] = useState(10);
+  // 3D crop box: clip the volume to a sub-box so the user can carve away
+  // unwanted anatomy (the table, arms, near-side) for a clean view. Bounds are
+  // fractions 0..1 of the volume's extent on each axis; applied as 6 VTK
+  // clipping planes on the 3D actor's mapper.
+  const [cropEnabled, setCropEnabled] = useState(false);
+  const [cropBounds, setCropBounds] = useState({ xMin: 0, xMax: 1, yMin: 0, yMax: 1, zMin: 0, zMax: 1 });
   // Volume streaming progress (0..1). The 3D VR pane renders garbage from a
   // partially-streamed volume, so it shows a progress veil until 100%.
   const [volumeProgress, setVolumeProgress] = useState(0);
@@ -550,6 +557,42 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [render3dMode, vrPreset, loading]);
 
+  // Crop box → 6 VTK clipping planes on the 3D actor. Each axis keeps the slab
+  // between its [min,max] fraction of the volume's bounds; disabling removes all
+  // planes. Re-applied when the render mode changes (resetProperties can drop
+  // them) so the crop sticks across VR/MIP switches.
+  useEffect(() => {
+    if (loading) return;
+    const vp = engineRef.current?.getViewport(volume3dId);
+    const actor = vp?.getDefaultActor?.()?.actor;
+    const mapper = actor?.getMapper?.();
+    if (!vp || !mapper) return;
+    try {
+      mapper.removeAllClippingPlanes?.();
+      if (cropEnabled) {
+        const b = actor.getBounds(); // [xmin,xmax, ymin,ymax, zmin,zmax]
+        const lerp = (lo, hi, t) => lo + (hi - lo) * t;
+        const xLo = lerp(b[0], b[1], cropBounds.xMin), xHi = lerp(b[0], b[1], cropBounds.xMax);
+        const yLo = lerp(b[2], b[3], cropBounds.yMin), yHi = lerp(b[2], b[3], cropBounds.yMax);
+        const zLo = lerp(b[4], b[5], cropBounds.zMin), zHi = lerp(b[4], b[5], cropBounds.zMax);
+        // VTK clips away the side the normal points away from, so inward normals
+        // keep the inside of the box.
+        [
+          vtkPlane.newInstance({ origin: [xLo, 0, 0], normal: [1, 0, 0] }),
+          vtkPlane.newInstance({ origin: [xHi, 0, 0], normal: [-1, 0, 0] }),
+          vtkPlane.newInstance({ origin: [0, yLo, 0], normal: [0, 1, 0] }),
+          vtkPlane.newInstance({ origin: [0, yHi, 0], normal: [0, -1, 0] }),
+          vtkPlane.newInstance({ origin: [0, 0, zLo], normal: [0, 0, 1] }),
+          vtkPlane.newInstance({ origin: [0, 0, zHi], normal: [0, 0, -1] }),
+        ].forEach((pl) => mapper.addClippingPlane(pl));
+      }
+      vp.render();
+    } catch (e) {
+      console.warn('[MPR] crop apply failed:', e?.message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cropEnabled, cropBounds, render3dMode, loading]);
+
   // Thick-slab MIP/MinIP/Average across the 3 reformat planes (shared volume,
   // so applied to all three for a consistent slab). 'off' restores a single
   // slice. The slice slider / wheel still recentre the slab on the current cut.
@@ -751,6 +794,19 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
                   ))}
                 </select>
               )}
+              <button
+                onClick={() => setCropEnabled((v) => !v)}
+                title="Crop the 3D volume — carve away the table, arms or near-side anatomy for a clean view"
+                style={{
+                  ...MODE_SELECT_STYLE,
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  background: cropEnabled ? '#0f52ba' : MODE_SELECT_STYLE.background,
+                  color: cropEnabled ? '#fff' : MODE_SELECT_STYLE.color,
+                }}
+              >
+                ✂ CROP
+              </button>
             </>
           )}
 
@@ -791,6 +847,37 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
         {renderCell('coronal', 'CORONAL', coronalRef, CORONAL_COLOR)}
         {renderCell('sagittal', 'SAGITTAL', sagittalRef, SAGITTAL_COLOR)}
         {renderCell('3d', '3D', volume3dRef, '#e2e8f0')}
+
+        {/* Crop panel — six clipping planes, one [min,max] pair per axis. */}
+        {cropEnabled && layout === '3d' && (
+          <div style={{ position: 'absolute', top: 10, right: 10, width: 200, background: 'rgba(10,12,20,0.92)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '10px 12px', zIndex: 40, color: '#e2e8f0', fontSize: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontWeight: 800, letterSpacing: 1 }}>✂ CROP</span>
+              <button
+                onClick={() => setCropBounds({ xMin: 0, xMax: 1, yMin: 0, yMax: 1, zMin: 0, zMax: 1 })}
+                style={{ background: 'transparent', color: '#93c5fd', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}
+              >
+                Reset
+              </button>
+            </div>
+            {[['X', 'xMin', 'xMax'], ['Y', 'yMin', 'yMax'], ['Z', 'zMin', 'zMax']].map(([label, minKey, maxKey]) => (
+              <div key={label} style={{ marginBottom: 6 }}>
+                <div style={{ opacity: 0.8, marginBottom: 2 }}>{label}</div>
+                <input
+                  type="range" min={0} max={1} step={0.01} value={cropBounds[minKey]}
+                  onChange={(e) => { const v = Math.min(parseFloat(e.target.value), cropBounds[maxKey] - 0.02); setCropBounds((b) => ({ ...b, [minKey]: Math.max(0, v) })); }}
+                  style={{ width: '100%' }}
+                />
+                <input
+                  type="range" min={0} max={1} step={0.01} value={cropBounds[maxKey]}
+                  onChange={(e) => { const v = Math.max(parseFloat(e.target.value), cropBounds[minKey] + 0.02); setCropBounds((b) => ({ ...b, [maxKey]: Math.min(1, v) })); }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            ))}
+            <div style={{ opacity: 0.6, fontSize: 9, marginTop: 2 }}>Drag to carve away unwanted anatomy.</div>
+          </div>
+        )}
 
         {/* 3D streaming veil — a VR render of a half-streamed volume looks
             banded/broken; show progress instead of letting it look buggy. */}

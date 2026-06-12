@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import apiClient from '../api/apiClient';
+import { setManifestSliceMetadata } from '../utils/manifestMetadata';
 
 const DicomViewerPage = () => {
   const navigate = useNavigate();
@@ -91,14 +92,26 @@ const DicomViewerPage = () => {
               // Pseudo-File objects: getOrCreateBlobUrl in AdvancedDicomViewer
               // returns .dicomUrl directly when present (no createObjectURL),
               // so wadouri:{url} is passed straight to Cornerstone's loader.
-              const files = (s.slices || []).map((slice, sliceIdx) => ({
-                name: `${slice.sopInstanceUID || 'slice'}_${sliceIdx}.dcm`,
-                size: 0,
-                type: 'application/dicom',
-                dicomUrl: slice.url,
-                sopInstanceUID: slice.sopInstanceUID,
-                instanceNumber: slice.instanceNumber,
-              }));
+              const files = (s.slices || []).map((slice, sliceIdx) => {
+                // Register the slice's manifest metadata under its imageId so the
+                // metaData provider can serve imagePixelModule/imagePlaneModule —
+                // the prerequisite for MPR + 3D (the 2D stack doesn't need it).
+                if (slice.url && slice.metadata) {
+                  setManifestSliceMetadata(`wadouri:${slice.url}`, slice.metadata, {
+                    seriesUID: s.seriesUID,
+                    sopInstanceUID: slice.sopInstanceUID,
+                    modality: s.modality,
+                  });
+                }
+                return {
+                  name: `${slice.sopInstanceUID || 'slice'}_${sliceIdx}.dcm`,
+                  size: 0,
+                  type: 'application/dicom',
+                  dicomUrl: slice.url,
+                  sopInstanceUID: slice.sopInstanceUID,
+                  instanceNumber: slice.instanceNumber,
+                };
+              });
               allExtracted.push({
                 name: s.seriesDescription || `Series ${allExtracted.length + 1}`,
                 seriesDesc: s.seriesDescription,
@@ -199,11 +212,16 @@ const DicomViewerPage = () => {
           // Something finished (or everything settled) — fetch the real manifest.
           setHydrationAttempt((n) => n + 1);
         } else {
-          // Still grinding — refresh the per-asset statuses shown in the UI.
+          // Still grinding — refresh the per-asset statuses + live progress
+          // (phase / slices done / total / percent) shown in the UI.
           setPendingExtractionAssets(assets.map((a) => ({
             assetId: a.assetId,
             fileName: a.fileName,
             extractionStatus: a.extractionStatus || 'Pending',
+            phase: a.phase ?? null,
+            processed: a.processed ?? null,
+            total: a.total ?? null,
+            percent: a.percent ?? null,
           })));
         }
       } catch {
@@ -848,8 +866,14 @@ const DicomViewerPage = () => {
   if (!hydratedSeries && pendingExtractionAssets.length > 0) {
     const hasFailed = pendingExtractionAssets.some(a => a.extractionStatus === 'Failed');
     const allFailed = pendingExtractionAssets.every(a => a.extractionStatus === 'Failed');
+    // Live progress from the extraction-status poll: the asset currently being
+    // processed drives the headline bar (phase + slices done / total / percent).
+    const primary = pendingExtractionAssets.find(a => a.extractionStatus !== 'Failed' && typeof a.total === 'number' && a.total > 0);
+    const primaryPct = primary ? Math.max(0, Math.min(100, primary.percent ?? Math.round(100 * (primary.processed || 0) / primary.total))) : null;
+    const primaryPhase = pendingExtractionAssets.find(a => a.phase)?.phase || null;
     return (
       <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+        <style>{`@keyframes dvindet { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }`}</style>
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>{allFailed ? '⚠️' : '⏳'}</div>
         <div style={{ fontSize: '16px', fontWeight: 800, color: allFailed ? '#ef4444' : '#3b82f6', letterSpacing: '2px', marginBottom: '8px' }}>
           {allFailed ? 'EXTRACTION FAILED' : 'STUDY IS BEING PROCESSED'}
@@ -857,15 +881,39 @@ const DicomViewerPage = () => {
         <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px', textAlign: 'center', maxWidth: '460px', lineHeight: 1.6 }}>
           {allFailed
             ? 'The backend could not extract DICOM slices from this study. Re-upload the ZIP or contact support.'
-            : 'The backend is unzipping and indexing the DICOM files. This usually takes a few seconds for small studies, longer for large CT/MR series. Try again in a moment.'}
+            : (primary
+                ? `${primaryPhase || 'Processing'} — ${primary.processed || 0} / ${primary.total} slices (${primaryPct}%). Keep this open; it loads automatically when ready.`
+                : 'The backend is unzipping and indexing the DICOM files. This usually takes a few seconds for small studies, longer for large CT/MR series.')}
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '12px 16px', marginBottom: '24px', fontSize: '11px', color: '#cbd5e1', maxWidth: '460px' }}>
-          {pendingExtractionAssets.slice(0, 5).map(a => (
-            <div key={a.assetId} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '2px 0' }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fileName || a.assetId}</span>
-              <span style={{ color: a.extractionStatus === 'Failed' ? '#ef4444' : '#3b82f6', fontWeight: 700, flexShrink: 0 }}>{a.extractionStatus}</span>
-            </div>
-          ))}
+        {!allFailed && (
+          <div style={{ width: '100%', maxWidth: '460px', height: '8px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', marginBottom: '24px', overflow: 'hidden', position: 'relative' }}>
+            {primaryPct != null ? (
+              <div style={{ height: '100%', width: `${Math.max(2, primaryPct)}%`, background: 'linear-gradient(90deg,#3b82f6,#22d3ee)', borderRadius: '999px', transition: 'width 0.4s ease' }} />
+            ) : (
+              <div style={{ position: 'absolute', top: 0, bottom: 0, width: '38%', background: 'linear-gradient(90deg,transparent,#3b82f6,transparent)', animation: 'dvindet 1.3s ease-in-out infinite' }} />
+            )}
+          </div>
+        )}
+        <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '12px 16px', marginBottom: '24px', fontSize: '11px', color: '#cbd5e1', maxWidth: '460px', width: '100%' }}>
+          {pendingExtractionAssets.slice(0, 5).map(a => {
+            const failed = a.extractionStatus === 'Failed';
+            const hasBar = !failed && typeof a.total === 'number' && a.total > 0;
+            const pct = hasBar ? Math.max(0, Math.min(100, a.percent ?? Math.round(100 * (a.processed || 0) / a.total))) : 0;
+            const label = failed ? 'Failed' : (a.phase ? (hasBar ? `${a.phase} ${a.processed}/${a.total} · ${pct}%` : a.phase) : a.extractionStatus);
+            return (
+              <div key={a.assetId} style={{ padding: '3px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fileName || a.assetId}</span>
+                  <span style={{ color: failed ? '#ef4444' : '#3b82f6', fontWeight: 700, flexShrink: 0 }}>{label}</span>
+                </div>
+                {hasBar && (
+                  <div style={{ height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', marginTop: '4px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.max(2, pct)}%`, background: 'linear-gradient(90deg,#3b82f6,#22d3ee)', borderRadius: '999px', transition: 'width 0.4s ease' }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {pendingExtractionAssets.length > 5 && (
             <div style={{ color: '#64748b', fontSize: '10px', marginTop: '4px' }}>… and {pendingExtractionAssets.length - 5} more</div>
           )}
