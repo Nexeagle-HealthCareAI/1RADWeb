@@ -32,6 +32,15 @@ import {
   CobbAngleTool,
   HeightTool,
   AdvancedMagnifyTool,
+  SplineROITool,
+  LivewireContourTool,
+  LabelTool,
+  EraserTool,
+  DragProbeTool,
+  WindowLevelRegionTool,
+  PlanarRotateTool,
+  UltrasoundDirectionalTool,
+  ScaleOverlayTool,
   Enums as toolsEnums,
   synchronizers,
   utilities,
@@ -184,6 +193,27 @@ function queueSlicePersist(key, blob) {
   slicePersistTimer = setTimeout(flushSlicePersist, SLICE_PERSIST_DEBOUNCE_MS);
 }
 
+// Validate that a fetched blob is actually a DICOM P10 file, not an HTML error
+// page / JSON. When CdnBaseUrl is misconfigured the slice URL resolves to the
+// SPA's index.html (HTTP 200), and feeding that to the codec makes it spin for
+// the full 45s+30s timeout. Sniffing here turns that into an INSTANT, clear
+// error. DICOM P10 has the ASCII 'DICM' marker at byte offset 128.
+async function assertDicomBlob(blob, httpsUrl) {
+  const head = new Uint8Array(await blob.slice(0, 132).arrayBuffer());
+  const hasDicm = head.length >= 132 &&
+    head[128] === 0x44 && head[129] === 0x49 && head[130] === 0x43 && head[131] === 0x4d; // 'DICM'
+  if (hasDicm) return;
+  // Not DICOM — identify what came back so the error is actionable.
+  const start = String.fromCharCode(...head.slice(0, 16)).trim();
+  if (start.startsWith('<')) {
+    throw new Error(`DELIVERY_MISCONFIG: the image URL returned an HTML page, not DICOM — the storage/CDN link (AzureBlobStorage:CdnBaseUrl) is misconfigured or the blob is missing. URL: ${httpsUrl.slice(0, 100)}`);
+  }
+  if (start.startsWith('{') || start.startsWith('[')) {
+    throw new Error(`DELIVERY_MISCONFIG: the image URL returned JSON, not DICOM — the study may still be processing. URL: ${httpsUrl.slice(0, 100)}`);
+  }
+  throw new Error(`NOT_DICOM: the fetched bytes are not a DICOM P10 file (no DICM marker). URL: ${httpsUrl.slice(0, 100)}`);
+}
+
 // Fetch slice bytes with a hard timeout + one retry. A stalled connection
 // previously waited forever (no AbortController) and a single transient
 // CDN/origin hiccup surfaced as a decode error.
@@ -194,9 +224,16 @@ async function fetchSliceWithRetry(httpsUrl) {
     try {
       const res = await fetch(httpsUrl, { signal: AbortSignal.timeout(SLICE_FETCH_TIMEOUT_MS) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.blob();
+      const blob = await res.blob();
+      // Fast-fail on non-DICOM payloads (HTML/JSON from a misconfigured CDN)
+      // instead of letting the codec time out for 75s. A bad delivery config
+      // is the same for every slice, so failing the first one fast is right.
+      await assertDicomBlob(blob, httpsUrl);
+      return blob;
     } catch (e) {
       lastErr = e;
+      // Don't retry a delivery misconfig — it won't fix itself in 500ms.
+      if (String(e?.message).startsWith('DELIVERY_MISCONFIG') || String(e?.message).startsWith('NOT_DICOM')) throw e;
       if (attempt === 0) await new Promise((r) => setTimeout(r, 500));
     }
   }
@@ -333,9 +370,18 @@ async function initCornerstone() {
     PlanarFreehandROITool,
     ProbeTool,
     MagnifyTool,
-    AdvancedMagnifyTool
+    AdvancedMagnifyTool,
+    SplineROITool,
+    LivewireContourTool,
+    LabelTool,
+    EraserTool,
+    DragProbeTool,
+    WindowLevelRegionTool,
+    PlanarRotateTool,
+    UltrasoundDirectionalTool,
+    ScaleOverlayTool
   ];
-  
+
   console.log('[DICOM] Registering tools globally...');
   tools.forEach(tool => {
     try {
@@ -625,7 +671,7 @@ async function initCornerstone() {
   });
 
   // Register professional tools
-  [WindowLevelTool, ZoomTool, PanTool, StackScrollTool, LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool, EllipticalROITool, RectangleROITool, CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool, ArrowAnnotateTool].forEach(t => {
+  [WindowLevelTool, ZoomTool, PanTool, StackScrollTool, LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool, EllipticalROITool, RectangleROITool, CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool, ArrowAnnotateTool, SplineROITool, LivewireContourTool, LabelTool, EraserTool, DragProbeTool, WindowLevelRegionTool, PlanarRotateTool, UltrasoundDirectionalTool, ScaleOverlayTool].forEach(t => {
       try { addTool(t); } catch (e) { /* Already added */ }
   });
 
@@ -669,9 +715,10 @@ const AdvancedDicomViewer = ({
   // Pre-parsed metadata to skip redundant parsing
   preParsedMetadata = null,
   // Whether an eligible volumetric series may AUTO-open the 4-up MPR on land.
-  // Off in the multi-series 2×2 comparison grid — 4 MPR overlays there clutter
-  // the layout (and hid the page header). The manual MPR toggle still works.
-  autoMpr = true,
+  // Default OFF: the viewer always lands on the fast 2D stack (what a
+  // radiologist expects); MPR/3D is opened on demand via the MPR button. Pass
+  // autoMpr={true} only if a flow specifically wants to land in MPR.
+  autoMpr = false,
   // Compact sizing for grid cells (e.g. the 2×2 comparison layout): drops the
   // 400px canvas min-height so the viewer fits its cell instead of overflowing
   // and pushing the page chrome off-screen. Single view keeps the min-height.
@@ -2249,10 +2296,13 @@ const AdvancedDicomViewer = ({
 
         [
           WindowLevelTool, ZoomTool, PanTool, StackScrollTool,
-          ArrowAnnotateTool, 
+          ArrowAnnotateTool,
           LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool,
-          EllipticalROITool, RectangleROITool, CircleROITool, 
-          PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool
+          EllipticalROITool, RectangleROITool, CircleROITool,
+          PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool,
+          SplineROITool, LivewireContourTool, LabelTool, EraserTool,
+          DragProbeTool, WindowLevelRegionTool, PlanarRotateTool,
+          UltrasoundDirectionalTool, ScaleOverlayTool
         ].forEach(t => {
             const toolName = t.toolName || t.name;
             if (!toolGroup.hasTool(toolName)) {
@@ -2269,8 +2319,10 @@ const AdvancedDicomViewer = ({
         // Enable all annotation/measurement tools (required before they can be activated)
         const measurementTools = [
           'Length', 'Height', 'Bidirectional', 'Angle', 'CobbAngle',
-          'EllipticalROI', 'RectangleROI', 'CircleROI', 
-          'PlanarFreehandROI', 'Probe', 'ArrowAnnotate', 'Magnify', 'AdvancedMagnify'
+          'EllipticalROI', 'RectangleROI', 'CircleROI',
+          'PlanarFreehandROI', 'Probe', 'ArrowAnnotate', 'Magnify', 'AdvancedMagnify',
+          'SplineROI', 'LivewireContour', 'Label', 'Eraser',
+          'DragProbe', 'WindowLevelRegion', 'UltrasoundDirectionalTool'
         ];
         
         measurementTools.forEach(toolName => {
@@ -2297,6 +2349,16 @@ const AdvancedDicomViewer = ({
         const panToolName = PanTool.toolName || 'Pan';
         toolGroup.setToolPassive(zoomToolName);
         toolGroup.setToolPassive(panToolName);
+        try { toolGroup.setToolPassive('PlanarRotate'); } catch { /* optional */ }
+
+        // Always-on physical scale bar (bottom of viewport) — reads pixel
+        // spacing from the DICOM, so measurements are visually sanity-checkable.
+        try {
+          toolGroup.setToolConfiguration('ScaleOverlay', { scaleLocation: 'bottom' });
+          toolGroup.setToolEnabled('ScaleOverlay');
+        } catch (scaleErr) {
+          console.warn('[DICOM] ScaleOverlay not enabled:', scaleErr?.message);
+        }
         
         // StackScroll always active with wheel (doesn't conflict with Primary button)
         const stackScrollToolName = StackScrollTool.toolName || 'StackScroll';
@@ -2519,7 +2581,16 @@ const AdvancedDicomViewer = ({
       'ProbeTool': 'Probe',
       'ArrowAnnotateTool': 'ArrowAnnotate',
       'MagnifyTool': 'Magnify',
-      'AdvancedMagnifyTool': 'AdvancedMagnify'
+      'AdvancedMagnifyTool': 'AdvancedMagnify',
+      'SplineROITool': 'SplineROI',
+      'LivewireContourTool': 'LivewireContour',
+      'LabelTool': 'Label',
+      'EraserTool': 'Eraser',
+      'DragProbeTool': 'DragProbe',
+      'WindowLevelRegionTool': 'WindowLevelRegion',
+      'PlanarRotateTool': 'PlanarRotate',
+      // NOTE: this tool's cornerstone toolName genuinely includes "Tool".
+      'UltrasoundDirectionalTool': 'UltrasoundDirectionalTool'
     };
     
     const actualToolName = toolNameMap[activeTool] || activeTool;
@@ -2528,11 +2599,14 @@ const AdvancedDicomViewer = ({
     // Get all tools that might be active with Primary mouse button
     const toolsToDeactivate = [
       'WindowLevel', 'Zoom', 'Pan',
-      'Length', 'Height', 'Bidirectional', 
+      'Length', 'Height', 'Bidirectional',
       'Angle', 'CobbAngle',
-      'EllipticalROI', 'RectangleROI', 'CircleROI', 
-      'PlanarFreehandROI', 'Probe', 'ArrowAnnotate', 
-      'Magnify', 'AdvancedMagnify'
+      'EllipticalROI', 'RectangleROI', 'CircleROI',
+      'PlanarFreehandROI', 'Probe', 'ArrowAnnotate',
+      'Magnify', 'AdvancedMagnify',
+      'SplineROI', 'LivewireContour', 'Label', 'Eraser',
+      'DragProbe', 'WindowLevelRegion', 'PlanarRotate',
+      'UltrasoundDirectionalTool'
     ];
     
     // Deactivate all tools except StackScroll (which uses wheel) and the target tool
@@ -2573,7 +2647,15 @@ const AdvancedDicomViewer = ({
             'Probe': ProbeTool,
             'ArrowAnnotate': ArrowAnnotateTool,
             'Magnify': MagnifyTool,
-            'AdvancedMagnify': AdvancedMagnifyTool
+            'AdvancedMagnify': AdvancedMagnifyTool,
+            'SplineROI': SplineROITool,
+            'LivewireContour': LivewireContourTool,
+            'Label': LabelTool,
+            'Eraser': EraserTool,
+            'DragProbe': DragProbeTool,
+            'WindowLevelRegion': WindowLevelRegionTool,
+            'PlanarRotate': PlanarRotateTool,
+            'UltrasoundDirectionalTool': UltrasoundDirectionalTool
           }[actualToolName];
           
           if (toolClass) {
@@ -3764,12 +3846,31 @@ const AdvancedDicomViewer = ({
                     console.warn('[DICOM] ⚠️ Viewport not available for slice navigation');
                     return;
                   }
+                  // Guard: if the stack hasn't loaded (e.g. slices failed to
+                  // fetch/decode), setImageIdIndex rejects ASYNCHRONOUSLY with
+                  // "stack only has 0 elements" — which the sync try/catch can't
+                  // catch, flooding the console with uncaught rejections. Only
+                  // navigate once the engine's setStack has resolved AND the
+                  // target index is within the actually-loaded stack.
+                  if (!engineStackReadyRef.current) {
+                    // Update the on-screen counter only; the engine isn't ready.
+                    setCurrentImageIndex(index);
+                    return;
+                  }
                   try {
                     // Stack viewports use setImageIdIndex; volume viewports
                     // (orthographic, MPR) don't have it — they navigate slices
                     // via camera/setSliceIndex. Use whichever is available.
                     if (typeof viewport.setImageIdIndex === 'function') {
-                      viewport.setImageIdIndex(index);
+                      const loaded = viewport.getImageIds?.()?.length ?? 0;
+                      if (index < 0 || index >= loaded) {
+                        setCurrentImageIndex(index);
+                        return; // out of the loaded stack — don't reject
+                      }
+                      // setImageIdIndex is async; swallow its rejection too.
+                      Promise.resolve(viewport.setImageIdIndex(index)).catch((err) => {
+                        console.warn('[DICOM] slice navigation rejected:', err?.message);
+                      });
                     } else if (typeof viewport.setSliceIndex === 'function') {
                       viewport.setSliceIndex(index);
                       renderingEngineRef.current?.renderViewports([viewportId]);
@@ -3779,7 +3880,6 @@ const AdvancedDicomViewer = ({
                     }
                     setCurrentImageIndex(index);
                     if (onSliceChange) onSliceChange(index, files.length);
-                    console.log(`[DICOM] ✅ Slider slice navigation successful`);
                   } catch (err) {
                     console.error('[DICOM] ❌ Slider slice navigation failed:', err);
                   }

@@ -148,6 +148,13 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
   // mip/minip/average over `slabThicknessMm` — the standard angio/airway slab.
   const [slabMode, setSlabMode] = useState('off');
   const [slabThicknessMm, setSlabThicknessMm] = useState(10);
+  // Volume streaming progress (0..1). The 3D VR pane renders garbage from a
+  // partially-streamed volume, so it shows a progress veil until 100%.
+  const [volumeProgress, setVolumeProgress] = useState(0);
+  // Panes that have been fitted (resetCamera) while actually VISIBLE. Panes
+  // initialised under display:none have 0×0 canvases — their cameras are
+  // garbage until the first visible fit.
+  const fittedPanesRef = useRef(new Set());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -279,7 +286,9 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
         if (flipped || !mountedRef.current) return;
         if (!force && (!centerReady || !bound)) return;
         flipped = true;
-        detachVolListener();
+        // NOTE: the IMAGE_VOLUME_MODIFIED listener stays attached after the
+        // flip — it keeps driving the 3D pane's streaming-progress veil and
+        // detaches itself at 100% (or on unmount).
         if (loaderTimeoutRef.current) { clearTimeout(loaderTimeoutRef.current); loaderTimeoutRef.current = null; }
         try { engine.renderViewports([axialId, coronalId, sagittalId, volume3dId]); } catch { /* noop */ }
         requestAnimationFrame(() => { if (mountedRef.current) setLoading(false); });
@@ -291,9 +300,25 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
       // `volume.cachedFrames[centerIdx]` (set the moment that frame streams in)
       // instead, and also flip once every frame is in as a backstop.
       const onVolumeModified = (e) => {
-        if (flipped) return;
         const detail = e?.detail;
         if (detail?.volumeId && detail.volumeId !== volumeId) return;
+        // Track streaming progress for the 3D pane's veil. When the volume
+        // completes, re-apply the VR preset + re-render: a transfer function
+        // mapped onto a half-streamed (neighbour-replicated) volume looks
+        // banded/chunky — the refresh snaps it to the real data.
+        if (detail?.numberOfFrames) {
+          const p = Math.min(1, (detail.framesProcessed || 0) / detail.numberOfFrames);
+          if (mountedRef.current) setVolumeProgress(p);
+          if (p >= 1) {
+            try {
+              const vp3d = engine.getViewport(volume3dId);
+              vp3d?.setProperties({ preset: pick3dPreset(modality) });
+              vp3d?.render();
+            } catch { /* preset best-effort */ }
+            if (flipped) detachVolListener(); // done — nothing left to track
+          }
+        }
+        if (flipped) return;
         let centerIn = false;
         try { centerIn = volume.cachedFrames?.[centerIdx] != null; } catch { /* noop */ }
         const allIn = detail?.numberOfFrames && detail?.framesProcessed >= detail.numberOfFrames;
@@ -338,20 +363,32 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
         console.warn('[MPR] 3D preset not applied:', e?.message);
       }
 
-      // Fit every pane to its content. setVolumesForViewports sets initial
-      // cameras, but without an explicit resetCamera the CORONAL/SAGITTAL
-      // reformats render small/letterboxed (the "not as large as axial" issue)
-      // and the VOLUME_3D camera can sit so the volume isn't framed/visible.
-      // resetCamera fits each viewport to the volume bounds (known up-front, so
-      // this is correct even before pixels finish streaming in).
+      // Fit the VISIBLE pane(s) to the volume. CRITICAL: panes hidden under
+      // display:none have 0×0 canvases — resetCamera on them computes a
+      // garbage camera that engine.resize(keepCamera=true) then faithfully
+      // PRESERVES when the pane is later revealed (the "coronal/sagittal/3D
+      // look wrong" bug). So we only fit panes that are actually visible now
+      // and record them; the layout effect fits each remaining pane on its
+      // first reveal, after the resize has given it a real canvas.
       try {
-        [axialId, coronalId, sagittalId, volume3dId].forEach((id) => {
+        const visibleAtSetup = ['axial']; // initial layout state
+        fittedPanesRef.current = new Set(visibleAtSetup);
+        visibleAtSetup.forEach((key) => {
+          const id = key === '3d' ? volume3dId : (key === 'axial' ? axialId : key === 'coronal' ? coronalId : sagittalId);
           engine.getViewport(id)?.resetCamera?.();
         });
         engine.render();
       } catch (e) {
         console.warn('[MPR] resetCamera failed:', e?.message);
       }
+
+      // Ensure smooth (linear) interpolation on the reformat planes — blocky
+      // nearest-neighbour reformats read as "low quality" on anisotropic CTs.
+      try {
+        [axialId, coronalId, sagittalId].forEach((id) => {
+          engine.getViewport(id)?.setProperties?.({ interpolationType: Enums.InterpolationType?.LINEAR });
+        });
+      } catch { /* default is linear on most builds */ }
 
       // ── Tools: crosshair sync across the 3 MPR panes ─────────────────
       try {
@@ -437,7 +474,26 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
     if (!engine) return;
     const raf = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        try { engine.resize(true, true); engine.render(); } catch { /* noop */ }
+        try {
+          engine.resize(true, true);
+          // First reveal of a pane that was initialised under display:none:
+          // its camera was computed against a 0×0 canvas (garbage) and
+          // keepCamera=true preserves it. Fit it ONCE now that it has a real
+          // canvas; afterwards the user's zoom/slice survives layout switches.
+          const visible = layout === 'quad'
+            ? ['axial', 'coronal', 'sagittal', '3d']
+            : [layout];
+          visible.forEach((key) => {
+            if (fittedPanesRef.current.has(key)) return;
+            const id = key === '3d' ? volume3dId
+              : key === 'axial' ? axialId
+              : key === 'coronal' ? coronalId
+              : sagittalId;
+            try { engine.getViewport(id)?.resetCamera?.(); } catch { /* noop */ }
+            fittedPanesRef.current.add(key);
+          });
+          engine.render();
+        } catch { /* noop */ }
       });
     });
     return () => cancelAnimationFrame(raf);
@@ -735,6 +791,35 @@ const MprViewport = ({ imageIds, seriesName, modality, onClose }) => {
         {renderCell('coronal', 'CORONAL', coronalRef, CORONAL_COLOR)}
         {renderCell('sagittal', 'SAGITTAL', sagittalRef, SAGITTAL_COLOR)}
         {renderCell('3d', '3D', volume3dRef, '#e2e8f0')}
+
+        {/* 3D streaming veil — a VR render of a half-streamed volume looks
+            banded/broken; show progress instead of letting it look buggy. */}
+        {!loading && (layout === '3d' || layout === 'quad') && volumeProgress < 1 && (
+          <div
+            style={{
+              position: 'absolute',
+              // In quad, the 3D pane is the bottom-right cell; full-pane otherwise.
+              ...(layout === 'quad'
+                ? { right: 4, bottom: 4, width: 'calc(50% - 6px)', height: 'calc(50% - 6px)' }
+                : { inset: 4 }),
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(0,0,0,0.55)',
+              borderRadius: 6,
+              zIndex: 7,
+              pointerEvents: 'none',
+            }}
+          >
+            <p style={{ color: '#94a3b8', fontSize: 10, fontWeight: 900, letterSpacing: 2, margin: 0 }}>
+              BUILDING 3D · {Math.round(volumeProgress * 100)}%
+            </p>
+            <div style={{ width: 160, height: 4, background: 'rgba(148,163,184,0.25)', borderRadius: 99, marginTop: 10, overflow: 'hidden' }}>
+              <div style={{ width: `${Math.round(volumeProgress * 100)}%`, height: '100%', background: '#0f52ba', borderRadius: 99, transition: 'width 0.3s' }} />
+            </div>
+          </div>
+        )}
 
         {loading && (
           <div

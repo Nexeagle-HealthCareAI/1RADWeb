@@ -139,7 +139,7 @@ function PrimaryBtn({ children, disabled, ...props }) {
   );
 }
 
-const STEP_LABELS = ['Verify contact', 'Your details', 'Clinical info', 'Choose package', 'Centre details'];
+const STEP_LABELS = ['Verify contact', 'Your details', 'Clinical info', 'Centre details', 'Choose plan'];
 
 export default function RegisterPage() {
   const { registerAdminDoctor, sendOtp, verifyOtp } = useAuth();
@@ -244,16 +244,17 @@ export default function RegisterPage() {
       setStep(4); return;
     }
     if (step === 4) {
-      // Package always has a default selection — just advance.
-      setStep(5); return;
-    }
-    if (step === 5) {
+      // Centre details first — validate, then move on to plan selection.
       if (!formData.centerName || !formData.centerAddress)
         return setError('Centre name and address are required.');
       if (!validateGSTIN(formData.gstinNumber))
         return setError('Invalid GSTIN format. Expected: 22AAAAA0000A1Z5');
       if (!validatePAN(formData.panNumber))
         return setError('Invalid PAN format. Expected: ABCDE1234F');
+      setStep(5); return;
+    }
+    if (step === 5) {
+      // Plan step — a package always has a default selection; submit registration.
       setLoading(true);
       const res = await registerAdminDoctor({
         fullName: formData.name, email: formData.email, mobile: formData.mobile,
@@ -355,7 +356,7 @@ export default function RegisterPage() {
             {step === 1 ? 'Create your account' :
              step === 2 ? 'Your details' :
              step === 3 ? 'Clinical information' :
-             step === 4 ? 'Choose your package' : 'Centre details'}
+             step === 4 ? 'Centre details' : 'Choose your plan'}
           </h2>
           <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', margin: 0, fontFamily: '"Segoe UI", sans-serif' }}>
             Step {stepIndex + 1} of {stepSeq.length} — {STEP_LABELS[step - 1]}
@@ -482,47 +483,8 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* ── Step 4: Package ── */}
+          {/* ── Step 4: Centre details ── */}
           {step === 4 && (
-            <div>
-              {/* Package picker — choose the product SKU. Reporting is in all
-                  three; the two differentiators are scheduling (RIS) and cloud
-                  DICOM storage/viewer (PACS). */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <label style={{ ...labelBase, marginBottom: 0 }}>Pick what fits your centre</label>
-                {/* Monthly / Yearly toggle drives the price shown on each card. */}
-                <div style={{ display: 'inline-flex', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', overflow: 'hidden' }}>
-                  {['Monthly', 'Yearly'].map(c => (
-                    <button key={c} type="button" onClick={() => set('cycle', c)}
-                      style={{
-                        padding: '4px 12px', fontSize: '12px', cursor: 'pointer', border: 'none',
-                        background: formData.cycle === c ? '#60a5fa' : 'transparent',
-                        color: formData.cycle === c ? '#fff' : '#9aa4b2',
-                      }}>
-                      {c}{c === 'Yearly' ? ' · 10% off' : ''}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: 'grid', gap: '10px', marginBottom: '16px' }}>
-                {PACKAGES.map(p => (
-                  <PackageCard key={p.modules} pkg={p} plan={planFor(p.edition)} cycle={formData.cycle}
-                    selected={formData.modules === p.modules}
-                    onSelect={() => set('modules', p.modules)} />
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={() => setStep(formData.role === 'admindoctor' ? 3 : 2)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>
-                  Back
-                </button>
-                <div style={{ flex: 2 }}><PrimaryBtn type="submit">Continue</PrimaryBtn></div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Step 5: Centre ── */}
-          {step === 5 && (
             <div>
               <Input label="Centre name" type="text" required value={formData.centerName} onChange={e => set('centerName', e.target.value)} placeholder="e.g. City Diagnostic Centre" />
               <Input label="Group / chain (optional)" type="text" value={formData.chainName} onChange={e => set('chainName', e.target.value)} placeholder="e.g. Apollo Group" />
@@ -588,6 +550,54 @@ export default function RegisterPage() {
                   onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.10)'; }}
                 />
               </Field>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" onClick={() => setStep(formData.role === 'admindoctor' ? 3 : 2)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>
+                  Back
+                </button>
+                <div style={{ flex: 2 }}><PrimaryBtn type="submit">Continue</PrimaryBtn></div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 5: Choose plan ── */}
+          {step === 5 && (
+            <div>
+              {/* Lightweight product picker — just choose the SKU; the full tier
+                  pricing lives on the Subscription page after sign-in. Reporting
+                  is included in all three; the differentiators are scheduling
+                  (RIS) and cloud DICOM storage/viewer (PACS). */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <label style={{ ...labelBase, marginBottom: 0 }}>Pick what fits your centre</label>
+                {/* Monthly / Yearly toggle drives the "from" price shown on each card. */}
+                <div style={{ display: 'inline-flex', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', overflow: 'hidden' }}>
+                  {['Monthly', 'Yearly'].map(c => (
+                    <button key={c} type="button" onClick={() => set('cycle', c)}
+                      style={{
+                        padding: '4px 12px', fontSize: '12px', cursor: 'pointer', border: 'none',
+                        background: formData.cycle === c ? '#60a5fa' : 'transparent',
+                        color: formData.cycle === c ? '#fff' : '#9aa4b2',
+                      }}>
+                      {c}{c === 'Yearly' ? ' · 10% off' : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+                {PACKAGES.map(p => (
+                  <PackageCard key={p.modules} pkg={p} plan={planFor(p.edition)} cycle={formData.cycle}
+                    selected={formData.modules === p.modules}
+                    onSelect={() => set('modules', p.modules)} />
+                ))}
+              </div>
+
+              {/* Full tier pricing is on the Subscription page after sign-in. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.15)', borderRadius: '10px', padding: '10px 12px', marginBottom: '16px' }}>
+                <span style={{ fontSize: '14px' }}>💡</span>
+                <span style={{ fontSize: '11.5px', color: '#9aa4b2', lineHeight: 1.5, fontFamily: '"Segoe UI", sans-serif' }}>
+                  Start free for 14 days — no payment now. Full tier pricing (Starter / Growth / Clinic) and pay-per-study are on the Subscription page after you sign in.
+                </span>
+              </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button type="button" onClick={() => setStep(4)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>

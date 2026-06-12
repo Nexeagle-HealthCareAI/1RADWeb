@@ -35,10 +35,6 @@ const DicomViewerPage = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showLeftToolbar, setShowLeftToolbar] = useState(true);
-  // Series rail width: 'full' → 'half' → 'hidden', cycled by the header button
-  // so the user can trade rail width for image width on laptop/tablet. The
-  // viewer's ResizeObserver re-fits the canvas to whatever width it gets.
-  const [seriesRailMode, setSeriesRailMode] = useState('full');
   const [isTablet, setIsTablet] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   
@@ -335,7 +331,7 @@ const DicomViewerPage = () => {
       }
 
       // Prevent default for our shortcuts
-      const shortcutKeys = ['w', 'z', 'p', 's', 'l', 'h', 'b', 'a', 'c', 'e', 'r', 'f', 'm', 'i', 'v', 'x', 'k', 'n', 't', 'g', 'y'];
+      const shortcutKeys = ['w', 'z', 'p', 's', 'l', 'h', 'b', 'a', 'c', 'e', 'r', 'f', 'm', 'i', 'v', 'x', 'k', 'n', 't', 'g', 'y', 'q', 'j', 'd'];
       if (shortcutKeys.includes(e.key.toLowerCase()) || e.key === 'Escape' || e.key === ' ' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
       }
@@ -390,6 +386,15 @@ const DicomViewerPage = () => {
         // Analysis Tools
         case 'u':
           setActiveTool('ProbeTool');
+          break;
+        case 'd':
+          setActiveTool('DragProbeTool');
+          break;
+        case 'q':
+          setActiveTool('SplineROITool');
+          break;
+        case 'j':
+          setActiveTool('LivewireContourTool');
           break;
         case 'n':
           setActiveTool('ArrowAnnotateTool');
@@ -472,7 +477,9 @@ const DicomViewerPage = () => {
         { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W' },
         { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z' },
         { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P' },
-        { id: 'StackScrollTool', icon: '📜', label: 'Stack Scroll', shortcut: 'S' }
+        { id: 'StackScrollTool', icon: '📜', label: 'Stack Scroll', shortcut: 'S' },
+        { id: 'PlanarRotateTool', icon: '🔄', label: 'Rotate Image', shortcut: '–' },
+        { id: 'WindowLevelRegionTool', icon: '🔲', label: 'W/L Region', shortcut: '–' }
       ]
     },
     {
@@ -484,7 +491,8 @@ const DicomViewerPage = () => {
         { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H' },
         { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B' },
         { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A' },
-        { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', shortcut: 'C' }
+        { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', shortcut: 'C' },
+        { id: 'UltrasoundDirectionalTool', icon: '🩺', label: 'US Directional', shortcut: '–' }
       ]
     },
     {
@@ -496,7 +504,10 @@ const DicomViewerPage = () => {
         { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R' },
         { id: 'CircleROITool', icon: '🔵', label: 'Circle ROI', shortcut: 'O' },
         { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI', shortcut: 'F' },
-        { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U' }
+        { id: 'SplineROITool', icon: '➰', label: 'Spline ROI', shortcut: 'Q' },
+        { id: 'LivewireContourTool', icon: '🧲', label: 'Smart Contour', shortcut: 'J' },
+        { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U' },
+        { id: 'DragProbeTool', icon: '🖱️', label: 'Drag Probe', shortcut: 'D' }
       ]
     },
     {
@@ -505,6 +516,8 @@ const DicomViewerPage = () => {
       color: '#8b5cf6',
       tools: [
         { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N' },
+        { id: 'LabelTool', icon: '🏷️', label: 'Text Label', shortcut: '–' },
+        { id: 'EraserTool', icon: '🧽', label: 'Eraser', shortcut: '–' },
         { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M' }
       ]
     }
@@ -1004,13 +1017,14 @@ const DicomViewerPage = () => {
       overflow: 'hidden'
     }}>
       {/* Left Series List Panel (always show if series data exists) */}
-      {(hasMultipleSeries || allSeries?.length > 0) && (isMobile || seriesRailMode !== 'hidden') && (
+      {(hasMultipleSeries || allSeries?.length > 0) && (
         <div style={{
-          // Tablet docked rail is already narrower (140px); 'half' mode halves
-          // whichever base applies so the image viewport gets the maximum area.
-          width: isMobile ? '100%' : (seriesRailMode === 'half' ? (isTablet ? '80px' : '150px') : (isTablet ? '140px' : '280px')),
-          minWidth: isMobile ? 'auto' : (seriesRailMode === 'half' ? (isTablet ? '80px' : '150px') : (isTablet ? '140px' : '280px')),
-          maxWidth: isMobile ? '100%' : (seriesRailMode === 'half' ? (isTablet ? '80px' : '150px') : (isTablet ? '140px' : '280px')),
+          // Fixed half-width rail (the toggle was removed): always the compact
+          // 80px (tablet) / 150px (desktop) so the image viewport keeps the
+          // maximum area. Full width on mobile where it docks horizontally.
+          width: isMobile ? '100%' : (isTablet ? '80px' : '150px'),
+          minWidth: isMobile ? 'auto' : (isTablet ? '80px' : '150px'),
+          maxWidth: isMobile ? '100%' : (isTablet ? '80px' : '150px'),
           height: (isMobile) ? 'auto' : '100%',
           // Mobile panel was 22vh (~154 px on a 700 px phone) but each tile
           // needed ~190 px (150 thumbnail + 40 text), so tiles clipped at
@@ -1352,28 +1366,6 @@ const DicomViewerPage = () => {
               </button>
             )}
 
-            {/* Series rail toggle — desktop/tablet, only when there are series.
-                Hiding the rail hands the freed width to the viewport. */}
-            {!isMobile && (hasMultipleSeries || allSeries?.length > 0) && (
-              <button
-                onClick={() => setSeriesRailMode((m) => (m === 'full' ? 'half' : m === 'half' ? 'hidden' : 'full'))}
-                title="Series panel width — tap to cycle: full → half → hidden"
-                style={{
-                  background: seriesRailMode !== 'hidden' ? '#10b981' : 'rgba(255,255,255,0.1)',
-                  border: '1px solid ' + (seriesRailMode !== 'hidden' ? '#10b981' : 'rgba(255,255,255,0.2)'),
-                  color: 'white',
-                  padding: isTablet ? '8px 14px' : '8px 12px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: isTablet ? '11px' : '12px',
-                  fontWeight: 700,
-                  touchAction: 'manipulation',
-                  WebkitTapHighlightColor: 'transparent'
-                }}
-              >
-                {seriesRailMode === 'full' ? '📊 SERIES' : seriesRailMode === 'half' ? '📊 SERIES ½' : '📊 SHOW'}
-              </button>
-            )}
           </div>
         </div>
 
@@ -1408,7 +1400,7 @@ const DicomViewerPage = () => {
                 <AdvancedDicomViewer
                   files={displayFiles}
                   seriesName={displayName}
-                  autoMpr={layoutMode !== '2x2'}
+                  autoMpr={false}
                   compact={layoutMode === '2x2'}
                   placeholderUrl={displayThumbnail}
                   activeTool={activeTool}

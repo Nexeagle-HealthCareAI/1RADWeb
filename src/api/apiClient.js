@@ -126,7 +126,12 @@ apiClient.interceptors.response.use(
     const status   = error.response?.status;
     const url      = original.url || '';
     const code     = error.response?.data?.code;
-    const isAuthRoute = PUBLIC_AUTH_ROUTES.some(route => url.includes(route));
+    // Registration-stage routes count as auth routes here: a 401 on them must
+    // surface to the signup form (e.g. "verification expired — resend the
+    // code"), NEVER trigger a token refresh or forceLogout — that wiped the
+    // in-flight initiation token and killed the registration.
+    const isAuthRoute = PUBLIC_AUTH_ROUTES.some(route => url.includes(route))
+      || REGISTRATION_ROUTES.some(route => url.includes(route));
 
     if (status === 401 && !isAuthRoute && !original._retry) {
       // A deliberately revoked session can't be refreshed — sign out cleanly.
