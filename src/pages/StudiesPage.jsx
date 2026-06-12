@@ -66,6 +66,16 @@ const avatarColor = (name) => {
   return AVATAR_HUES[h % AVATAR_HUES.length];
 };
 
+// Human-readable bytes → "642 KB" / "1.4 GB". 0 / null → "—".
+const fmtBytes = (b) => {
+  const n = Number(b || 0);
+  if (n <= 0) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
 export default function StudiesPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS.ALL);
@@ -80,7 +90,9 @@ export default function StudiesPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const PAGE_SIZE = 50;
+  const [storage, setStorage] = useState({ used: 0, quota: null }); // whole-centre usage
+  const [sort, setSort] = useState({ by: 'created', dir: 'desc' });
+  const PAGE_SIZE = 10;
 
   // Upload state
   const fileInputRef = useRef(null);
@@ -130,10 +142,13 @@ export default function StudiesPage() {
         if (dateFrom) params.from = dateFrom;
         if (dateTo) params.to = dateTo;
       }
+      params.sortBy = sort.by;
+      params.sortDir = sort.dir;
       const res = await apiClient.get('/Study/studies', { params });
       const data = res?.data?.data;
       setStudies(data?.items || []);
       setTotal(data?.total || 0);
+      setStorage({ used: data?.usedBytes ?? 0, quota: data?.quotaBytes ?? null });
       // Lightweight inbox badge count (1-row page; total is all we need).
       apiClient
         .get('/Study/studies', { params: { assigned: false, page: 1, pageSize: 1 } })
@@ -145,10 +160,14 @@ export default function StudiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, q, modality, page, dateMode, dateFrom, dateTo]);
+  }, [tab, q, modality, page, dateMode, dateFrom, dateTo, sort.by, sort.dir]);
 
   // Reset to page 1 whenever the tab or filters change.
-  useEffect(() => { setPage(1); }, [tab, q, modality, dateMode, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [tab, q, modality, dateMode, dateFrom, dateTo, sort.by, sort.dir]);
+
+  // Clicking a column header toggles asc/desc, or switches to that column
+  // (defaulting to descending — most-recent / largest first).
+  const toggleSort = (col) => setSort((s) => s.by === col ? { by: col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by: col, dir: 'desc' });
 
   useEffect(() => { fetchStudies(); }, [fetchStudies]);
 
@@ -159,7 +178,7 @@ export default function StudiesPage() {
 
     for (const file of files) {
       const key = `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      setUploads((u) => [...u, { key, name: file.name, pct: 0, stage: 'starting', error: null }]);
+      setUploads((u) => [...u, { key, name: file.name, size: file.size, pct: 0, stage: 'starting', error: null }]);
       const onProgress = (p) =>
         setUploads((u) => u.map((x) => (x.key === key ? { ...x, pct: p.pct ?? x.pct, stage: p.stage } : x)));
       try {
@@ -269,6 +288,16 @@ export default function StudiesPage() {
       if (navigator.share) await navigator.share({ title: 'Radiology study · NexEagle 1Rad', text: msg, url: shareLink });
       else { await navigator.clipboard.writeText(msg); showToast('ok', 'Share message copied.'); }
     } catch { /* user cancelled */ }
+  };
+
+  const reextract = async (s) => {
+    try {
+      await apiClient.post(`/Study/studies/${s.imagingStudyId}/reextract`);
+      showToast('ok', 'Re-processing started — this will refresh shortly.');
+      fetchStudies();
+    } catch (e) {
+      showToast('err', e?.response?.data?.error || e.message || 'Could not retry processing.');
+    }
   };
 
   const exportStudy = async (s) => {
@@ -487,7 +516,7 @@ export default function StudiesPage() {
           {uploads.map((u) => (
             <div key={u.key} className="st-upload-row">
               <div className="st-upload-top">
-                <span className="st-upload-name">{u.name}</span>
+                <span className="st-upload-name">{u.name} <span style={{ color: '#94a3b8', fontWeight: 500 }}>· {fmtBytes(u.size)}</span></span>
                 <span className={`st-upload-state${u.error ? ' err' : u.stage === 'done' ? ' ok' : ''}`}>
                   {u.error ? `Failed — ${u.error}` : u.stage === 'done' ? 'Uploaded ✓' : `${u.stage} · ${Math.round((u.pct || 0) * 100)}%`}
                 </span>
@@ -528,6 +557,15 @@ export default function StudiesPage() {
         )}
         <button className="st-refresh" onClick={fetchStudies}>Refresh</button>
         <span className="st-count">{total} {total === 1 ? 'study' : 'studies'}</span>
+        <span className="st-count" title="Total cloud storage used by this centre" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 800, color: '#0a1628' }}>💾 {fmtBytes(storage.used)}</span>
+          {storage.quota ? <span style={{ color: '#94a3b8' }}>/ {fmtBytes(storage.quota)}</span> : <span style={{ color: '#94a3b8' }}>used</span>}
+          {storage.quota ? (
+            <span style={{ width: 60, height: 5, borderRadius: 99, background: '#eef2f7', overflow: 'hidden', display: 'inline-block' }}>
+              <span style={{ display: 'block', height: '100%', borderRadius: 99, width: `${Math.min(100, Math.round((storage.used / storage.quota) * 100))}%`, background: (storage.used / storage.quota) > 0.9 ? '#ef4444' : '#1d4ed8' }} />
+            </span>
+          ) : null}
+        </span>
       </div>
 
       {error && (
@@ -542,8 +580,22 @@ export default function StudiesPage() {
           <table className="st-table">
             <thead>
               <tr>
-                <th>Patient</th><th>Modality</th><th>Study date</th><th>Accession</th>
-                <th>Status</th><th>Link</th><th style={{ textAlign: 'right' }}>Actions</th>
+                {[
+                  { label: 'Patient', col: 'patient' },
+                  { label: 'Modality', col: 'modality' },
+                  { label: 'Study date', col: 'studydate' },
+                  { label: 'Accession', col: 'accession' },
+                  { label: 'Size', col: 'size' },
+                  { label: 'Status', col: 'status' },
+                ].map((h) => (
+                  <th key={h.col} onClick={() => toggleSort(h.col)} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }} title={`Sort by ${h.label}`}>
+                    {h.label}
+                    <span style={{ marginLeft: 4, color: sort.by === h.col ? '#1d4ed8' : '#cbd5e1', fontSize: 9 }}>
+                      {sort.by === h.col ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}
+                    </span>
+                  </th>
+                ))}
+                <th>Link</th><th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -558,6 +610,7 @@ export default function StudiesPage() {
                   <td><div className="st-skel" style={{ width: 40 }} /></td>
                   <td><div className="st-skel" style={{ width: 80 }} /></td>
                   <td><div className="st-skel" style={{ width: 90 }} /></td>
+                  <td><div className="st-skel" style={{ width: 56 }} /></td>
                   <td><div className="st-skel" style={{ width: 64 }} /></td>
                   <td><div className="st-skel" style={{ width: 70 }} /></td>
                   <td><div className="st-skel" style={{ width: 150, marginLeft: 'auto' }} /></td>
@@ -566,7 +619,7 @@ export default function StudiesPage() {
 
               {!loading && studies.length === 0 && (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="st-empty">
                       <div className="st-empty-icon">{tab === TABS.INBOX ? <Icons.Inbox /> : <Icons.Scan />}</div>
                       {tab === TABS.INBOX ? (
@@ -599,11 +652,22 @@ export default function StudiesPage() {
                   <td>{s.modality ? <span className="st-mod">{s.modality}</span> : <span className="st-sub">—</span>}</td>
                   <td>{fmtDate(s.studyDate)}</td>
                   <td>{s.accessionNumber || <span className="st-sub">—</span>}</td>
-                  <td title={`Match: ${s.matchStatus || '—'}`}>{statusPill(s)}</td>
+                  <td title={`${s.assetCount || 0} file(s) · ${fmtBytes(s.sizeBytes)}`} style={{ fontWeight: 600, color: '#475569' }}>{fmtBytes(s.sizeBytes)}</td>
+                  <td title={`Match: ${s.matchStatus || '—'}`}>
+                    {statusPill(s)}
+                    {/* Failure reason inline so the user sees WHY it failed. */}
+                    {String(s.status).toLowerCase() === 'failed' && s.extractionError && (
+                      <div className="st-sub" style={{ color: '#dc2626', maxWidth: 200, marginTop: 4, lineHeight: 1.35 }} title={s.extractionError}>
+                        {s.extractionError.length > 90 ? s.extractionError.slice(0, 90) + '…' : s.extractionError}
+                      </div>
+                    )}
+                  </td>
                   <td>{linkPill(s)}</td>
                   <td>
                     <div className="st-actions">
-                      <button className="st-btn st-btn-primary" disabled={s.status !== 'Ready'} onClick={() => navigate(`/dicom-viewer?studyId=${s.imagingStudyId}`)}>View</button>
+                      {String(s.status).toLowerCase() === 'failed'
+                        ? <button className="st-btn st-btn-primary" title="Re-process this study" onClick={() => reextract(s)}>Retry</button>
+                        : <button className="st-btn st-btn-primary" disabled={s.status !== 'Ready'} onClick={() => navigate(`/dicom-viewer?studyId=${s.imagingStudyId}`)}>View</button>}
                       <button className="st-btn" onClick={() => navigate(`/reporting?studyId=${s.imagingStudyId}`)}>Report</button>
                       {isInbox(s) && <button className="st-btn" onClick={() => setAssignFor(s)}>Assign</button>}
                       <button className="st-btn" disabled={s.status !== 'Ready'} title="Create a 24-hour secret link" onClick={() => openShare(s)}>Share</button>
