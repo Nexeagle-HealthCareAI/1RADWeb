@@ -126,8 +126,10 @@ export default function StudiesPage() {
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
-  const fetchStudies = useCallback(async () => {
-    setLoading(true);
+  const fetchStudies = useCallback(async (opts = {}) => {
+    // `silent` skips the full-page loading flash — used by the processing poll
+    // so the table updates in place without blinking every few seconds.
+    if (!opts.silent) setLoading(true);
     setError(null);
     try {
       const params = { page, pageSize: PAGE_SIZE };
@@ -155,10 +157,12 @@ export default function StudiesPage() {
         .then((r) => setInboxCount(r?.data?.data?.total ?? null))
         .catch(() => {});
     } catch (e) {
-      setError(e?.response?.data?.error || e.message || 'Failed to load studies.');
-      setStudies([]);
+      if (!opts.silent) {
+        setError(e?.response?.data?.error || e.message || 'Failed to load studies.');
+        setStudies([]);
+      }
     } finally {
-      setLoading(false);
+      if (!opts.silent) setLoading(false);
     }
   }, [tab, q, modality, page, dateMode, dateFrom, dateTo, sort.by, sort.dir]);
 
@@ -170,6 +174,19 @@ export default function StudiesPage() {
   const toggleSort = (col) => setSort((s) => s.by === col ? { by: col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by: col, dir: 'desc' });
 
   useEffect(() => { fetchStudies(); }, [fetchStudies]);
+
+  // Auto-poll while ANY study on the page is still extracting, so the loader +
+  // % advance live without the user clicking Refresh. Stops once everything is
+  // Ready/Failed. Silent (no full-page spinner) — updates the rows in place.
+  const anyProcessing = studies.some((s) => {
+    const st = String(s.status || '').toLowerCase();
+    return st && st !== 'ready' && st !== 'failed';
+  });
+  useEffect(() => {
+    if (!anyProcessing) return;
+    const t = setInterval(() => fetchStudies({ silent: true }), 4000);
+    return () => clearInterval(t);
+  }, [anyProcessing, fetchStudies]);
 
   // ── Upload ────────────────────────────────────────────────────────────────
   const handleFiles = useCallback(async (fileList) => {
@@ -348,7 +365,27 @@ export default function StudiesPage() {
     const st = String(s.status || '').toLowerCase();
     if (st === 'ready') return <span className="st-pill st-pill-green"><Icons.Check /> Ready</span>;
     if (st === 'failed') return <span className="st-pill st-pill-red">Failed</span>;
-    return <span className="st-pill st-pill-blue st-pulse">{s.status || 'Processing'}</span>;
+
+    // Processing — show a live loader + % + slice count while extraction runs.
+    const total = Number(s.progressTotal) || 0;
+    const processed = Number(s.progressProcessed) || 0;
+    const pct = total > 0 ? Math.max(0, Math.min(100, Number(s.progressPercent) || Math.round((100 * processed) / total))) : null;
+    const phase = s.progressPhase || s.status || 'Processing';
+    return (
+      <span className="st-pill st-pill-blue st-pulse" style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3, minWidth: 96 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          {pct != null ? `${phase} · ${pct}%` : phase}
+        </span>
+        {pct != null && (
+          <>
+            <span style={{ width: '100%', height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.25)', overflow: 'hidden', display: 'block' }}>
+              <span style={{ display: 'block', height: '100%', width: `${Math.max(3, pct)}%`, background: '#fff', borderRadius: 999, transition: 'width 0.4s ease' }} />
+            </span>
+            <span style={{ fontSize: 8, opacity: 0.85 }}>{processed} / {total} slices</span>
+          </>
+        )}
+      </span>
+    );
   };
 
   const linkPill = (s) => {
