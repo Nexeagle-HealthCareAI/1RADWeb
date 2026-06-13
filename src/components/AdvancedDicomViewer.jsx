@@ -2246,25 +2246,43 @@ const AdvancedDicomViewer = ({
                const canvas = viewport.getCanvas();
                 console.log(`[DICOM] Viewport type: ${viewport.type}, Canvas: ${canvas.width}x${canvas.height}`);
                 
-                // Store event handlers for cleanup. The slice index is updated
-                // via rAF so a 60-tick/sec wheel scroll causes at most 60 React
-                // commits/sec instead of one per cornerstone event (cornerstone
-                // can fire 300+/sec on a fast trackpad). This is the single
-                // biggest contributor to scroll lag when all slices are cached.
-                let lastIndexAnimFrame = 0;
+                // Store event handlers for cleanup. The slice index is committed
+                // to React on a rAF + a TIME throttle, decoupled from Cornerstone's
+                // canvas scroll (which keeps rendering every slice at full native
+                // rate on the GPU). Cornerstone can fire STACK_NEW_IMAGE 300+/sec on
+                // a fast trackpad; each React commit re-renders this large component
+                // and competes with Cornerstone's own canvas render for the main
+                // thread — the codebase already found this is "the single biggest
+                // contributor to scroll lag when all slices are cached". The rAF
+                // capped it to ~60/sec; the added time gate caps it to ~20/sec,
+                // which is still a live-looking counter/preview while freeing the
+                // main thread for smoother canvas scrolling. A trailing reschedule
+                // guarantees the FINAL slice always commits, so the counter lands
+                // exactly when scrolling stops.
+                const COMMIT_MIN_INTERVAL_MS = 50; // ~20 React commits/sec max
+                let scrollIdxRaf = 0;
                 let pendingIndex = -1;
+                let lastIdxCommit = 0;
+                const pumpIndex = () => {
+                  scrollIdxRaf = 0;
+                  if (!isMounted || pendingIndex < 0) return;
+                  const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                  if (now - lastIdxCommit < COMMIT_MIN_INTERVAL_MS) {
+                    // Too soon since the last commit — reschedule so the latest
+                    // pending index still lands once the interval elapses (this is
+                    // also what flushes the final slice when scrolling stops).
+                    scrollIdxRaf = requestAnimationFrame(pumpIndex);
+                    return;
+                  }
+                  const idx = pendingIndex;
+                  pendingIndex = -1;
+                  lastIdxCommit = now;
+                  setCurrentImageIndex(idx);
+                  if (onSliceChange) onSliceChange(idx, files.length);
+                };
                 const stackNewImageHandler = (evt) => {
-                   const index = evt.detail.imageIdIndex;
-                   pendingIndex = index;
-                   if (lastIndexAnimFrame) return;
-                   lastIndexAnimFrame = requestAnimationFrame(() => {
-                     lastIndexAnimFrame = 0;
-                     if (pendingIndex < 0) return;
-                     const idx = pendingIndex;
-                     pendingIndex = -1;
-                     setCurrentImageIndex(idx);
-                     if (onSliceChange) onSliceChange(idx, files.length);
-                   });
+                   pendingIndex = evt.detail.imageIdIndex;
+                   if (!scrollIdxRaf) scrollIdxRaf = requestAnimationFrame(pumpIndex);
                 };
 
                 // Add listener for stack scroll index changes
