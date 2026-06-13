@@ -710,6 +710,17 @@ async function initCornerstone() {
   console.log("[DICOM] Cornerstone3D Core & Loader Fully Initialized");
 }
 
+// Public warm-up hook. The codec/WASM init (csInit + loader.init + 17-tool
+// registration) is the single biggest one-time cold-start cost (~300–800 ms the
+// first time a viewer opens in a session). Calling this from the *page* the
+// moment it mounts lets that init compile IN PARALLEL with the manifest fetch,
+// so by the time the engine effect runs `await initCornerstone()` returns
+// instantly. Idempotent + swallows errors (the engine effect awaits it for real
+// and surfaces any genuine failure there). Safe to call repeatedly.
+export function warmupCornerstone() {
+  return initCornerstone().catch(() => {});
+}
+
 const AdvancedDicomViewer = ({
   files,
   // Backend-rendered JPEG thumbnail (256px, ~30 KB) for the active series.

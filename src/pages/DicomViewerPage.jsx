@@ -1,8 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import AdvancedDicomViewer, { warmupCornerstone } from '../components/AdvancedDicomViewer';
 import apiClient from '../api/apiClient';
 import { setManifestSliceMetadata } from '../utils/manifestMetadata';
+
+// Build the lightweight metadata object the viewer needs to flip `isReady`
+// WITHOUT fetching + parsing slice 0. Every field here already rides in the
+// manifest's per-slice JSON, so handing this to the viewer as `preParsedMetadata`
+// lets it skip a whole redundant ~131 KB slice fetch + DICOM parse that today
+// sits ON the cold-start critical path. Returns null when the manifest didn't
+// carry per-slice metadata (older studies) → the viewer falls back to its own
+// fetch + parse path, so this is a pure progressive enhancement.
+function buildPreParsedMetadata(s) {
+  let m = s?.slices?.[0]?.metadata;
+  if (!m) return null;
+  if (typeof m === 'string') { try { m = JSON.parse(m); } catch { return null; } }
+  if (!m || typeof m !== 'object') return null;
+  const first = (v) => (Array.isArray(v) ? v[0] : v);
+  const joinSp = (v) => (Array.isArray(v) ? v.join('\\') : v);
+  return {
+    patientName: s.patientName || undefined,
+    patientId: s.patientId || undefined,
+    studyDate: m.studyDate || undefined,
+    modality: s.modality || m.modality,
+    seriesDescription: s.seriesDescription || s.name,
+    instances: (s.slices || []).length,
+    rows: m.rows,
+    columns: m.columns,
+    pixelSpacing: joinSp(m.pixelSpacing),
+    sliceThickness: m.sliceThickness,
+    windowCenter: first(m.windowCenter),
+    windowWidth: first(m.windowWidth),
+    rescaleIntercept: m.rescaleIntercept,
+    rescaleSlope: m.rescaleSlope,
+  };
+}
 
 const DicomViewerPage = () => {
   const navigate = useNavigate();
@@ -46,6 +78,15 @@ const DicomViewerPage = () => {
   const stateAllSeries = location.state?.allSeries;
   const stateInitialSeriesIndex = location.state?.activeSeriesIndex;
   const stateInitialLayoutMode = location.state?.layoutMode;
+
+  // Warm the Cornerstone codec/WASM the INSTANT this page mounts — in parallel
+  // with the manifest fetch below. The codec init is the biggest one-time
+  // cold-start cost (~300–800 ms); doing it here overlaps it with the network
+  // wait so the viewer's engine effect can paint the first slice without first
+  // sitting through a serial WASM compile. Idempotent + best-effort.
+  useEffect(() => {
+    warmupCornerstone();
+  }, []);
 
   // Manifest-driven hydration (Option C). The backend extraction pipeline owns
   // ZIP → per-slice splitting; the viewer just fetches the manifest and hands
@@ -120,6 +161,9 @@ const DicomViewerPage = () => {
                 seriesUID: s.seriesUID,
                 files,
                 thumbnailUrl: s.thumbnailUrl,
+                // Metadata lifted straight from the manifest's first slice so the
+                // viewer can render without re-fetching slice 0 just to read it.
+                preParsedMetadata: buildPreParsedMetadata(s),
               });
             });
             continue;
@@ -174,6 +218,7 @@ const DicomViewerPage = () => {
             modality: s.modality,
             seriesUID: s.seriesUID,
             thumbnailUrl: s.thumbnailUrl,
+            preParsedMetadata: s.preParsedMetadata,
           }));
           setHydratedSeries(series);
           // Tell the user some assets are still extracting in the background
@@ -1414,7 +1459,12 @@ const DicomViewerPage = () => {
             const displayThumbnail = hasMultipleSeries
               ? allSeries[seriesIndex]?.thumbnailUrl
               : (hydratedSeries?.[0]?.thumbnailUrl ?? null);
-            
+            // Manifest-derived metadata for this series — lets the viewer flip
+            // ready WITHOUT a redundant slice-0 fetch on cold start.
+            const displayPreParsed = hasMultipleSeries
+              ? allSeries[seriesIndex]?.preParsedMetadata
+              : (hydratedSeries?.[0]?.preParsedMetadata ?? null);
+
             return (
               <div key={`viewport-${idx}`} style={{ position: 'relative', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
                 <AdvancedDicomViewer
@@ -1423,6 +1473,7 @@ const DicomViewerPage = () => {
                   autoMpr={false}
                   compact={layoutMode === '2x2'}
                   placeholderUrl={displayThumbnail}
+                  preParsedMetadata={displayPreParsed}
                   activeTool={activeTool}
                   isCine={cineEnabled}
                   isSynced={isSyncEnabled}
