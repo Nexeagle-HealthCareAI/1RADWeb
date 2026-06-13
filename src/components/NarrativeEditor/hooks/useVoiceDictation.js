@@ -31,6 +31,29 @@ const VOICE_COMMANDS = [
 ];
 
 /**
+ * Whole-phrase ACTION commands. Unlike the punctuation rules above (which
+ * substitute TEXT), these perform an EDITOR action — field navigation, undo,
+ * real block breaks — and are emitted via the `onCommand` callback instead of
+ * inserting text. Matched ONLY when the WHOLE finalised phrase is the command
+ * (radiologists pause around a command, so it finalises on its own); a command
+ * word buried mid-sentence is never swallowed and flows through as normal text.
+ */
+const ACTION_COMMANDS = [
+  [/^next field$/,                     'nextField'],
+  [/^(previous|prior) field$/,         'prevField'],
+  [/^(scratch|delete|undo) that$/,     'undo'],
+  [/^new paragraph$/,                  'newParagraph'],
+  [/^new line$/,                       'newLine'],
+];
+
+/** Returns the action-command name if the whole phrase IS a command, else null. */
+function matchActionCommand(text) {
+  const norm = (text || '').trim().toLowerCase().replace(/[.,;:!?\s]+$/, '').trim();
+  for (const [re, cmd] of ACTION_COMMANDS) if (re.test(norm)) return cmd;
+  return null;
+}
+
+/**
  * Tiny defensive fallback for when /data/speech_dictionary.json hasn't
  * loaded yet (cold offline boot, fetch failure). Once the data layer is
  * ready, applyCorrections() takes over and these become moot.
@@ -69,7 +92,7 @@ function postProcess(text) {
  *
  * When a phrase finalises, calls `onResult(text)` with post-processed text.
  */
-export function useVoiceDictation({ onResult, onInterim, lang = 'en-US' } = {}) {
+export function useVoiceDictation({ onResult, onInterim, onCommand, lang = 'en-US' } = {}) {
   const [active, setActive] = useState(false);
   const recogRef = useRef(null);
   const supported = isVoiceSupported();
@@ -80,6 +103,8 @@ export function useVoiceDictation({ onResult, onInterim, lang = 'en-US' } = {}) 
   useEffect(() => { onResultRef.current = onResult; }, [onResult]);
   const onInterimRef = useRef(onInterim);
   useEffect(() => { onInterimRef.current = onInterim; }, [onInterim]);
+  const onCommandRef = useRef(onCommand);
+  useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
 
   const stop = useCallback(() => {
     if (recogRef.current) {
@@ -128,7 +153,15 @@ export function useVoiceDictation({ onResult, onInterim, lang = 'en-US' } = {}) 
         else interimText += result[0].transcript;
       }
       if (finalText) {
-        onResultRef.current?.(postProcess(finalText));
+        // Whole-phrase action command (e.g. "next field", "scratch that") →
+        // perform an editor action instead of inserting text. Falls through to
+        // text insertion if no onCommand handler is wired (back-compat).
+        const cmd = matchActionCommand(finalText);
+        if (cmd && onCommandRef.current) {
+          onCommandRef.current(cmd);
+        } else {
+          onResultRef.current?.(postProcess(finalText));
+        }
       }
       // Always report the current interim (possibly empty when a phrase just
       // finalised) so the UI can show/clear the live "writing as you speak".

@@ -1338,20 +1338,19 @@ del[data-ci] {
    and these rules are dead code paths - no regression on Path A.
    ------------------------------------------------------------------------- */
 
+/* PAGEVIEW mode (Path B) — single A4-width paper column with the protocol
+   margins as padding; the decoration plugin draws the inter-page gaps. */
 .narrative-editor-content.flat-pagination {
   width: 794px;
+  /* Override the base flex/centering (which centres the A4 SHEETS on Path A);
+     in the flat schema the editor root IS the column and blocks flow top-down. */
+  display: block;
   margin-left: auto;
   margin-right: auto;
   background-color: #ffffff;
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.30),
     0 4px 10px rgba(0, 0, 0, 0.15);
-  /* Margins follow the protocol (--page-margin-*) just like Path A, so the
-     editor, the true-Word preview and the .docx export all agree. Page 1's top
-     padding also expands by the first-page banner height (set by the React
-     bannerHostRef effect) so typed content never sits under the banner; the
-     pagination plugin reads the same padding and subtracts it from page 1's
-     writable area so the soft boundary lands in the right place. */
   padding:
     calc(var(--page-margin-top, 96px) + var(--patient-banner-height, 0px))
     var(--page-margin-right, 96px)
@@ -1359,6 +1358,78 @@ del[data-ci] {
     var(--page-margin-left, 96px);
   box-sizing: border-box;
   min-height: 1123px;
+}
+
+/* CONTINUOUS mode (Option 2, DEFAULT) — a PREMIUM A4 PAGE. It renders as one
+   true-A4-width (794px @ 96dpi) document page with the prescription margins, a
+   layered floating-page shadow, and a full A4 sheet height — so it reads like a
+   real Word/Docs page (premium WYSIWYG). It just never SPLITS into multiple
+   sheets while typing (no PaginationDecoration) — that's the anti-jank win —
+   and the printed report is paginated to exact A4 pages off-screen. The patient
+   header sits on top at the SAME 794px width so the two align. */
+.narrative-editor-content.flat-continuous {
+  display: block;
+  width: 794px;           /* true A4 width @ 96dpi — matches the patient header */
+  margin: 0 auto;
+  background-color: #ffffff;
+  /* Premium layered floating-page shadow: hairline ring + soft near shadow +
+     deeper ambient lift. */
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.04),
+    0 2px 6px rgba(15, 23, 42, 0.08),
+    0 14px 34px rgba(15, 23, 42, 0.10);
+  border-radius: 3px;
+  /* LIGHT inset — keeps the A4 page LOOK while letting the radiologist start
+     typing near the top (no heavy margin hurdle). The real prescription margins
+     are applied only at OUTPUT (off-screen A4 measurement), so editing stays
+     frictionless and the printed report is still exact A4 for every user. */
+  padding: 40px 56px 96px;
+  box-sizing: border-box;
+  min-height: 1123px;     /* a full A4 sheet — grows continuously with content */
+}
+
+/* Continuous canvas — a calm, premium neutral so the white A4 page floats. */
+.word-canvas.canvas-continuous {
+  background: #e8ebf1;
+  padding: 36px 24px 120px;
+}
+
+/* Patient header in continuous mode — a normal block at the TOP of the page
+   flow (the default .word-page-patient-banner CSS absolutely-positions it over
+   an A4 sheet, which lands it mid-document here). Matched to the A4 page width
+   (794px) so the header and the page align edge-to-edge. */
+.word-canvas.canvas-continuous .word-page-patient-banner {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  width: 794px;
+  max-width: 794px;
+  margin: 0 auto 14px;
+  box-sizing: border-box;
+}
+
+/* Placeholder hint for the flat schema. Cover BOTH TipTap placeholder classes
+   (`is-empty` on the empty paragraph, `is-editor-empty` on the first node when
+   the whole editor is empty) so the hint always renders — and pin it to the
+   TOP-LEFT of the first line (float:left + the parent forced left-aligned) so
+   "Start typing your radiology report…" can never drift to the middle. */
+.narrative-editor-content.flat-pagination > p.is-empty:first-child,
+.narrative-editor-content.flat-pagination > p.is-editor-empty:first-child,
+.narrative-editor-content.flat-continuous > p.is-empty:first-child,
+.narrative-editor-content.flat-continuous > p.is-editor-empty:first-child {
+  text-align: left;
+}
+.narrative-editor-content.flat-pagination > p.is-empty:first-child::before,
+.narrative-editor-content.flat-pagination > p.is-editor-empty:first-child::before,
+.narrative-editor-content.flat-continuous > p.is-empty:first-child::before,
+.narrative-editor-content.flat-continuous > p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9aa3af;
+  pointer-events: none;
+  height: 0;
+  font-style: italic;
 }
 
 /* Header / footer chrome containers emitted by PaginationDecoration. */

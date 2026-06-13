@@ -271,7 +271,13 @@ export function getPrintHTML(editor) {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   const children = Array.from(tmp.children);
-  // Sort indices DESCENDING so insertions don't shift later indices.
+  injectBreakMarkers(children, blockIndices);
+  return tmp.innerHTML;
+}
+
+// Insert auto data-page-break markers before each boundary child. Sorts the
+// indices DESCENDING so earlier insertions don't shift later positions.
+function injectBreakMarkers(children, blockIndices) {
   const sorted = [...blockIndices].sort((a, b) => b - a);
   for (const idx of sorted) {
     if (idx > 0 && idx < children.length) {
@@ -281,6 +287,33 @@ export function getPrintHTML(editor) {
       children[idx].parentNode.insertBefore(marker, children[idx]);
     }
   }
+}
+
+// Print HTML for CONTINUOUS mode (Option 2). The PaginationDecoration plugin
+// is NOT registered while editing in continuous mode (zero pagination work
+// during typing), so there are no cached blockIndices. This computes the page
+// boundaries LIVE from the editor's current block heights — reusing the SAME
+// measureBlocks + computeBoundaries the on-screen overlay uses in pageview —
+// and injects the data-page-break markers the print/PDF pipeline understands,
+// so continuous prints paginate identically. Manual PageBreakNode markers in
+// the HTML are preserved (they already serialize with data-page-break).
+export function getContinuousPrintHTML(editor, chrome = DEFAULT_CHROME) {
+  if (!editor) return '';
+  const html = editor.getHTML();
+  let blockIndices = [];
+  try {
+    const view = editor.view;
+    if (view) {
+      const blocks = measureBlocks(view);
+      const getMaxFor = (pageIndex) => getPageWritableHeight(view.dom, chrome, pageIndex === 0);
+      blockIndices = computeBoundaries(blocks, chrome, getMaxFor).blockIndices;
+    }
+  } catch { /* measurement failed → fall back to unpaginated flat HTML */ }
+  if (blockIndices.length === 0) return html;
+
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  injectBreakMarkers(Array.from(tmp.children), blockIndices);
   return tmp.innerHTML;
 }
 

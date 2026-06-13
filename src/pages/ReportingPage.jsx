@@ -115,7 +115,11 @@ const ReportingPage = () => {
   const isResizing = useRef(false);
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [activeMainTab, setActiveMainTab] = useState('REPORTING'); // 'DICOM', 'REPORTING', 'TIMELINE'
+  // Default tab. Opening from the study board's "View" passes ?view=dicom so the
+  // window lands on the DICOM viewer; otherwise start on Reporting.
+  const [activeMainTab, setActiveMainTab] = useState(
+    (searchParams.get('view') || '').toLowerCase() === 'dicom' ? 'DICOM' : 'REPORTING'
+  ); // 'DICOM', 'REPORTING', 'TIMELINE'
   // True only while the DICOM tab is visible — defers ZIP download until the user
   // actually needs the viewer, avoiding a 200-500 MB download on every page open.
   const dicomTabActiveRef = useRef(false);
@@ -151,6 +155,16 @@ const ReportingPage = () => {
   const [protocol, setProtocol] = useState(null);
 
   const [activeAppointment, setActiveAppointment] = useState(null);
+  // Editable patient header: when the user clicks "Edit" on the locked banner,
+  // the patient details are inserted as editable report content and the locked
+  // banner is replaced by a slim notice. Persisted per-report (localStorage) so
+  // a reload — where the in-content header is already saved in editorText —
+  // doesn't show the banner AND the header (a duplicate).
+  const [headerEditable, setHeaderEditable] = useState(false);
+  useEffect(() => {
+    try { setHeaderEditable(localStorage.getItem(`ne:header-editable:${appointmentId}`) === '1'); }
+    catch { setHeaderEditable(false); }
+  }, [appointmentId]);
 
   // Active service derived from the URL-/tab-picked id. Drives the
   // DICOM filter so switching services swaps the viewer's series
@@ -2190,6 +2204,44 @@ const ReportingPage = () => {
   // Single source of truth for the report editor — rendered in both the default
   // and the generated-report layouts (only the placeholder differs), so its
   // props never drift between the two call sites.
+  // Build a CLEAN, editable patient header from the same fields PatientInfoBlock
+  // shows (minus its QR/gradient chrome, which doesn't belong in editable text).
+  const buildPatientHeaderHtml = () => {
+    const a = activeAppointment || {};
+    const svc = activeServiceId ? (a.services || []).find(s => s.id === activeServiceId) : null;
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const name  = (a.patientName || '').toUpperCase() || '—';
+    const ptid  = a.patientIdentifier || a.ptid || a.id || '—';
+    const age   = a.patientAge || a.age || '—';
+    const sex   = a.patientGender || a.gender || '—';
+    const study = svc?.serviceName || a.service || a.modality || '—';
+    const refBy = a.referredBy || 'Self';
+    const date  = new Date().toLocaleDateString();
+    return (
+      `<p><strong>${esc(name)}</strong></p>` +
+      `<p>ID: ${esc(ptid)} &nbsp;·&nbsp; Age/Sex: ${esc(age)}/${esc(sex)} &nbsp;·&nbsp; ` +
+      `Study: ${esc(study)} &nbsp;·&nbsp; Ref: ${esc(refBy)} &nbsp;·&nbsp; Date: ${esc(date)}</p><hr>`
+    );
+  };
+
+  // Convert the locked banner → editable report content at the top of the doc.
+  const convertHeaderToContent = () => {
+    const ed = editorRef.current;
+    if (ed?.editor) {
+      try { ed.editor.chain().focus('start').insertContent(buildPatientHeaderHtml()).run(); } catch { /* editor not ready */ }
+    }
+    setHeaderEditable(true);
+    try { localStorage.setItem(`ne:header-editable:${appointmentId}`, '1'); } catch { /* storage blocked */ }
+  };
+
+  // Re-show the locked auto-filled banner. The in-content header (if untouched)
+  // is left for the user to delete — clean removal travels with report metadata
+  // (a follow-up); this keeps v1 simple + non-destructive.
+  const restoreLockedHeader = () => {
+    setHeaderEditable(false);
+    try { localStorage.removeItem(`ne:header-editable:${appointmentId}`); } catch { /* storage blocked */ }
+  };
+
   const renderNarrativeEditor = (placeholder) => (
     <NarrativeEditor
       ref={editorRef}
@@ -2209,14 +2261,37 @@ const ReportingPage = () => {
         left:   protocol.leftMargin   ?? 20,
       } : undefined}
       bodyFontPt={protocol?.fontSize || 12}
-      firstPageBanner={activeAppointment ? (
-        <PatientInfoBlock
-          appointmentId={appointmentId}
-          appointmentServiceId={activeServiceId || null}
-          fullAppointment={activeAppointment}
-          savedMetadata={null}
-        />
-      ) : null}
+      firstPageBanner={
+        !activeAppointment ? null
+        : headerEditable ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            padding: '6px 12px', fontSize: 11, color: '#475569', background: '#f1f5f9',
+            border: '1px dashed #cbd5e1', borderRadius: 8, marginBottom: 8 }}>
+            <span>✎ Patient header is editable in the report below.</span>
+            <button type="button" onClick={restoreLockedHeader}
+              title="Show the locked auto-filled patient banner again"
+              style={{ fontSize: 11, fontWeight: 700, color: '#0f52ba', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              🔒 Use locked header
+            </button>
+          </div>
+        ) : (
+          <div style={{ position: 'relative' }}>
+            <PatientInfoBlock
+              appointmentId={appointmentId}
+              appointmentServiceId={activeServiceId || null}
+              fullAppointment={activeAppointment}
+              savedMetadata={null}
+            />
+            <button type="button" onClick={convertHeaderToContent}
+              title="Edit the patient header as part of the report text"
+              style={{ position: 'absolute', top: 6, right: 8, zIndex: 6, fontSize: 10, fontWeight: 700,
+                color: '#0f52ba', background: 'rgba(255,255,255,0.92)', border: '1px solid #cbd5e1',
+                borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>
+              ✎ Edit
+            </button>
+          </div>
+        )
+      }
     />
   );
 
@@ -3306,7 +3381,9 @@ const ReportingPage = () => {
             {[
               { id: 'DICOM',     label: 'DICOM Viewer',           icon: '🔍' },
               { id: 'REPORTING', label: 'Reporting',              icon: '📝' },
-              { id: 'VOICE',     label: 'AI Voice Reporting (Beta)', icon: '🎙️' },
+              // 'AI Voice Reporting (Beta)' tab hidden for now — the
+              // VoiceReportingPanel + its VOICE tab content remain in the file,
+              // so re-enabling is just restoring this entry.
               { id: 'TIMELINE',  label: 'Patient Timeline',       icon: '🕒' }
             ].map(tab => (
               <button

@@ -388,6 +388,14 @@ export default function StudiesPage() {
     );
   };
 
+  // Report state on the board: Finalized (signed) / Draft (in progress) / none.
+  const reportPill = (s) => {
+    const rs = String(s.reportStatus || 'None');
+    if (rs === 'Finalized') return <span className="st-pill st-pill-green"><Icons.Check /> Finalized</span>;
+    if (rs === 'Draft') return <span className="st-pill st-pill-amber">Draft</span>;
+    return <span className="st-sub">No report</span>;
+  };
+
   const linkPill = (s) => {
     if (isInbox(s)) return <span className="st-pill st-pill-amber">Unassigned</span>;
     const auto = s.matchStatus === 'AutoMatched';
@@ -525,8 +533,8 @@ export default function StudiesPage() {
       {/* Header */}
       <div className="st-header">
         <div>
-          <h1>Studies</h1>
-          <p>Cloud PACS worklist — upload, browse, assign, view &amp; report.</p>
+          <h1>Cloud PACS</h1>
+          <p>Worklist — upload, browse, assign, view &amp; report studies.</p>
         </div>
       </div>
 
@@ -692,6 +700,8 @@ export default function StudiesPage() {
                   <td title={`${s.assetCount || 0} file(s) · ${fmtBytes(s.sizeBytes)}`} style={{ fontWeight: 600, color: '#475569' }}>{fmtBytes(s.sizeBytes)}</td>
                   <td title={`Match: ${s.matchStatus || '—'}`}>
                     {statusPill(s)}
+                    {/* Report state (Drafted / Finalized) under the extraction status. */}
+                    <div style={{ marginTop: 4 }}>{reportPill(s)}</div>
                     {/* Failure reason inline so the user sees WHY it failed. */}
                     {String(s.status).toLowerCase() === 'failed' && s.extractionError && (
                       <div className="st-sub" style={{ color: '#dc2626', maxWidth: 200, marginTop: 4, lineHeight: 1.35 }} title={s.extractionError}>
@@ -704,8 +714,7 @@ export default function StudiesPage() {
                     <div className="st-actions">
                       {String(s.status).toLowerCase() === 'failed'
                         ? <button className="st-btn st-btn-primary" title="Re-process this study" onClick={() => reextract(s)}>Retry</button>
-                        : <button className="st-btn st-btn-primary" disabled={s.status !== 'Ready'} onClick={() => navigate(`/dicom-viewer?studyId=${s.imagingStudyId}`)}>View</button>}
-                      <button className="st-btn" onClick={() => navigate(`/reporting?studyId=${s.imagingStudyId}`)}>Report</button>
+                        : <button className="st-btn st-btn-primary" disabled={s.status !== 'Ready'} title="Open the viewer + report in a new window (starts on the DICOM viewer)" onClick={() => window.open(`/reporting?studyId=${s.imagingStudyId}&view=dicom`, '_blank', 'noopener')}>View</button>}
                       {isInbox(s) && <button className="st-btn" onClick={() => setAssignFor(s)}>Assign</button>}
                       <button className="st-btn" disabled={s.status !== 'Ready'} title="Create a 24-hour secret link" onClick={() => openShare(s)}>Share</button>
                       <button className="st-btn" onClick={() => exportStudy(s)}>Export</button>

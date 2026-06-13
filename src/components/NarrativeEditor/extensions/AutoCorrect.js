@@ -113,6 +113,28 @@ export const AutoCorrect = Extension.create({
               }
             }
 
+            // ── Measurement auto-format (house style) ─────────────────────
+            // "2.3x1.8cm" / "12mm" / "2.3 x 1.8 x 1.5 cm" → "2.3 × 1.8 cm" etc.
+            // U+00D7 × separator with single spaces + one space before the unit,
+            // matching MeasurementDialog's output — so typed/dictated measurements
+            // come out in house style WITHOUT opening the dialog. Fires only when
+            // an mm/cm unit closes the token (and the leading number isn't glued
+            // to letters), so ordinary "2 x 3" prose is never touched.
+            const measMatch = /(?<![A-Za-z])(\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?){0,2})\s*(mm|cm)$/i.exec(textBefore);
+            if (measMatch) {
+              const dims = measMatch[1].split(/\s*[x×]\s*/).map((s) => s.trim()).filter(Boolean);
+              const unit = measMatch[2].toLowerCase();
+              const formatted = `${dims.join(' × ')} ${unit}`;
+              if (formatted !== measMatch[0]) {
+                const from = $from.pos - measMatch[0].length;
+                const to   = $from.pos;
+                view.dispatch(
+                  state.tr.replaceWith(from, to, state.schema.text(formatted)).setMeta('addToHistory', true)
+                );
+              }
+              return false; // trigger key (space/Enter) inserts normally after
+            }
+
             // ── Medical / English typo correction ────────────────────────
             // Pull the LAST word in textBefore (alphabetic + apostrophe /
             // hyphen). If that word is in AUTOCORRECT_MAP, swap it in-place

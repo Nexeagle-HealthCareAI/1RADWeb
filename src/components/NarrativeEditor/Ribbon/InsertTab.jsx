@@ -69,6 +69,13 @@ export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFinding
     editor.chain().focus().insertStructuredField(type, label).run();
   };
 
+  // The Impression section drops in the heading PLUS an auto-numbered list (the
+  // way every report's impression is written); other sections are heading-only.
+  const insertSectionOrList = (s) =>
+    s.key === 'impression'
+      ? editor.chain().focus().insertImpressionList().run()
+      : insertSection(editor, s.title);
+
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
       {/* ── Templates ── */}
@@ -91,7 +98,7 @@ export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFinding
               <Btn
                 key={s.key}
                 title={`Insert "${s.title}" section`}
-                onClick={() => insertSection(editor, s.title)}
+                onClick={() => insertSectionOrList(s)}
                 style={{ fontSize: '10px', padding: '0 5px', whiteSpace: 'nowrap', height: '22px' }}
               >
                 {s.icon} {s.label}
@@ -103,7 +110,7 @@ export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFinding
               <Btn
                 key={s.key}
                 title={`Insert "${s.title}" section`}
-                onClick={() => insertSection(editor, s.title)}
+                onClick={() => insertSectionOrList(s)}
                 style={{ fontSize: '10px', padding: '0 5px', whiteSpace: 'nowrap', height: '22px' }}
               >
                 {s.icon} {s.label}

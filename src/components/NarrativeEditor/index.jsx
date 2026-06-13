@@ -37,7 +37,7 @@ import SelectionToolbar from './SelectionToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
 import { FlatDocument, PageBreakNode } from './extensions/FlatDocument';
-import { PaginationDecoration, getPrintHTML as getPaginatedPrintHTML } from './extensions/PaginationDecoration';
+import { PaginationDecoration, getPrintHTML as getPaginatedPrintHTML, getContinuousPrintHTML } from './extensions/PaginationDecoration';
 import { LineHeight, ParagraphIndent, PageBreak, ParagraphSpacing } from './extensions/Spacing';
 import { FormatPainter } from './extensions/FormatPainter';
 import { ParagraphFraming } from './extensions/ParagraphFraming';
@@ -84,6 +84,7 @@ import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import { exportToDocx } from './utils/exportDocx';
 import PrintPreviewModal from './PrintPreviewModal';
+import { countFlatPages } from './utils/printReport';
 import { runQualityCheck } from './utils/reportQuality';
 import { loadSnippets, saveSnippets } from './data/snippetStorage';
 import './NarrativeEditor.css';
@@ -92,16 +93,16 @@ import './NarrativeEditor.css';
  * Wrap raw HTML content in a <div class="word-page"> if it isn't already.
  * Ensures the editor's schema (doc -> page+) accepts legacy flat-HTML reports.
  *
- * Path B note: when USE_DECORATION_PAGINATION is on, the schema is
- * doc → block+ — wrapping in .word-page would create an unparseable node.
- * We strip the wrappers if they're there (legacy content from a Path A
+ * Flat-schema note: when USE_FLAT_SCHEMA is on (pageview OR continuous), the
+ * schema is doc → block+ — wrapping in .word-page would create an unparseable
+ * node. We strip the wrappers if they're there (legacy content from a Path A
  * save) and return the inner content, letting the standard block schema
- * handle it. Round-tripping back to Path A would need the wrappers; Path B
- * is a one-way upgrade once flipped on.
+ * handle it. Round-tripping back to Path A would need the wrappers; the flat
+ * schema is a one-way upgrade once flipped on.
  */
 function ensurePagedHTML(html) {
   const trimmed = (html || '').trim();
-  if (USE_DECORATION_PAGINATION) {
+  if (USE_FLAT_SCHEMA) {
     if (!trimmed) return '<p></p>';
     // Strip outer .word-page / .word-page-inner wrappers (legacy Path A
     // content). Use a permissive regex — we just want their CHILDREN to
@@ -284,6 +285,31 @@ const Typography = Extension.create({
   },
 });
 
+// ── Report structure: one-key IMPRESSION list ───────────────────────────────
+// Every radiology report ends with a numbered impression. This drops in a bold
+// "IMPRESSION:" label + an auto-numbered list with the cursor in the first item,
+// so the radiologist types point 1, Enter → point 2 (auto-numbered), etc. The
+// ordered list auto-renumbers on add/remove/reorder — better than hand-typed
+// "1." "2.". Bound to Ctrl+Alt+I and the Insert-tab button.
+const ReportStructure = Extension.create({
+  name: 'reportStructure',
+  addCommands() {
+    return {
+      insertImpressionList: () => ({ chain }) =>
+        chain()
+          .focus()
+          // H2 "Impression" matches the other Insert-tab report sections; the
+          // trailing empty paragraph becomes the first numbered list item.
+          .insertContent([
+            { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Impression' }] },
+            { type: 'paragraph' },
+          ])
+          .toggleOrderedList()
+          .run(),
+    };
+  },
+});
+
 // ── Helpers used by the shortcut handler ─────────────────────────────────────
 
 function cycleFontSize(editor, delta) {
@@ -351,17 +377,23 @@ function toggleCase(editor) {
 function moveBlockVertically(editor, direction) {
   const { state } = editor;
   const { $from } = state.selection;
-  if ($from.depth < 2) return;
-  const pageNode = $from.node(1);
-  const pagePos  = $from.before(1);
-  const blockIdx = $from.index(1);
-  const sibIdx   = direction === 'up' ? blockIdx - 1 : blockIdx + 1;
-  if (sibIdx < 0 || sibIdx >= pageNode.childCount) return;
-  const lowerIdx = Math.min(blockIdx, sibIdx);
-  let lowerPos = pagePos + 1;
-  for (let i = 0; i < lowerIdx; i++) lowerPos += pageNode.child(i).nodeSize;
-  const lowerBlock = pageNode.child(lowerIdx);
-  const upperBlock = pageNode.child(lowerIdx + 1);
+  // The container whose top-level blocks we reorder: the PAGE node on Path A, or
+  // the DOC itself on the flat schema (continuous/pageview have no page node).
+  // Previously this hardcoded depth 1 (the page) and bailed on $from.depth < 2,
+  // so it silently did nothing in the flat schema where blocks sit at depth 1.
+  const containerDepth = state.schema.nodes.page ? 1 : 0;
+  if ($from.depth <= containerDepth) return; // cursor not inside a top-level block
+  const container = $from.node(containerDepth);
+  const blockIdx  = $from.index(containerDepth);
+  const sibIdx    = direction === 'up' ? blockIdx - 1 : blockIdx + 1;
+  if (sibIdx < 0 || sibIdx >= container.childCount) return;
+  const lowerIdx  = Math.min(blockIdx, sibIdx);
+  // First position inside the container's content: 0 for the doc, else just
+  // after the container node's opening token.
+  let lowerPos = containerDepth === 0 ? 0 : $from.before(containerDepth) + 1;
+  for (let i = 0; i < lowerIdx; i++) lowerPos += container.child(i).nodeSize;
+  const lowerBlock = container.child(lowerIdx);
+  const upperBlock = container.child(lowerIdx + 1);
   const rangeEnd   = lowerPos + lowerBlock.nodeSize + upperBlock.nodeSize;
   const tr = state.tr.replaceWith(lowerPos, rangeEnd, [upperBlock, lowerBlock]);
   tr.scrollIntoView();
@@ -390,11 +422,42 @@ const ZOOM_LEVELS = [50, 75, 90, 100, 110, 125, 150, 200];
 // height, spacing, margins) — now unified in Phase 1 — not a model problem, so
 // the flowing-sheet model is the right one. The true-Word preview (docx-preview)
 // remains the authoritative paginated output.
-// Opt-in escape hatch to the continuous decoration model (Path B): set
-// localStorage 'narrative-editor:decoration-pagination' = '1'.
-const USE_DECORATION_PAGINATION =
-  typeof window !== 'undefined' &&
-  window.localStorage?.getItem('narrative-editor:decoration-pagination') === '1';
+// ── Editing model (3-way) ───────────────────────────────────────────────────
+//   'paged'      — Path A: distinct A4 page SHEETS, content flows across them
+//                  by MUTATING the document (PageDocument + Pagination). Legacy
+//                  default. Source of the typing jank / undo flicker.
+//   'pageview'   — Path B: flat doc + DECORATION overlay draws the page gaps
+//                  (no document mutation). Keeps the sheet look, smoother.
+//   'continuous' — Option 2: flat doc rendered as ONE continuous A4-width paper
+//                  column. NO pagination work happens while editing at all —
+//                  pagination is computed only at print/preview time. The
+//                  smoothest typing surface (Word "pageless" / Google Docs
+//                  pageless). Page breaks are still insertable (Ctrl+Enter) and
+//                  honoured on print.
+//
+// Set via DevTools, then reload:
+//   localStorage.setItem('narrative-editor:mode', 'continuous')   // or 'pageview' / 'paged'
+//   localStorage.removeItem('narrative-editor:mode')              // back to default
+// Legacy flag 'narrative-editor:decoration-pagination'='1' still maps to 'pageview'.
+function resolveEditingMode() {
+  try {
+    const m = window.localStorage?.getItem('narrative-editor:mode');
+    if (m === 'continuous' || m === 'pageview' || m === 'paged') return m;
+    if (window.localStorage?.getItem('narrative-editor:decoration-pagination') === '1') return 'pageview';
+  } catch { /* SSR / blocked storage */ }
+  // DEFAULT = continuous (Option 2): pageless A4-width editing surface, A4
+  // pagination computed only at print/preview. Per-browser escape hatch:
+  // localStorage 'narrative-editor:mode' = 'paged' (legacy sheets) or 'pageview'.
+  // Global revert is this one line. Legacy paged reports load fine — their
+  // .word-page wrappers are stripped by ensurePagedHTML for the flat schema.
+  return 'continuous';
+}
+const EDITING_MODE = typeof window !== 'undefined' ? resolveEditingMode() : 'continuous';
+const USE_CONTINUOUS = EDITING_MODE === 'continuous';
+const USE_DECORATION_PAGINATION = EDITING_MODE === 'pageview';
+// Both non-legacy modes use the flat (doc → block+) schema; only the legacy
+// 'paged' mode uses the page-node schema.
+const USE_FLAT_SCHEMA = USE_CONTINUOUS || USE_DECORATION_PAGINATION;
 
 // ── Tab-through report fields ──────────────────────────────────────────────
 // Jump the selection between fill-in placeholders so a radiologist can fly
@@ -696,6 +759,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       const before = state.doc.textBetween(Math.max(0, state.selection.from - 1), state.selection.from);
       const prefix = (before && !/\s/.test(before)) ? ' ' : '';
       editor.chain().focus().insertContent(prefix + text).run();
+    },
+    // Hands-free editor actions spoken as whole-phrase commands. "next field" /
+    // "previous field" drive the same template loop as Tab; "scratch that" undoes
+    // the last dictated phrase; "new paragraph" / "new line" create real breaks.
+    onCommand: (cmd) => {
+      if (!editor) return;
+      switch (cmd) {
+        case 'nextField':    jumpReportField(editor, 1); break;
+        case 'prevField':    jumpReportField(editor, -1); break;
+        case 'undo':         editor.commands.undo(); break;              // "scratch that"
+        case 'newParagraph': editor.chain().focus().splitBlock().run(); break;
+        case 'newLine':      editor.chain().focus().setHardBreak().run(); break;
+        default: break;
+      }
     },
   });
   // Mirror voice into a ref so the capture-phase keydown listener (mounted
@@ -1004,10 +1081,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         // from 500 ms to 350 ms so undo steps land on smaller pause-boundaries.
         history: { depth: 500, newGroupDelay: 350 },
       }),
-      // Path A vs Path B pagination — see USE_DECORATION_PAGINATION above.
-      // Only ONE of these schema groups can register `doc`; the flag picks.
-      ...(USE_DECORATION_PAGINATION
-        ? [FlatDocument, PageBreakNode, PaginationDecoration]
+      // Schema selection. Flat (doc → block+) for pageview + continuous; the
+      // legacy page-node schema only for 'paged'. Only ONE group may register
+      // `doc`. PaginationDecoration (the live page-gap overlay) runs ONLY in
+      // pageview — continuous deliberately registers NO pagination plugin, so
+      // zero pagination work happens while typing (it paginates at print only).
+      ...(USE_FLAT_SCHEMA
+        ? [FlatDocument, PageBreakNode, ...(USE_DECORATION_PAGINATION ? [PaginationDecoration] : [])]
         : [PageDocument, Page, Pagination]
       ),
       UnderlineStyle,
@@ -1017,8 +1097,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       ParagraphSpacing,
       // Legacy PageBreak command (mutates page nodes) only on Path A. On
       // Path B, PageBreakNode (registered above) provides the equivalent
-      // via the insertPageBreakFlat command.
-      ...(USE_DECORATION_PAGINATION ? [] : [PageBreak]),
+      // via the insertPageBreakFlat command (both flat modes use it).
+      ...(USE_FLAT_SCHEMA ? [] : [PageBreak]),
       FormatPainter,
       ParagraphFraming,
       ListStyles,
@@ -1026,6 +1106,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       MultilevelList,
       PageNumber,
       AutoCorrect,
+      ReportStructure,
       Footnote,
       GrammarCheck,
       SpellCheck,
@@ -1100,7 +1181,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         // On Path B, the `.flat-pagination` modifier activates the Path B
         // CSS rules — the editor itself styles as the A4 column and the
         // boundary widgets render the inter-page gaps inside.
-        class: 'narrative-editor-content' + (USE_DECORATION_PAGINATION ? ' flat-pagination' : ''),
+        class: 'narrative-editor-content' + (USE_DECORATION_PAGINATION ? ' flat-pagination' : USE_CONTINUOUS ? ' flat-continuous' : ''),
         spellcheck: 'false', // toggled at runtime by spellcheckOn effect
       },
       // Cleans pasted HTML: removes the editor's own page wrappers (avoids
@@ -1196,7 +1277,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     // (Page nodes already produce multi-page markup). On Path B injects
     // auto-page-break markers at every computed boundary so downstream
     // serializers split correctly. Safe to call regardless of flag state.
-    getPrintHTML: () => editor ? getPaginatedPrintHTML(editor) : '',
+    getPrintHTML: () => {
+      if (!editor) return '';
+      // Continuous mode runs no live pagination plugin, so compute the page
+      // boundaries on-demand now (from the live block heights) and inject the
+      // same data-page-break markers the print/PDF pipeline understands.
+      return USE_CONTINUOUS ? getContinuousPrintHTML(editor) : getPaginatedPrintHTML(editor);
+    },
     // Current watermark text ('' = none) so the host's Word export can carry it.
     getWatermark: () => watermark,
     container: containerRef.current,
@@ -1487,6 +1574,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         }
         if (insideTable) return; // pass through to Tiptap's table keymap
 
+        // ── PowerScribe/Fluency-style field navigation ───────────────────────
+        // When the report still has fill-in fields ([like this] / ___ / ***),
+        // Tab jumps to the NEXT field and SELECTS it (so the next keystroke or
+        // dictated phrase replaces it); Shift+Tab goes to the previous. This is
+        // the core template-filling loop a radiologist's hands expect from
+        // PowerScribe. It runs AFTER autocomplete-accept + the table keymap (so
+        // those still win in their contexts) and BEFORE indent/tab-char — so
+        // once every field is filled (no [..] left), Tab reverts to normal
+        // indent/list behaviour. jumpReportField returns false when no field
+        // exists, so we only swallow Tab when we actually navigated.
+        if (jumpReportField(editor, e.shiftKey ? -1 : 1)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+
         e.preventDefault();
         e.stopImmediatePropagation();
 
@@ -1642,6 +1745,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       const key = e.key.toLowerCase();
       const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
       const run = (fn) => { stop(); fn(); };
+
+      // ── Ctrl+Alt+I — Insert auto-numbered IMPRESSION list ──
+      if (e.altKey && key === 'i') {
+        return run(() => editor.chain().focus().insertImpressionList().run());
+      }
 
       // ── Ctrl+Alt+M — Add inline comment ──────────────────
       if (e.altKey && key === 'm') {
@@ -1853,7 +1961,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         // insertPageBreakFlat (inserts a PageBreak block node which the
         // decoration plugin recognises as a forced boundary).
         const chain = editor.chain().focus();
-        if (USE_DECORATION_PAGINATION) chain.insertPageBreakFlat().run();
+        if (USE_FLAT_SCHEMA) chain.insertPageBreakFlat().run();
         else chain.insertPageBreak().run();
       });
       if (e.shiftKey && (e.key === '-' || e.key === '_')) return run(() => editor.chain().focus().insertContent('—').run());
@@ -2023,6 +2131,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // so ProseMirror will not overwrite them on re-renders.
   useEffect(() => {
     if (!containerRef.current) return;
+    // Path A only — the flat schemas have no .word-page nodes. pageview feeds
+    // chrome to PaginationDecoration; continuous renders chrome at print time.
+    // Skipping here avoids a pointless per-update .word-page DOM query.
+    if (USE_FLAT_SCHEMA) return;
 
     const applyToPages = () => {
       const pages = containerRef.current?.querySelectorAll('.word-page');
@@ -2166,9 +2278,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   useEffect(() => {
     if (!editor) return;
 
+    // Path A: doc.childCount === page-node count (cheap, exact). Flat schema:
+    // childCount is the PARAGRAPH count, not pages — so measure the flat column
+    // into A4 page groups instead. That's a layout read, so debounce it off the
+    // typing hot path (the count is a status-bar number; ~300ms lag is invisible).
+    let totalT = null;
     const updateTotal = () => {
       try {
-        setTotalPages(Math.max(1, editor.state.doc.childCount));
+        if (USE_FLAT_SCHEMA) {
+          if (totalT) clearTimeout(totalT);
+          totalT = setTimeout(() => {
+            try { setTotalPages(countFlatPages(containerRef.current)); } catch {}
+          }, 300);
+        } else {
+          setTotalPages(Math.max(1, editor.state.doc.childCount));
+        }
       } catch {}
     };
     updateTotal();
@@ -2176,9 +2300,31 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
     let observer;
     let cleanupTimer;
+    let detachFlatScroll = null;
     const attachObserver = () => {
       const canvas = containerRef.current?.querySelector('.word-canvas');
       if (!canvas) return;
+
+      // Flat schema (continuous/pageview): no .word-page sheets to observe —
+      // derive the current page from scroll position (page height = 1123px ×
+      // zoom) against the column's top, via a scroll listener.
+      if (USE_FLAT_SCHEMA) {
+        detachFlatScroll?.();
+        const col = canvas.querySelector('.narrative-editor-content');
+        if (!col) return;
+        const onScroll = () => {
+          const zoom = parseFloat(window.getComputedStyle(col).getPropertyValue('--zoom')) || 1;
+          const pageH = 1123 * zoom;
+          const colTop = col.getBoundingClientRect().top - canvas.getBoundingClientRect().top;
+          const page = Math.floor(Math.max(0, -colTop) / Math.max(1, pageH)) + 1;
+          setCurrentPage(Math.max(1, Math.min(totalPagesRef.current || 1, page)));
+        };
+        canvas.addEventListener('scroll', onScroll, { passive: true });
+        onScroll();
+        detachFlatScroll = () => canvas.removeEventListener('scroll', onScroll);
+        return;
+      }
+
       const pages = canvas.querySelectorAll('.word-page');
       if (!pages.length) return;
 
@@ -2209,7 +2355,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
     return () => {
       clearTimeout(cleanupTimer);
+      if (totalT) clearTimeout(totalT);
       observer?.disconnect();
+      detachFlatScroll?.();
       editor.off('update', updateTotal);
       editor.off('update', reattach);
     };
@@ -2219,8 +2367,19 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     const canvas = containerRef.current?.querySelector('.word-canvas');
     if (!canvas) return;
     const pages = canvas.querySelectorAll('.word-page');
-    const idx = Math.max(0, Math.min(pages.length - 1, n - 1));
-    pages[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (pages.length) {
+      const idx = Math.max(0, Math.min(pages.length - 1, n - 1));
+      pages[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    // Flat schema (continuous): one column, no sheets — scroll to the start of
+    // page N (page height = 1123px × zoom), measured from the column's top.
+    const col = canvas.querySelector('.narrative-editor-content');
+    if (!col) return;
+    const zoom = parseFloat(window.getComputedStyle(col).getPropertyValue('--zoom')) || 1;
+    const pageH = 1123 * zoom;
+    const colTopInContent = canvas.scrollTop + (col.getBoundingClientRect().top - canvas.getBoundingClientRect().top);
+    canvas.scrollTo({ top: Math.max(0, colTopInContent + (n - 1) * pageH), behavior: 'smooth' });
   };
 
   // Keyword macro expansion — merges internal snippets with the external keywordLibrary prop
@@ -2332,7 +2491,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       {watermark && (
         <style dangerouslySetInnerHTML={{ __html: `
           [data-ne-wm="${wmIdRef.current}"] .word-page,
-          [data-ne-wm="${wmIdRef.current}"] .narrative-editor-content.flat-pagination {
+          [data-ne-wm="${wmIdRef.current}"] .narrative-editor-content.flat-pagination,
+          [data-ne-wm="${wmIdRef.current}"] .narrative-editor-content.flat-continuous {
             background-image: ${watermarkBackground(watermark)} !important;
             background-repeat: repeat !important;
             background-position: center !important;
@@ -2496,7 +2656,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           in preview mode. */}
       <SelectionToolbar editor={editor} previewMode={previewMode} containerRef={containerRef} onAiAssist={onAiAssist} />
 
-      <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}${previewMode ? ' preview-mode-canvas' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
+      <div className={`word-canvas${USE_CONTINUOUS ? ' canvas-continuous' : ''}${showFormattingMarks ? ' show-formatting-marks' : ''}${previewMode ? ' preview-mode-canvas' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
         {previewMode && (
           <button
             onClick={() => setPreviewMode(false)}
