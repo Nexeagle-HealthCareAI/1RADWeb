@@ -359,10 +359,17 @@ async function initCornerstone() {
     // radiologist is actually looking at (measured: pushed first paint past
     // 3s on large CTs). Over HTTP/2 via Front Door ~24 keeps the pipe full
     // without starving the interaction lane.
+    // Connection-aware: 24 parallel full-slice prefetches keep an HTTP/2 pipe
+    // full on broadband, but on a 50-100 KB/s link they all crawl AND compete
+    // with the visible slice + previews. Throttle the prefetch lane hard on thin
+    // links so the interaction lane (the slice being looked at) always wins.
+    const poolTier = getConnectionTier();
     requestPoolManager.maxRequestsPerOrigin = {
       interaction: 20,  // visible/active slice — must be near-instant
       thumbnail: 10,
-      prefetch: isMobileDevice ? 10 : 24, // background slice decode
+      prefetch: poolTier === 'slow' ? 4
+              : poolTier === 'medium' ? 10
+              : (isMobileDevice ? 10 : 24), // background slice decode
     };
 
     // Pre-warm the first codec worker so the very first slice decode doesn't
@@ -890,6 +897,15 @@ const AdvancedDicomViewer = ({
     return () => { try { el.removeEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ } };
   }, []);
 
+  // Cold-start blurry stand-in: prefer the MIDDLE slice's preview (that's the
+  // slice the engine loads first, and at ~2-4 KB it paints faster than the 256px
+  // series thumbnail — a real win on thin links), falling back to the thumbnail
+  // when a study has no per-slice previews.
+  const coldStartPlaceholder =
+    (Array.isArray(files) && files.length
+      ? files[Math.floor(files.length / 2)]?.previewUrl
+      : null) || placeholderUrl || null;
+
   // PRELOAD the tiny preview JPEGs into the browser cache so the overlay above is
   // INSTANT while scrolling. Without this, each new slice's preview is fetched
   // on demand (~50-100ms) → a visible lag/blank during fast scroll. Previews are
@@ -904,7 +920,12 @@ const AdvancedDicomViewer = ({
     const urls = files.map((f) => f?.previewUrl).filter(Boolean);
     if (urls.length === 0) return;
     const tier = getConnectionTier();
-    if (tier === 'slow') return; // don't fight the visible slice on 2G/Save-Data
+    // NOTE: we DO warm previews on slow links — counter-intuitively this is the
+    // single biggest low-bandwidth win. A preview is ~2-4 KB vs ~131 KB for the
+    // full slice (≈65×), so warming all of them makes the ENTIRE study scrollable
+    // in blurry-quality for <1 MB total, where the full slices would need tens of
+    // MB the thin pipe can't deliver. We just pace it gently on slow so the tiny
+    // preview fetches never crowd the visible (full) slice.
     previewsWarmedRef.current = key;
 
     // middle-outward order so the slices you're most likely to scroll to warm first
@@ -915,7 +936,11 @@ const AdvancedDicomViewer = ({
       if (a < urls.length) order.push(a);
       if (b >= 0) order.push(b);
     }
-    const batchSize = tier === 'medium' ? 6 : 12;
+    // Smaller batch + slower cadence on thin links so previews trickle in behind
+    // the visible slice rather than bursting; they're tiny, so coverage is still
+    // quick (300 previews ≈ 0.9 MB → ~10-18 s even on 2G/3G).
+    const batchSize = tier === 'slow' ? 4 : tier === 'medium' ? 6 : 12;
+    const pace = tier === 'slow' ? 250 : tier === 'medium' ? 160 : 120;
     let i = 0, cancelled = false;
     const pump = () => {
       if (cancelled) return;
@@ -925,7 +950,7 @@ const AdvancedDicomViewer = ({
         img.src = urls[idx]; // browser fetches + caches; the overlay then hits cache
       }
       i += batchSize;
-      if (i < order.length) setTimeout(pump, 120);
+      if (i < order.length) setTimeout(pump, pace);
     };
     pump();
     return () => { cancelled = true; };
@@ -945,7 +970,11 @@ const AdvancedDicomViewer = ({
     const dir = currentImageIndex >= prev ? 1 : -1;
     lastScrollIdxRef.current = currentImageIndex;
     const tier = getConnectionTier();
-    const ahead = tier === 'slow' ? 3 : tier === 'medium' ? 6 : 12;
+    // On a thin pipe a single full slice is ~131 KB, so prefetching a deep window
+    // of them just starves the slice the user is actually looking at + the cheap
+    // previews. Keep ±1 on slow (sharpen-on-dwell does the rest), a moderate
+    // window on medium, deep on fast.
+    const ahead = tier === 'slow' ? 1 : tier === 'medium' ? 6 : 12;
     const warm = (idx, priority) => {
       if (idx < 0 || idx >= files.length) return;
       const url = getOrCreateBlobUrl(files[idx]);
@@ -953,8 +982,12 @@ const AdvancedDicomViewer = ({
       try { cornerstone.imageLoader.loadAndCacheImage(`wadouri:${url}`, { priority }).catch(() => {}); } catch { /* noop */ }
     };
     for (let k = 1; k <= ahead; k++) warm(currentImageIndex + dir * k, k);   // ahead, closest first
-    warm(currentImageIndex - dir * 1, ahead + 1);                            // 1-2 behind for reversals
-    warm(currentImageIndex - dir * 2, ahead + 2);
+    // Warm a couple behind for scroll reversals — but not on slow, where every
+    // 131 KB counts and the preview already covers a reversal instantly.
+    if (tier !== 'slow') {
+      warm(currentImageIndex - dir * 1, ahead + 1);
+      warm(currentImageIndex - dir * 2, ahead + 2);
+    }
   }, [currentImageIndex, files, mprMode]);
 
   // Fullscreen and tablet support states
@@ -2145,7 +2178,7 @@ const AdvancedDicomViewer = ({
         // whole-study skeleton below for reach. On a fast link, a wider window.
         const connTier = getConnectionTier();
         const OUTWARD_PREFETCH_WINDOW =
-          connTier === 'slow' ? 12 : connTier === 'medium' ? 20 : 30;
+          connTier === 'slow' ? 6 : connTier === 'medium' ? 20 : 30;
         if (!isVolumeMode && imageIds.length > 1) {
           const maxOffset = Math.min(OUTWARD_PREFETCH_WINDOW, imageIds.length);
           // Offsets 3..maxOffset-1 — the ±1..2 inner ring was already enqueued
@@ -2161,8 +2194,14 @@ const AdvancedDicomViewer = ({
         // visible slice / near window; the request pool caps its concurrency and
         // it uses the 'prefetch' lane (not 'interaction'), so it can't starve a
         // user-driven scroll. Step widens on slower links (cheaper coverage).
-        if (!isVolumeMode && imageIds.length > OUTWARD_PREFETCH_WINDOW * 2) {
-          const step = connTier === 'slow' ? 24 : connTier === 'medium' ? 14 : 8;
+        //
+        // SKIP on slow: the ~2-4 KB preview preloader now warms a blurry version
+        // of EVERY slice for <1 MB total, so a full-res (131 KB) skeleton on a
+        // 50-100 KB/s link is wasted bandwidth that fights the previews + the
+        // visible slice. On slow we lean entirely on previews for whole-study
+        // reach and sharpen only what the user dwells on.
+        if (!isVolumeMode && connTier !== 'slow' && imageIds.length > OUTWARD_PREFETCH_WINDOW * 2) {
+          const step = connTier === 'medium' ? 14 : 8;
           for (let i = 0; i < imageIds.length; i += step) {
             if (!isMounted) break;
             if (Math.abs(i - middleIdx) <= OUTWARD_PREFETCH_WINDOW) continue; // already dense-covered
@@ -3216,9 +3255,9 @@ const AdvancedDicomViewer = ({
           Lets the loader text/spinner show through with a translucent dark
           tint, so the user sees a real diagnostic preview during the cold-
           start fetch + decode window instead of staring at pure black. */}
-      {placeholderUrl && !hasRenderedFirstImage && (
+      {coldStartPlaceholder && !hasRenderedFirstImage && (
         <img
-          src={placeholderUrl}
+          src={coldStartPlaceholder}
           alt=""
           style={{
             position: 'absolute',

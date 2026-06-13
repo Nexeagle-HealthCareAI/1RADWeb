@@ -221,6 +221,15 @@ const DicomViewerPage = () => {
             preParsedMetadata: s.preParsedMetadata,
           }));
           setHydratedSeries(series);
+          // Warm the FIRST series' middle-slice preview (~2-4 KB) into the browser
+          // cache right now, during hydration. That's exactly the blurry the viewer
+          // paints first on cold start, so by the time the engine mounts it's a
+          // cache hit → the stand-in appears instantly instead of after a fetch.
+          try {
+            const f0 = series[0]?.files;
+            const midPrev = Array.isArray(f0) && f0.length ? f0[Math.floor(f0.length / 2)]?.previewUrl : null;
+            if (midPrev) { const im = new Image(); im.decoding = 'async'; im.src = midPrev; }
+          } catch { /* best-effort warm */ }
           // Tell the user some assets are still extracting in the background
           // even though others have rendered — best of both worlds.
           if (pending.length > 0) setPendingExtractionAssets(pending);
