@@ -124,7 +124,7 @@ export default function AdminBoard() {
   const [isHospitalDrawerOpen, setIsHospitalDrawerOpen] = useState(false);
   const [isChainDrawerOpen, setIsChainDrawerOpen] = useState(false);
   const [isDeployingChain, setIsDeployingChain] = useState(false);
-  const [newChainData, setNewChainData] = useState({ chainName: '', hospitalName: '', hospitalAddress: '' });
+  const [newChainData, setNewChainData] = useState({ chainName: '', hospitalName: '', hospitalAddress: '', modules: 'RIS,PACS' });
   const [showChainSelector, setShowChainSelector] = useState(false);
   // The on-page hospital switcher was removed in favour of the global one
   // in TopNav (visible on every page). isSwitchingNode is still used by
@@ -952,8 +952,8 @@ export default function AdminBoard() {
       
       if (res.data.success) {
         setIsChainDrawerOpen(false);
-        setNewChainData({ chainName: '', hospitalName: '', hospitalAddress: '' });
-        
+        setNewChainData({ chainName: '', hospitalName: '', hospitalAddress: '', modules: 'RIS,PACS' });
+
         // Use standard transition logic
         await handleSwitchNode(res.data.hospitalId);
       }
@@ -5718,6 +5718,47 @@ return (
                   style={{ ...fieldInput, resize: 'none', lineHeight: 1.55 }}
                   onFocus={focusOn} onBlur={focusOff}
                 />
+              </div>
+
+              {/* ── Subscription / product package (SKU) for this NEW centre ──
+                  Modules are per-centre, so each centre in a chain can run a
+                  different plan. Drives HospitalSubscription.Modules on the new
+                  centre's 14-day trial. */}
+              <div>
+                <label style={fieldLabel}>Subscription plan</label>
+                <p style={fieldHelp}>What should this centre be able to do? You can change it later from Subscription. Starts on a 14-day free trial.</p>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {[
+                    { id: 'RIS,PACS', title: 'RIS + Cloud PACS', desc: 'Everything — appointments, billing, imaging upload, DICOM viewer & reporting.' },
+                    { id: 'RIS',      title: 'RIS only',         desc: 'Clinic workflow + reporting. Attach PDF/JPG to visits; no DICOM upload/viewer.' },
+                    { id: 'PACS',     title: 'Cloud PACS only',  desc: 'Teleradiology — study ingestion, DICOM viewer & reporting. No clinic/billing.' },
+                  ].map(opt => {
+                    const selected = newChainData.modules === opt.id;
+                    return (
+                      <div
+                        key={opt.id}
+                        onClick={() => setNewChainData({ ...newChainData, modules: opt.id })}
+                        style={{
+                          padding: '13px 15px', borderRadius: '12px', cursor: 'pointer',
+                          border: selected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                          background: selected ? '#eff6ff' : '#fff',
+                          display: 'flex', alignItems: 'flex-start', gap: '11px',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <div style={{
+                          width: '18px', height: '18px', borderRadius: '50%', flexShrink: 0, marginTop: '1px',
+                          border: selected ? '5px solid #2563eb' : '2px solid #cbd5e1',
+                          background: '#fff', transition: 'all 0.15s',
+                        }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: selected ? '#1d4ed8' : '#1e293b' }}>{opt.title}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', lineHeight: 1.5 }}>{opt.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div style={{

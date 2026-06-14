@@ -624,8 +624,16 @@ export function AuthProvider({ children }) {
         headers: { Authorization: `Bearer ${nextToken}` }
       });
 
-      const { success: dSuccess, error: dError, errorCode: dCode } = deployRes.data;
-      if (!dSuccess) return { success: false, error: dError, errorCode: dCode };
+      // /auth/deploy-infrastructure returns HTTP 200 { message } on success and a
+      // 4xx (→ axios throws, caught below) on failure. The success body carries NO
+      // `success` field, so DON'T gate on one — reaching this line means a 2xx
+      // response, i.e. the centre was deployed and the account activated. (The old
+      // `if (!dSuccess)` check treated every successful registration as a failure,
+      // leaving signup stuck on the last step with no celebration.) Only bail if
+      // the body explicitly reports failure.
+      if (deployRes.data?.success === false) {
+        return { success: false, error: deployRes.data.error, errorCode: deployRes.data.errorCode };
+      }
 
       // After deployment, user needs to login or we auto-login
       return { success: true };
