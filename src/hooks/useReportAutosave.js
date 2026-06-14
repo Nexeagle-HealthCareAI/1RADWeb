@@ -458,6 +458,142 @@ export default function useReportAutosave({
     return () => clearTimeout(t);
   }, [occConflict]);
 
+  // ── Electronic sign-off (21 CFR Part 11) ───────────────────────────────────
+  // Signing is a TWO-step server flow: first persist the on-screen content as a
+  // draft (so the server hashes exactly what the radiologist sees + we hold a
+  // fresh OCC token), then call the dedicated finalize endpoint with a password
+  // re-auth. The server — not the client — applies the signature, locks the
+  // content, and writes the tamper-evident audit event. TargetStatus selects a
+  // "Preliminary" (wet read, stays editable) or "Final" (locked) signature.
+  const finalizeReport = useCallback(async ({ targetStatus = 'Final', password, credentials } = {}) => {
+    if (!ownerKey) {
+      notify('error', 'CONTEXT MISSING', 'Cannot sign — study/appointment context is missing. Please reload.');
+      return { ok: false };
+    }
+    if (!isOnline) {
+      notify('warning', 'OFFLINE', 'Signing a report requires a connection. Reconnect and sign again.');
+      return { ok: false };
+    }
+
+    let currentFindings = editorText;
+    if (editorRef.current?.editor) currentFindings = editorRef.current.editor.getHTML();
+
+    const owner = {
+      appointmentId,
+      imagingStudyId: imagingStudyId || null,
+      appointmentServiceId: activeServiceId || null,
+    };
+
+    setIsSaving(true);
+    try {
+      // 1. Persist the latest content as a draft so the signature hashes the
+      //    exact on-screen version and we carry the freshest OCC token.
+      const saveRes = await apiClient.post('/reporting/save', {
+        ...owner,
+        templateId: selectedTemplateId,
+        findings: currentFindings,
+        impression: impression || '',
+        advice: advice || '',
+        reportingMode: 'Narrative',
+        rowVersion: rowVersionRef.current,
+      });
+      if (saveRes.data?.success) {
+        const saved = saveRes.data.data;
+        if (saved?.rowVersion ?? saved?.RowVersion) rowVersionRef.current = saved.rowVersion ?? saved.RowVersion;
+        serverBaselineRef.current = currentFindings;
+      }
+
+      // 2. Sign (server applies the signature + lock + audit).
+      const finRes = await apiClient.post('/reporting/report/finalize', {
+        ...owner,
+        targetStatus,
+        password,
+        credentials: credentials || null,
+        rowVersion: rowVersionRef.current,
+      });
+
+      if (finRes.data?.success) {
+        const report = finRes.data.data;
+        if (report?.rowVersion ?? report?.RowVersion) rowVersionRef.current = report.rowVersion ?? report.RowVersion;
+        const status = report?.status ?? report?.Status;
+        const isFinal = status === 'Final';
+        if (isFinal) {
+          await nativeStorage.delete(reportDraftKey(ownerKey, activeServiceId));
+          notify('success', 'REPORT FINALIZED', 'Report has been electronically signed and locked.');
+        } else {
+          notify('success', 'PRELIMINARY SIGNED', 'A preliminary (wet-read) signature was applied. The report stays editable until you finalise it.');
+        }
+        logEvent('report.signed', { appointmentId, targetStatus });
+        if (isFinal) onFinalized(); // page sets isFinalized + navigates
+        return { ok: true, report };
+      }
+      return { ok: false };
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      if (err?.response?.status === 403 || code === 'SIGN_REAUTH_FAILED') {
+        notify('error', 'SIGNATURE FAILED', err.response?.data?.error || 'Password verification failed — your signature was not applied.');
+      } else if (code === 'REPORT_LOCKED') {
+        notify('error', 'ALREADY FINALIZED', 'This report is already finalised. Add an addendum to make a correction.');
+      } else if (code === 'OCC_CONFLICT') {
+        const server = err.response?.data?.data || {};
+        applyContent({
+          findings:   server.findings || '',
+          impression: server.impression || '',
+          advice:     server.advice || '',
+          templateId: server.templateId,
+        });
+        rowVersionRef.current = server.rowVersion ?? server.RowVersion ?? null;
+        serverBaselineRef.current = server.findings || '';
+        notify('warning', 'REPORT CHANGED', 'This report changed since you opened it. The latest version is now loaded — review it, then sign again.');
+      } else {
+        notify('error', 'SIGNATURE FAILED', `Could not finalize the report: ${err.response?.data?.error || err.message}`);
+      }
+      return { ok: false, error: err };
+    } finally {
+      setIsSaving(false);
+    }
+  }, [ownerKey, isOnline, appointmentId, imagingStudyId, activeServiceId, selectedTemplateId, editorText, impression, advice, editorRef, applyContent, notify, logEvent, onFinalized]);
+
+  // Append a formal addendum to a finalised report. The signed content is never
+  // touched — the server stores the addendum as its own immutable record and
+  // advances the report to "Addended". Requires the same password re-auth.
+  const addAddendum = useCallback(async ({ text, password, credentials } = {}) => {
+    if (!ownerKey) {
+      notify('error', 'CONTEXT MISSING', 'Cannot add an addendum — context is missing. Please reload.');
+      return { ok: false };
+    }
+    if (!isOnline) {
+      notify('warning', 'OFFLINE', 'Adding an addendum requires a connection. Reconnect and try again.');
+      return { ok: false };
+    }
+    try {
+      const res = await apiClient.post('/reporting/report/addendum', {
+        appointmentId,
+        imagingStudyId: imagingStudyId || null,
+        appointmentServiceId: activeServiceId || null,
+        text,
+        password,
+        credentials: credentials || null,
+      });
+      if (res.data?.success) {
+        const report = res.data.data;
+        if (report?.rowVersion ?? report?.RowVersion) rowVersionRef.current = report.rowVersion ?? report.RowVersion;
+        notify('success', 'ADDENDUM ADDED', 'A signed addendum has been appended to the report.');
+        logEvent('report.addendum', { appointmentId });
+        return { ok: true, report };
+      }
+      return { ok: false };
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      if (err?.response?.status === 403 || code === 'SIGN_REAUTH_FAILED') {
+        notify('error', 'ADDENDUM FAILED', err.response?.data?.error || 'Password verification failed — the addendum was not added.');
+      } else {
+        notify('error', 'ADDENDUM FAILED', `Could not add the addendum: ${err.response?.data?.error || err.message}`);
+      }
+      return { ok: false, error: err };
+    }
+  }, [ownerKey, isOnline, appointmentId, imagingStudyId, activeServiceId, notify, logEvent]);
+
   return {
     saveStatus,
     lastSavedAt,
@@ -468,5 +604,7 @@ export default function useReportAutosave({
     saveNow,
     undoConflict,
     setBaseline,
+    finalizeReport,
+    addAddendum,
   };
 }

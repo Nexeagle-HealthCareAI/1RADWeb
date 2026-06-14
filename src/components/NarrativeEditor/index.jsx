@@ -550,6 +550,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // fullscreen). aiBusy disables it while a request is running.
   onWholeReportAi,
   aiBusy = false,
+  // ── Electronic sign-off (21 CFR Part 11) ──────────────────────────────────
+  // When onFinalize/onAddendum are provided, the editor delegates signing to the
+  // host (which calls the server endpoints with a password re-auth). Without
+  // them, the editor falls back to the legacy client-side signature block (used
+  // by standalone demos like Example.jsx).
+  //   onFinalize: async ({ targetStatus, password, credentials }) => { ok, report }
+  //   onAddendum: async ({ text, password }) => { ok, report }
+  onFinalize,
+  onAddendum,
+  signerName = '',          // logged-in radiologist's name (shown read-only in the dialog)
+  signerCredentials = '',   // pre-fill for the credentials line
+  reportStatus,             // server status: 'Draft'|'Preliminary'|'Final'|'Addended'
+  addenda = [],             // server addendum records to render below the report
+  signature = null,         // this report's signer snapshot: { name, credentials, signedAt }
 }, ref) {
   const containerRef = useRef(null);
   // Phone viewport detection — the desktop Ribbon (5 tabs, 17 tools) is
@@ -909,10 +923,28 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const handleExportPdf = () => setPrintPreviewOpen(true);
 
   // ── Report Finalization ───────────────────────────────────────────────────
-  const handleFinalize = ({ name, credentials, timestamp }) => {
-    if (!editor) return;
+  // Server-backed sign-off (21 CFR Part 11). Delegates to the host's onFinalize
+  // (password re-auth → /reporting/report/finalize). On a successful FINAL the
+  // server has locked the content; we lock the editor too. A PRELIMINARY signs
+  // but stays editable. Returns { ok } so the dialog can show errors / stay open.
+  const handleFinalize = async ({ targetStatus, password, credentials } = {}) => {
+    if (typeof onFinalize === 'function') {
+      const res = await onFinalize({ targetStatus, password, credentials });
+      if (res?.ok) {
+        const status = res.report?.status ?? res.report?.Status ?? targetStatus;
+        if (status === 'Final' || status === 'Addended') {
+          editor?.setEditable(false);
+          setIsFinalized(true);
+        }
+      }
+      return res;
+    }
+
+    // ── Legacy client-side fallback (standalone demos without a server host) ──
+    if (!editor) return { ok: false };
     const credStr = credentials ? `, ${credentials}` : '';
-    const sigBlock = `<hr><p><strong>Electronically signed by:</strong> ${name}${credStr}</p><p><strong>Date/Time:</strong> ${timestamp}</p><p><em>I attest that I have reviewed this report and it accurately reflects my interpretation of the imaging study.</em></p>`;
+    const stamp = new Date().toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'long' });
+    const sigBlock = `<hr><p><strong>Electronically signed by:</strong> ${signerName || ''}${credStr}</p><p><strong>Date/Time:</strong> ${stamp}</p><p><em>I attest that I have reviewed this report and it accurately reflects my interpretation of the imaging study.</em></p>`;
     editor.chain().focus().command(({ tr, dispatch, state }) => {
       if (dispatch) {
         const end = state.doc.content.size;
@@ -920,9 +952,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       }
       return true;
     }).insertContent(sigBlock).run();
-    editor.setEditable(false);
-    setIsFinalized(true);
+    if (targetStatus !== 'Preliminary') {
+      editor.setEditable(false);
+      setIsFinalized(true);
+    }
     setFinalizeOpen(false);
+    return { ok: true };
   };
 
   // ── Quality Check ─────────────────────────────────────────────────────────
@@ -1054,14 +1089,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   };
 
   // ── Addendum ──────────────────────────────────────────────────────────────
-  const handleAddendum = ({ author, text, timestamp }) => {
-    if (!editor) return;
-    const html = `<hr><p><strong>ADDENDUM</strong></p><p><strong>Author:</strong> ${author}</p><p><strong>Date/Time:</strong> ${timestamp}</p><p>${text.replace(/\n/g, '<br>')}</p>`;
-    // Temporarily re-enable editing to insert addendum, then lock again
+  // Server-backed (21 CFR Part 11): delegates to the host's onAddendum (password
+  // re-auth → /reporting/report/addendum). The signed content is NOT mutated —
+  // the addendum is stored as its own record and rendered from `addenda`.
+  const handleAddendum = async ({ text, password } = {}) => {
+    if (typeof onAddendum === 'function') {
+      return await onAddendum({ text, password });
+    }
+    // Legacy client-side fallback (standalone demos).
+    if (!editor) return { ok: false };
+    const stamp = new Date().toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'long' });
+    const html = `<hr><p><strong>ADDENDUM</strong></p><p><strong>Author:</strong> ${signerName || ''}</p><p><strong>Date/Time:</strong> ${stamp}</p><p>${(text || '').replace(/\n/g, '<br>')}</p>`;
     editor.setEditable(true);
     editor.chain().focus().insertContent(html).run();
     editor.setEditable(false);
     setAddendumOpen(false);
+    return { ok: true };
   };
 
   const editor = useEditor({
@@ -1348,6 +1391,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     if (!editor) return;
     editor.setEditable(!previewMode && editable);
   }, [editor, previewMode, editable]);
+
+  // Reflect the server's sign-off status into the local "finalized" flag so the
+  // lock banner + signature footer show correctly on LOAD of an already-signed
+  // report (not just after signing in this session). Editability itself is
+  // driven by the `editable` prop (the host passes editable={!isFinalized}).
+  useEffect(() => {
+    if (reportStatus === 'Final' || reportStatus === 'Addended') setIsFinalized(true);
+    else if (reportStatus === 'Draft' || reportStatus === 'Preliminary') setIsFinalized(false);
+  }, [reportStatus]);
 
   // (Patient banner / WYSIWYG margin overlays moved out of the editor — they
   // now live as a sibling element above the editor in the caller. This keeps
@@ -2007,6 +2059,14 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     return () => window.removeEventListener('narrative-editor:open-find-replace', open);
   }, []);
 
+  // Open the Sign dialog from outside (e.g. the host's Ctrl+Shift+S shortcut).
+  // Don't reopen if the report is already locked.
+  useEffect(() => {
+    const open = () => { if (!isFinalized) setFinalizeOpen(true); };
+    window.addEventListener('narrative-editor:open-finalize', open);
+    return () => window.removeEventListener('narrative-editor:open-finalize', open);
+  }, [isFinalized]);
+
   // Symbol picker open event
   useEffect(() => {
     const open = () => setSymbolOpen(true);
@@ -2619,13 +2679,67 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       {isFinalized && (
         <div className="finalized-banner">
-          🔒 This report has been electronically signed and finalized.
+          {reportStatus === 'Addended'
+            ? '🔒 This report is electronically signed, with one or more addenda.'
+            : '🔒 This report has been electronically signed and finalized.'}
           <button className="finalized-addendum-btn" onClick={() => setAddendumOpen(true)}>
             + Addendum
           </button>
-          <button className="finalized-undo" onClick={() => { setIsFinalized(false); editor?.setEditable(true); }}>
-            Unlock
-          </button>
+          {/* Server-backed reports are immutable — there is no client "unlock"
+              (the server rejects edits to a signed report). The unlock affordance
+              is kept ONLY for the standalone/demo fallback (no onFinalize host). */}
+          {typeof onFinalize !== 'function' && (
+            <button className="finalized-undo" onClick={() => { setIsFinalized(false); editor?.setEditable(true); }}>
+              Unlock
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Signature block — rendered from the server's signer snapshot (NOT the
+          editor content, which stays exactly as signed). Shows for signed
+          reports in a server-backed host. */}
+      {typeof onFinalize === 'function' && signature && (reportStatus === 'Final' || reportStatus === 'Addended' || reportStatus === 'Preliminary') && (
+        <div className="ne-signature-block" style={{
+          margin: '12px 0 0', padding: '12px 16px', borderTop: '2px solid #e5e7eb',
+          background: '#f8fafc', fontSize: 13, color: '#1e293b',
+        }}>
+          <div style={{ fontWeight: 700 }}>
+            {reportStatus === 'Preliminary' ? 'Preliminary (wet read) — electronically signed by:' : 'Electronically signed by:'}
+            {' '}{signature.name}{signature.credentials ? `, ${signature.credentials}` : ''}
+          </div>
+          {signature.signedAt && (
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+              {new Date(signature.signedAt).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Addenda — each is an immutable, separately-signed record. */}
+      {typeof onFinalize === 'function' && Array.isArray(addenda) && addenda.length > 0 && (
+        <div className="ne-addenda" style={{ margin: '8px 0 0' }}>
+          {[...addenda].sort((a, b) => (a.sortOrder ?? a.SortOrder ?? 0) - (b.sortOrder ?? b.SortOrder ?? 0)).map((ad, i) => {
+            const author = ad.authorName ?? ad.AuthorName ?? '';
+            const cred = ad.authorCredentials ?? ad.AuthorCredentials ?? '';
+            const when = ad.signedAt ?? ad.SignedAt;
+            const body = ad.text ?? ad.Text ?? '';
+            return (
+              <div key={ad.id ?? ad.Id ?? i} style={{
+                margin: '8px 0 0', padding: '12px 16px', border: '1px solid #fde68a',
+                background: '#fffbeb', borderRadius: 8, fontSize: 13, color: '#1e293b',
+              }}>
+                <div style={{ fontWeight: 700, color: '#92400e' }}>
+                  ADDENDUM {ad.sortOrder ?? ad.SortOrder ?? i + 1}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', margin: '4px 0 6px' }}>{body}</div>
+                <div style={{ fontSize: 12, color: '#78716c' }}>
+                  {author}{cred ? `, ${cred}` : ''}
+                  {when ? ` — ${new Date(when).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -2873,7 +2987,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       <FinalizeDialog
         open={finalizeOpen}
+        signerName={signerName}
         defaultName={trackAuthorRef.current}
+        defaultCredentials={signerCredentials}
         onFinalize={handleFinalize}
         onClose={() => setFinalizeOpen(false)}
       />
@@ -2903,6 +3019,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       <AddendumDialog
         open={addendumOpen}
+        authorName={signerName}
         defaultAuthor={trackAuthorRef.current}
         onAddendum={handleAddendum}
         onClose={() => setAddendumOpen(false)}

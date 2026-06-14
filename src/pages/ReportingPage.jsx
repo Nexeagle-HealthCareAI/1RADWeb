@@ -9,6 +9,7 @@ import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
+import useAuth from '../auth/useAuth';
 import useReportAutosave, { reportDraftKey } from '../hooks/useReportAutosave';
 import useReportAi from '../hooks/useReportAi';
 import usePatientTimeline from '../hooks/usePatientTimeline';
@@ -35,6 +36,7 @@ const ReportingPage = () => {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const { isOnline, addToOutbox } = useOffline();
+  const { user: currentUser } = useAuth();
   // 60s tick so the on-premises clock advances while the radiologist is
   // actively reporting — shows the case "ageing" in real time.
   useTickClock();
@@ -204,7 +206,28 @@ const ReportingPage = () => {
   const [impression, setImpression] = useState('');
   const [advice, setAdvice] = useState('');
   const [isFinalized, setIsFinalized] = useState(false);
+  // Sign-off state (21 CFR Part 11) loaded from the server report:
+  //   reportStatus    → 'Draft' | 'Preliminary' | 'Final' | 'Addended'
+  //   reportSignature → { name, credentials, signedAt } | null
+  //   reportAddenda   → immutable addendum records to render below the report
+  const [reportStatus, setReportStatus] = useState('Draft');
+  const [reportSignature, setReportSignature] = useState(null);
+  const [reportAddenda, setReportAddenda] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+
+  // Pull the sign-off metadata off a loaded/returned server report into local
+  // state (tolerant of camelCase and PascalCase JSON).
+  const applyReportMeta = useCallback((r) => {
+    const status = r?.status || r?.Status || (r?.isFinalized || r?.IsFinalized ? 'Final' : 'Draft');
+    setReportStatus(status);
+    setReportAddenda(r?.addenda || r?.Addenda || []);
+    const name = r?.signerName || r?.SignerName;
+    setReportSignature(name ? {
+      name,
+      credentials: r?.signerCredentials || r?.SignerCredentials || '',
+      signedAt:    r?.signedAt || r?.SignedAt || null,
+    } : null);
+  }, []);
 
   // --- PATIENT TIMELINE STATES ---
   const { patientHistory, loadingTimeline, fetchPatientTimeline } = usePatientTimeline();
@@ -253,6 +276,8 @@ const ReportingPage = () => {
     saveNow: handleSaveReport,
     undoConflict: handleUndoConflict,
     setBaseline: setReportBaseline,
+    finalizeReport,
+    addAddendum,
   } = useReportAutosave({
     appointmentId,
     imagingStudyId: studyId,
@@ -270,6 +295,23 @@ const ReportingPage = () => {
     logEvent,
     onFinalized: onReportFinalized,
   });
+
+  // Page-level sign-off wrappers passed to the editor. They call the hook
+  // (server save-then-sign / addendum) and fold the returned report's sign-off
+  // metadata back into local state so the lock banner, signature footer, and
+  // addenda list re-render immediately. Returned to the editor's dialogs as a
+  // { ok } result so they can show errors and stay open on failure.
+  const handleFinalizeReport = useCallback(async (args) => {
+    const res = await finalizeReport(args);
+    if (res?.ok && res.report) applyReportMeta(res.report);
+    return res;
+  }, [finalizeReport, applyReportMeta]);
+
+  const handleAddAddendum = useCallback(async (args) => {
+    const res = await addAddendum(args);
+    if (res?.ok && res.report) applyReportMeta(res.report);
+    return res;
+  }, [addAddendum, applyReportMeta]);
 
   // Voice Reporting → AI draft. Sends the dictation transcript + chosen
   // template + appointment context to the backend, which prompts Claude Haiku
@@ -723,6 +765,7 @@ const ReportingPage = () => {
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
+        applyReportMeta(r);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
 
         // ── Crash-recovery prompt ──────────────────────────────────────
@@ -925,6 +968,7 @@ const ReportingPage = () => {
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(!!r.isFinalized);
+        applyReportMeta(r);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
       }
       try {
@@ -1919,11 +1963,13 @@ const ReportingPage = () => {
         console.log('[SHORTCUT] Save Report (Ctrl+S)');
       }
 
-      // Ctrl+Shift+S to finalize report
+      // Ctrl+Shift+S opens the Sign dialog (password re-auth, 21 CFR Part 11).
+      // Signing is no longer a silent "save as final" — it goes through the
+      // editor's FinalizeDialog → /reporting/report/finalize.
       if (e.ctrlKey && e.shiftKey && e.key === 'S') {
         e.preventDefault();
-        handleSaveReport(true);
-        console.log('[SHORTCUT] Finalize Report (Ctrl+Shift+S)');
+        if (!isFinalized) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
+        console.log('[SHORTCUT] Open Sign dialog (Ctrl+Shift+S)');
       }
     };
 
@@ -2248,7 +2294,16 @@ const ReportingPage = () => {
       content={editorText}
       onChange={(html) => setEditorText(html)}
       placeholder={placeholder}
+      editable={!isFinalized}
       onSave={() => handleSaveReport(false)}
+      // ── Electronic sign-off (21 CFR Part 11) ──
+      onFinalize={handleFinalizeReport}
+      onAddendum={handleAddAddendum}
+      signerName={currentUser?.name || ''}
+      signerCredentials={currentUser?.degree || currentUser?.credentials || ''}
+      reportStatus={reportStatus}
+      addenda={reportAddenda}
+      signature={reportSignature}
       onAiAssist={handleAiAssist}
       onWholeReportAi={runRadAiCleanup}
       aiBusy={aiReview.busy}

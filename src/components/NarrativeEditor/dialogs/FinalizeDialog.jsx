@@ -17,17 +17,20 @@ const BOX = {
   overflow: 'hidden',
 };
 
-function Field({ label, value, onChange, placeholder, type = 'text' }) {
+function Field({ label, value, onChange, placeholder, type = 'text', inputRef, autoComplete, onKeyDown }) {
   return (
     <div style={{ marginBottom: '14px' }}>
       <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
         {label}
       </label>
       <input
+        ref={inputRef}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        autoComplete={autoComplete}
+        onKeyDown={onKeyDown}
         style={{
           width: '100%', boxSizing: 'border-box',
           padding: '7px 10px', border: '1px solid #d1d5db',
@@ -42,71 +45,146 @@ function Field({ label, value, onChange, placeholder, type = 'text' }) {
 const ATTESTATION = `I attest that this report represents my independent review of the images and clinical history, and that all findings and conclusions stated herein are accurate to the best of my knowledge.`;
 
 /**
- * FinalizeDialog — prompts for radiologist name + credentials, then fires
- * onFinalize({ name, credentials, timestamp, attestation }).
+ * FinalizeDialog — electronic sign-off (21 CFR Part 11). The signer is the
+ * authenticated user (shown read-only); signing requires re-entering the account
+ * password (the meaning-of-signature) and choosing a Preliminary (wet read) or
+ * Final signature. The actual signing + content lock + audit happen server-side.
  *
  * Props:
  *   open          {boolean}
- *   defaultName   {string}  — pre-fill from stored author
- *   onFinalize    {fn({name, credentials, timestamp})}
+ *   signerName    {string}  — the logged-in radiologist's name (read-only)
+ *   defaultCredentials {string} — pre-fill for the credentials line
+ *   onFinalize    {async fn({ targetStatus, password, credentials }) => { ok }}
  *   onClose       {fn()}
  */
-export default function FinalizeDialog({ open, defaultName = '', onFinalize, onClose }) {
-  const [name, setName]               = useState(defaultName);
-  const [credentials, setCredentials] = useState('');
-  const [agreed, setAgreed]           = useState(false);
-  const nameRef = useRef(null);
+export default function FinalizeDialog({ open, signerName = '', defaultName = '', defaultCredentials = '', onFinalize, onClose }) {
+  const displayName = signerName || defaultName;
+  const [credentials, setCredentials] = useState(defaultCredentials);
+  const [targetStatus, setTargetStatus] = useState('Final');
+  const [password, setPassword] = useState('');
+  const [agreed, setAgreed]     = useState(false);
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState('');
+  const pwdRef = useRef(null);
 
   useEffect(() => {
     if (open) {
-      setName(defaultName);
+      setCredentials(defaultCredentials);
+      setTargetStatus('Final');
+      setPassword('');
       setAgreed(false);
-      setTimeout(() => nameRef.current?.focus(), 60);
+      setBusy(false);
+      setError('');
+      setTimeout(() => pwdRef.current?.focus(), 60);
     }
-  }, [open, defaultName]);
+  }, [open, defaultCredentials]);
 
   if (!open) return null;
 
-  const canSign = name.trim() && agreed;
-  const timestamp = new Date().toLocaleString(undefined, {
-    dateStyle: 'full', timeStyle: 'long',
-  });
+  const canSign = password.trim() && agreed && !busy;
+  const timestamp = new Date().toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'long' });
 
-  const handleSign = () => {
+  const handleSign = async () => {
     if (!canSign) return;
-    onFinalize({ name: name.trim(), credentials: credentials.trim(), timestamp });
+    setBusy(true);
+    setError('');
+    try {
+      const res = await onFinalize?.({ targetStatus, password: password.trim(), credentials: credentials.trim() });
+      if (res?.ok) {
+        onClose?.();
+      } else {
+        setError(res?.message || 'Signature was not applied. Check your password and try again.');
+        setPassword('');
+        setTimeout(() => pwdRef.current?.focus(), 30);
+      }
+    } catch (e) {
+      setError('Signing failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape' && !busy) onClose();
     if (e.key === 'Enter' && canSign) handleSign();
   };
 
+  const isFinal = targetStatus === 'Final';
+
   return (
-    <div style={OVL} onClick={onClose} onKeyDown={handleKeyDown}>
+    <div style={OVL} onClick={() => !busy && onClose()} onKeyDown={handleKeyDown}>
       <div style={BOX} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #e5e7eb', background: '#f8f9fa' }}>
-          <div style={{ fontWeight: 700, fontSize: '16px', color: '#111827' }}>✍️ Sign & Finalize Report</div>
+          <div style={{ fontWeight: 700, fontSize: '16px', color: '#111827' }}>✍️ Sign Report</div>
           <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>
-            Once finalized, the report will be locked and a signature block will be appended.
+            {isFinal
+              ? 'A Final signature locks the report content. Corrections afterwards require an addendum.'
+              : 'A Preliminary (wet-read) signature is recorded but the report stays editable until you finalise it.'}
           </div>
         </div>
 
         {/* Body */}
         <div style={{ padding: '20px 22px' }}>
-          <Field
-            label="Radiologist Name *"
-            value={name}
-            onChange={setName}
-            placeholder="Dr. Jane Smith"
-          />
+
+          {/* Signature type */}
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+              Signature type
+            </label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[
+                { v: 'Final',       title: 'Final',       sub: 'Locks the report' },
+                { v: 'Preliminary', title: 'Preliminary', sub: 'Wet read — stays editable' },
+              ].map(opt => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setTargetStatus(opt.v)}
+                  style={{
+                    flex: 1, textAlign: 'left', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer',
+                    border: targetStatus === opt.v ? '2px solid #2563eb' : '1px solid #d1d5db',
+                    background: targetStatus === opt.v ? '#eff6ff' : '#fff',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#111827' }}>{opt.title}</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Signing as (read-only — bound to the authenticated user) */}
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
+              Signing as
+            </label>
+            <div style={{
+              padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: '5px',
+              fontSize: '13px', background: '#f9fafb', color: '#111827',
+            }}>
+              {displayName || 'Current user'}
+            </div>
+          </div>
+
           <Field
             label="Credentials / Degree"
             value={credentials}
             onChange={setCredentials}
-            placeholder="MD, FRCPC, ABR"
+            placeholder="MD, FRCR, ABR"
+          />
+
+          <Field
+            label="Account password *"
+            value={password}
+            onChange={setPassword}
+            placeholder="Re-enter your password to sign"
+            type="password"
+            inputRef={pwdRef}
+            autoComplete="current-password"
+            onKeyDown={handleKeyDown}
           />
 
           {/* Timestamp preview */}
@@ -115,6 +193,9 @@ export default function FinalizeDialog({ open, defaultName = '', onFinalize, onC
             padding: '10px 14px', fontSize: '12px', color: '#166534', marginBottom: '16px',
           }}>
             <strong>Signature timestamp:</strong> {timestamp}
+            <div style={{ fontSize: '11px', color: '#15803d', marginTop: '2px' }}>
+              The server records the authoritative signing time.
+            </div>
           </div>
 
           {/* Attestation */}
@@ -135,13 +216,23 @@ export default function FinalizeDialog({ open, defaultName = '', onFinalize, onC
             />
             I agree to the attestation statement above and confirm the report is complete and ready for release.
           </label>
+
+          {error && (
+            <div style={{
+              marginTop: '12px', background: '#fef2f2', border: '1px solid #fecaca',
+              borderRadius: '5px', padding: '9px 12px', fontSize: '12px', color: '#991b1b',
+            }}>
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div style={{ padding: '12px 22px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button
             onClick={onClose}
-            style={{ padding: '7px 18px', border: '1px solid #d1d5db', background: '#fff', borderRadius: '5px', cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit' }}
+            disabled={busy}
+            style={{ padding: '7px 18px', border: '1px solid #d1d5db', background: '#fff', borderRadius: '5px', cursor: busy ? 'not-allowed' : 'pointer', fontSize: '13px', fontFamily: 'inherit' }}
           >
             Cancel
           </button>
@@ -160,7 +251,7 @@ export default function FinalizeDialog({ open, defaultName = '', onFinalize, onC
               fontFamily: 'inherit',
             }}
           >
-            ✍️ Sign & Finalize
+            {busy ? 'Signing…' : (isFinal ? '✍️ Sign & Finalize' : '✍️ Sign Preliminary')}
           </button>
         </div>
 

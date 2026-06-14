@@ -69,10 +69,30 @@ const getOverviewDates = (timeframe) => {
 };
 
 export default function AdminBoard() {
-  const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
+  const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription, modules } = useAuth();
   const { isOnline, addToOutbox } = useOffline();
   const navigate = useNavigate();
+
+  // Cloud PACS-only centres get a trimmed Dashboard — just the two things they
+  // still manage here: add/remove users (Staff) and the report letterhead.
+  // Everything RIS/clinic-ops (Overview analytics, Roles, Hospitals, Finance) is
+  // hidden. RIS-only / RIS+PACS see the full tab set.
+  const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
+  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Letterhead'];
+  const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead'] : ALL_TABS;
+  // The single role every Cloud PACS-only user is onboarded with — full access
+  // to the (already module-trimmed) PACS surface. admindoctor is the superset
+  // role, so it satisfies the reporting + admin routes a PACS centre exposes;
+  // the sidebar + backend module gates keep the experience scoped to PACS.
+  const PACS_ONBOARD_ROLE = 'admindoctor';
+
   const [activeTab, setActiveTab] = useState('Overview');
+
+  // When the SKU resolves to PACS-only, land on a tab that actually exists for
+  // them (default 'Overview' is hidden), and never let a hidden tab stay active.
+  useEffect(() => {
+    if (isPacsOnly && !visibleTabs.includes(activeTab)) setActiveTab('Staff');
+  }, [isPacsOnly, activeTab]);
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
@@ -358,6 +378,16 @@ export default function AdminBoard() {
   useEffect(() => {
     fetchDoctorProtocol(selectedPrescriptionDoctorId);
   }, [selectedPrescriptionDoctorId, fetchDoctorProtocol]);
+
+  // The prescription/letterhead setting is now SINGLE PER CENTRE (shared by all
+  // doctors), so there's no doctor to pick. Auto-target the centre protocol by
+  // anchoring to the current user's id — the backend ignores the id and always
+  // reads/writes the one hospital-wide row; this just enables the editor + Save.
+  useEffect(() => {
+    if (activeTab === 'Letterhead' && currentUser?.id && !selectedPrescriptionDoctorId) {
+      setSelectedPrescriptionDoctorId(currentUser.id);
+    }
+  }, [activeTab, currentUser?.id, selectedPrescriptionDoctorId]);
 
 
   const fetchFinancialMatrix = useCallback(async (startDate = null, endDate = null) => {
@@ -1377,12 +1407,14 @@ export default function AdminBoard() {
   };
 
   const handleOpenUserDrawer = (user = null) => {
-    setEditUser(user ? { ...user, roles: user.roles || [] } : { 
-      name: '', 
-      email: '', 
-      password: '', 
+    setEditUser(user ? { ...user, roles: user.roles || [] } : {
+      name: '',
+      email: '',
+      password: '',
       confirmPassword: '',
-      roles: [], 
+      // Cloud PACS-only centres onboard everyone as a single full-access role —
+      // no role picker (see the form below). RIS / RIS+PACS pick roles as usual.
+      roles: isPacsOnly ? [PACS_ONBOARD_ROLE] : [],
       status: 'active',
       specialization: '',
       degree: '',
@@ -1398,8 +1430,10 @@ export default function AdminBoard() {
     
     const isDoctorRole = editUser.roles.some(r => r.toLowerCase().includes('doctor'));
     
-    // Surcharge check for NEW doctors
-    if (!editUser.id && isDoctorRole) {
+    // Surcharge check for NEW doctors — a RIS per-doctor-seat billing concept.
+    // It doesn't apply to Cloud PACS-only centres (everyone is onboarded with the
+    // single full-access role), so skip the prompt there.
+    if (!editUser.id && isDoctorRole && !isPacsOnly) {
       const confirmSurcharge = window.confirm(
         "PROTOCOL ALERT: Adding a new doctor seat will increase your monthly subscription overhead by ₹1,000.\n\nDo you want to authorize this expansion?"
       );
@@ -2179,27 +2213,13 @@ export default function AdminBoard() {
           <div style={{ marginBottom: '35px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0f52ba' }}></div>
-              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>PROFILE SELECTOR</h3>
+              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>CENTRE LETTERHEAD</h3>
             </div>
-            <select 
-              value={selectedPrescriptionDoctorId}
-              onChange={(e) => setSelectedPrescriptionDoctorId(e.target.value)}
-              style={{ 
-                width: '100%', padding: '16px', borderRadius: '18px', border: '1px solid #e2e8f0', 
-                background: '#fff', fontSize: '13px', fontWeight: 950, color: '#1a1a2e',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.03)', cursor: 'pointer'
-              }}
-            >
-              <option value="">SELECT CLINICAL CONSULTANT...</option>
-              {doctors.map(doc => (
-                <option key={doc.id} value={doc.id}>{(doc.name || 'Unknown').toUpperCase()} — {doc.degree || 'MD'}</option>
-              ))}
-            </select>
-            {doctors.length === 0 && !personnelLoading && (
-               <div style={{ marginTop: '12px', padding: '10px 15px', background: '#fff1f2', border: '1px solid #fda4af', borderRadius: '12px', color: '#be123c', fontSize: '10px', fontWeight: 800 }}>
-                 No radiologists found. Please add them under the Staff tab.
-               </div>
-            )}
+            {/* One report letterhead + page geometry per diagnostic centre, shared
+                by every doctor — there is no per-doctor variation. */}
+            <div style={{ padding: '14px 16px', borderRadius: '16px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e3a8a', fontSize: '12px', fontWeight: 700, lineHeight: 1.6 }}>
+              This letterhead, margins and fonts apply to <strong>every doctor&apos;s reports</strong> at this centre.
+            </div>
           </div>
 
           <div style={{ flex: 1, opacity: selectedPrescriptionDoctorId ? 1 : 0.3, pointerEvents: selectedPrescriptionDoctorId ? 'auto' : 'none', transition: 'all 0.4s' }}>
@@ -5017,7 +5037,7 @@ return (
         msOverflowStyle: 'none',
         gap: '4px'
       }}>
-        {['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Letterhead'].map(tab => (
+        {visibleTabs.map(tab => (
           <button
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`}
@@ -5215,8 +5235,13 @@ return (
                         </div>
 
                         <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '12px' }}>Assigned Roles <span style={{ color: '#ef4444' }}>*</span></label>
-                           
+                           <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '12px' }}>{isPacsOnly ? 'Access' : (<>Assigned Roles <span style={{ color: '#ef4444' }}>*</span></>)}</label>
+
+                           {isPacsOnly ? (
+                             <div style={{ padding: '14px 16px', borderRadius: '16px', border: '1px solid #bfdbfe', background: '#eff6ff', fontSize: '12px', color: '#1e3a8a', lineHeight: 1.6, fontWeight: 600 }}>
+                               Added as a <strong>Cloud PACS user</strong> with full access — studies, the DICOM bridge, configuration, and user &amp; letterhead management. Individual roles aren&apos;t assigned on Cloud PACS.
+                             </div>
+                           ) : (
                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                               {[
                                 { id: 'doctor',       label: 'Doctor',       desc: 'Precision Reporting',  color: '#0891b2', icon: '' },
@@ -5275,6 +5300,7 @@ return (
                                 );
                               })}
                            </div>
+                           )}
                         </div>
 
                         {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) && (

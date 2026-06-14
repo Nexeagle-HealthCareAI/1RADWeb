@@ -235,8 +235,14 @@ const SettingsIcon = () => (
 );
 
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
+// Cloud PACS-only centres get a deliberately minimal navigation: the imaging
+// worklist + ingestion + the bits of admin they still need (add users, set the
+// letterhead — both inside the Dashboard). Everything RIS/clinic-ops is hidden.
+// RIS-only and RIS+PACS are unaffected (they fall back to per-item module gating).
+const PACS_ONLY_ROUTES = new Set(['/admin-board', '/configuration', '/studies', '/dicom-bridge']);
+
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
-  const { currentUser, logout, activeCenter, hasModule } = useAuth();
+  const { currentUser, logout, activeCenter, hasModule, modules } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [soHov, setSoHov] = useState(false);
   // Per-row hover state for Security/Sync/Sessions was inlined when those
@@ -329,12 +335,19 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
     return [...acc, ...permissions];
   }, []);
 
+  // Cloud PACS-only = has PACS, not RIS. (modules is null while loading → not
+  // PACS-only yet, so the menu doesn't flash to the minimal set on boot.)
+  const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
+
   const navItems = NAV_ITEMS.filter(item =>
     allowedRoutes.includes(item.route) &&
     // Product-module gate (RIS / PACS SKUs): hide items the active center's
     // subscription doesn't include. hasModule() is permissive while the
     // subscription is still loading, so the menu doesn't flash on boot.
-    hasModule(item.requiredModule)
+    hasModule(item.requiredModule) &&
+    // Cloud PACS-only centres see only the minimal imaging nav (the Dashboard
+    // they reach is itself trimmed to Staff + Letterhead — see AdminBoard).
+    (!isPacsOnly || PACS_ONLY_ROUTES.has(item.route))
   );
 
   const handleLogout = () => { logout(); navigate('/login'); };

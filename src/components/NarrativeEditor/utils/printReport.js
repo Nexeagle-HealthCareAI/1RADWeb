@@ -257,8 +257,18 @@ function collectInlinedStyles() {
 //    and hide every editor chrome element. Mirrors the proven exportPdf rules. ─
 const PRINT_OVERRIDES = `
   @page { size: A4; margin: 0; }
-  html, body { background:#fff !important; margin:0 !important; padding:0 !important; }
-  .print-canvas { display:block; background:#fff; margin:0; padding:0; }
+  /* The app's global.css sets html,body,#root { height:100%; overflow:hidden }
+     for the single-screen SPA shell. Those rules get inlined into this print
+     document too, and on paper they clamp the body to ONE viewport and clip
+     everything past the first page — so only page 1 printed even though the
+     preview (which doesn't inherit them) showed several. Force the print
+     document to flow to its full multi-page height. */
+  html, body, #root {
+    background:#fff !important; margin:0 !important; padding:0 !important;
+    height:auto !important; min-height:0 !important; max-height:none !important;
+    overflow:visible !important;
+  }
+  .print-canvas { display:block; background:#fff; margin:0; padding:0; height:auto; overflow:visible; }
   .word-page {
     width:${A4_PX.width}px; min-height:${A4_PX.height}px;
     background:#fff !important; box-shadow:none !important;
