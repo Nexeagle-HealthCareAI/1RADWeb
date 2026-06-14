@@ -19,7 +19,7 @@ const groupCutsByPartner = (cuts) => {
       groups.set(key, {
         id: key, name: displayName, isPayee: isAgent, doctorSet: new Set(),
         isDirect: !cut?.referrerId && !cut?.name, cuts: [],
-        total: 0, paid: 0, unpaid: 0, earned: 0, deficit: 0, centreAbsorbed: 0, count: 0, lastDate: 0,
+        total: 0, paid: 0, unpaid: 0, eligible: 0, awaiting: 0, earned: 0, deficit: 0, centreAbsorbed: 0, count: 0, lastDate: 0,
       });
     }
     if (isAgent && cut?.referringDoctor) groups.get(key).doctorSet.add(cut.referringDoctor);
@@ -31,7 +31,15 @@ const groupCutsByPartner = (cuts) => {
     if (amt >= 0) g.earned += amt; else g.deficit += -amt;
     const absorbedMatch = String(cut?.remarks || '').match(/Excess\s*₹?\s*([\d.]+)\s*absorbed by centre/i);
     if (absorbedMatch) g.centreAbsorbed += Number(absorbedMatch[1]) || 0;
-    if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
+    if (cut?.status === 'PAID') {
+      g.paid += amt;
+    } else {
+      g.unpaid += amt;
+      if (amt > 0) {
+        const patientPaid = cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL';
+        if (patientPaid) g.eligible += amt; else g.awaiting += amt;
+      }
+    }
     const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
     if (cutDate > g.lastDate) g.lastDate = cutDate;
   });
@@ -135,12 +143,25 @@ const ReferralHub = ({
 
   const referralStats = useMemo(() => {
     const cuts = presentCuts || [];
-    return {
-      total: cuts.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
-      paid: cuts.filter(c => c.status === 'PAID').reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
-      unpaid: cuts.filter(c => c.status !== 'PAID').reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
-      count: cuts.length
-    };
+    // A commission is ELIGIBLE to pay out once the patient has paid anything
+    // (full PAID or part PARTIAL); otherwise it's AWAITING the patient's payment
+    // and not yet payable. Carried deficits (amount ≤ 0) aren't a payable.
+    const received = (c) => c?.patientPaymentStatus === 'PAID' || c?.patientPaymentStatus === 'PARTIAL';
+    let total = 0, paid = 0, unpaid = 0, eligibleToPay = 0, awaitingPatient = 0, eligiblePartial = 0;
+    cuts.forEach(c => {
+      const amt = Number(c?.amount) || 0;
+      total += amt;
+      if (c.status === 'PAID') { paid += amt; return; }
+      unpaid += amt;
+      if (amt <= 0) return;
+      if (received(c)) {
+        eligibleToPay += amt;
+        if (c?.patientPaymentStatus === 'PARTIAL') eligiblePartial += amt;
+      } else {
+        awaitingPatient += amt;
+      }
+    });
+    return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
   }, [presentCuts]);
 
   // Aggregates for the gamified "upcoming" view (projected, not yet earned).
@@ -715,20 +736,29 @@ const ReferralHub = ({
 
        {viewMode === 'earned' ? (
         <>
-       <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? '15px' : '25px', marginBottom: '40px' }}>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-             <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>STRATEGIC_OUTFLOW</div>
-             <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 950, color: '#1e293b' }}>₹{referralStats.total.toLocaleString()}</div>
-          </div>
-          
-          <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
-             <div style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '8px' }}>SETTLED_DISBURSEMENTS</div>
-             <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 950, color: '#14532d' }}>₹{referralStats.paid.toLocaleString()}</div>
+       <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '18px', marginBottom: '40px' }}>
+          <div style={{ background: 'white', padding: '18px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL PAYOUTS</div>
+             <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e293b' }}>₹{referralStats.total.toLocaleString()}</div>
           </div>
 
-          <div style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
-             <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '8px' }}>OUTSTANDING_OBLIGATIONS</div>
-             <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 950, color: '#881337' }}>₹{referralStats.unpaid.toLocaleString()}</div>
+          <div style={{ background: '#f0fdf4', padding: '18px', borderRadius: '20px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '8px' }}>SETTLED · PAID OUT</div>
+             <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#14532d' }}>₹{referralStats.paid.toLocaleString()}</div>
+          </div>
+
+          <div style={{ background: '#eff6ff', padding: '18px', borderRadius: '20px', border: '1px solid #bfdbfe', boxShadow: '0 4px 20px rgba(29,78,216,0.05)' }}>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>ELIGIBLE TO PAY</div>
+             <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e3a8a' }}>₹{referralStats.eligibleToPay.toLocaleString()}</div>
+             <div style={{ fontSize: '9px', fontWeight: 700, color: '#60a5fa', marginTop: '6px', lineHeight: 1.4 }}>
+               patient paid · ready to disburse{referralStats.eligiblePartial > 0 ? ` · incl. ₹${referralStats.eligiblePartial.toLocaleString()} from ½ part-paid` : ''}
+             </div>
+          </div>
+
+          <div style={{ background: '#fff7ed', padding: '18px', borderRadius: '20px', border: '1px solid #fed7aa', boxShadow: '0 4px 20px rgba(194,65,12,0.05)' }}>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '1px', marginBottom: '8px' }}>AWAITING PATIENT PMT</div>
+             <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#9a3412' }}>₹{referralStats.awaitingPatient.toLocaleString()}</div>
+             <div style={{ fontSize: '9px', fontWeight: 700, color: '#fb923c', marginTop: '6px', lineHeight: 1.4 }}>not eligible until the patient pays</div>
           </div>
        </div>
 
@@ -962,6 +992,18 @@ const ReferralHub = ({
                     <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#fed7d7' }}>UNPAID</div>
                     <div style={{ fontSize: '14px', fontWeight: 950, color: '#fed7d7' }}>₹{activePartner.unpaid.toLocaleString()}</div>
                   </div>
+                  {activePartner.eligible > 0 && (
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#bfdbfe' }}>ELIGIBLE TO PAY</div>
+                      <div style={{ fontSize: '14px', fontWeight: 950, color: '#bfdbfe' }}>₹{activePartner.eligible.toLocaleString()}</div>
+                    </div>
+                  )}
+                  {activePartner.awaiting > 0 && (
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#fde68a' }}>AWAITING PATIENT</div>
+                      <div style={{ fontSize: '14px', fontWeight: 950, color: '#fde68a' }}>₹{activePartner.awaiting.toLocaleString()}</div>
+                    </div>
+                  )}
                   {activePartner.deficit > 0 && (
                     <div>
                       <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#fde68a' }}>DEFICIT (carried)</div>

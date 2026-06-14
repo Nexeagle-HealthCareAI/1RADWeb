@@ -1307,11 +1307,20 @@ export default function BillingPage() {
   const futureAppointments = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
     const safeApps = appointments || [];
-    
+
+    // A future appointment that's ALREADY BILLED has a real invoice, which is
+    // shown in the "Pre-billed future transactions" section. Exclude it from the
+    // projected "Upcoming revenue" ledger so the same visit doesn't appear in
+    // BOTH (which double-counted its revenue + showed two rows when a billed
+    // patient was moved from today to a future date). We key off the SAME
+    // invoice set that's rendered as pre-billed, so a visit shows exactly once.
+    const billedApptIds = new Set((filteredInvoices || []).map(i => i.appointmentId).filter(Boolean));
+
     return safeApps.filter(app => {
       const appDate = app.date || (app.dateTime ? app.dateTime.split('T')[0] : null);
       if (!appDate || appDate <= today) return false;
-      
+      if (billedApptIds.has(app.appointmentId)) return false; // already billed → pre-billed section only
+
       // Modality Filter — multi-service aware. Picks up a visit whose
       // ANY service line matches the chosen modality, with v1 scalar
       // fallback for rows that pre-date the multi-service rollout.
@@ -1329,7 +1338,7 @@ export default function BillingPage() {
         if (valA > valB) return sortConfig.direction === 'ASC' ? 1 : -1;
         return 0;
     });
-  }, [appointments, searchTerm, modalityFilter, sortConfig]);
+  }, [appointments, searchTerm, modalityFilter, sortConfig, filteredInvoices]);
 
   // Upcoming referral commissions — projected from FUTURE appointments that
   // carry a referrer. Real ReferralCommission rows are only created on ARRIVAL,

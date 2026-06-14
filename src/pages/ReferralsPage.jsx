@@ -27,6 +27,43 @@ const getISODate = (offset = 0) => {
 const TODAY = getISODate(0);
 const YESTERDAY = getISODate(1);
 
+// Profile-completion for a referral partner. Drives the "% complete" suggestion
+// on the Referrals page so the centre can see which referrer profiles still
+// need details filled in. The fields that count differ by partner type: a
+// doctor profile benefits from speciality + degree, while an "other person"
+// profile benefits from the doctor they bring patients from. Name is always
+// counted (it's the only hard-required field); everything else is optional but
+// nudged. Returns the percentage plus the human labels of what's still missing.
+const getReferrerProfileCompletion = (ref) => {
+  if (!ref) return { pct: 0, filled: 0, total: 1, missing: [] };
+  const isDoctor = ref.isDoctor !== false; // default Doctor
+  const has = (v) => !!String(v ?? '').trim();
+  const fields = isDoctor
+    ? [
+        { label: 'Name', ok: has(ref.name) },
+        { label: 'Mobile', ok: has(ref.contact) },
+        { label: 'Email', ok: has(ref.email) },
+        { label: 'Speciality', ok: has(ref.specialty) },
+        { label: 'Degree', ok: has(ref.degree) },
+        { label: 'Address', ok: has(ref.address) },
+      ]
+    : [
+        { label: 'Name', ok: has(ref.name) },
+        { label: 'Mobile', ok: has(ref.contact) },
+        { label: 'Email', ok: has(ref.email) },
+        { label: 'Supporting doctor', ok: has(ref.supportedByDoctor) },
+        { label: 'Address', ok: has(ref.address) },
+      ];
+  const total = fields.length;
+  const filled = fields.filter(f => f.ok).length;
+  const pct = Math.round((filled / total) * 100);
+  const missing = fields.filter(f => !f.ok).map(f => f.label);
+  return { pct, filled, total, missing };
+};
+
+// Shared colour ramp for a completion %: red (sparse) → amber → green (full).
+const completionColor = (pct) => (pct >= 80 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#ef4444');
+
 // --- MOCK DATA ---
 const INITIAL_LAYOUTS = [];
 const REFERRAL_LOG = [];
@@ -251,14 +288,35 @@ export default function ReferralsPage() {
     try { await navigator.clipboard.writeText(await buildDoctorLink(referrerId)); notifyToast('Link copied ✓', 'success'); }
     catch { notifyToast('Could not generate the link.', 'error'); }
   };
-  const whatsappDoctor = async (d) => {
+  // One-click WhatsApp send via NexEagle's WhatsApp Business API: the link is
+  // delivered server-side straight to the doctor's number (no app hand-off).
+  // Needs an approved "referral_portal" template in Meta — friendlyWaError turns
+  // the raw gateway response into one actionable line if it isn't live yet.
+  const friendlyWaError = (raw) => {
+    const s = String(raw || '');
+    if (/WHATSAPP_DISABLED/i.test(s)) return 'WhatsApp messaging is turned off in settings.';
+    if (/template/i.test(s) || /13200[01]|131009|13101\d/i.test(s)) return 'The “referral_portal” WhatsApp template isn’t approved yet in Meta. Approve it, then try again.';
+    return 'WhatsApp gateway rejected the message — please check the WhatsApp setup.';
+  };
+  const whatsappDoctors = async (ids) => {
+    if (!ids.length) { notifyToast('No doctor with a mobile number to message.', 'error'); return; }
+    setLinksBusy(true);
     try {
-      const link = await buildDoctorLink(d.referrerId);
-      const digits = (d.contact || '').replace(/\D/g, '');
-      const num = digits.length === 10 ? `91${digits}` : digits;
-      const text = encodeURIComponent(`Hello Dr. ${d.name || ''}, here is your live referral dashboard: ${link}`);
-      window.open(num ? `https://wa.me/${num}?text=${text}` : `https://wa.me/?text=${text}`, '_blank');
-    } catch { notifyToast('Could not generate the link.', 'error'); }
+      const { data } = await apiClient.post('/referrers/send-links-whatsapp', { referrerIds: ids, baseUrl: window.location.origin });
+      const noC = data.noContact?.length || 0;
+      const fail = data.failed?.length || 0;
+      if (data.sent > 0) {
+        notifyToast(`WhatsApp sent to ${data.sent}${noC ? ` · ${noC} skipped (no mobile)` : ''}${fail ? ` · ${fail} failed` : ''}.`, 'success');
+      } else if (fail > 0) {
+        notifyToast(friendlyWaError(data.error), 'error');
+      } else if (noC > 0) {
+        notifyToast('No mobile number on file for the selected doctor(s).', 'info');
+      } else {
+        notifyToast('Nothing to send.', 'info');
+      }
+    } catch (e) {
+      notifyToast(e?.response?.data?.error || 'Could not send on WhatsApp.', 'error');
+    } finally { setLinksBusy(false); }
   };
   const emailDoctors = async (ids) => {
     if (!ids.length) { notifyToast('No doctors to email.', 'error'); return; }
@@ -287,9 +345,11 @@ export default function ReferralsPage() {
     });
   };
 
-  // Open the send sheet, defaulting to whichever channel we can already reach.
-  const openLinkSend = (d) => {
-    const channel = d.email ? 'email' : (d.contact ? 'whatsapp' : 'email');
+  // Open the send sheet. `prefer` forces a channel (used by the per-doctor
+  // "+ Add mobile / + Add email" affordances); otherwise default to whichever
+  // channel we can already reach.
+  const openLinkSend = (d, prefer) => {
+    const channel = prefer || (d.email ? 'email' : (d.contact ? 'whatsapp' : 'email'));
     setLinkSend({ doctor: d, channel, email: d.email || '', contact: d.contact || '', saving: false, err: '' });
   };
 
@@ -308,7 +368,7 @@ export default function ReferralsPage() {
         fetchReferralIntelligence(); // refresh the roster so the new contact sticks
       }
       if (channel === 'email') await emailDoctors([doctor.referrerId]);
-      else await whatsappDoctor({ ...doctor, contact: (contact || '').replace(/\D/g, '') });
+      else await whatsappDoctors([doctor.referrerId]);
       setLinkSend(null);
     } catch (e) {
       setLinkSend(s => ({ ...s, saving: false, err: e?.response?.data?.error || 'Could not send. Please try again.' }));
@@ -501,7 +561,7 @@ export default function ReferralsPage() {
     const headers = [
       'Rank', 'Partner Name', 'Type', 'Speciality', 'Degree', 'Supporting Doctor',
       'Email', 'Contact Number', 'Address', 'Total Studies', 'Total Revenue',
-      'Total Commission', 'Paid Commission', 'Unpaid Commission',
+      'Total Commission', 'Total Paid Incentive', 'Unpaid Commission',
     ];
     const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     let csv = headers.join(',') + '\n';
@@ -3817,6 +3877,8 @@ export default function ReferralsPage() {
                   onClick={() => {
                     setReferralViewMode(mode);
                     if (mode === 'PATIENTS') fetchPatientMasterList();
+                    // Roster has no "Self" concept — fall back to All so it isn't blanked.
+                    if (mode === 'ROSTER' && personTypeFilter === 'SELF') setPersonTypeFilter('ALL');
                   }}
                   style={{ 
                     padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
@@ -3867,10 +3929,10 @@ export default function ReferralsPage() {
                 />
              </div>
 
-              {/* Person-type filter (#2) — Doctor / Other / Self */}
-              {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG') && (
+              {/* Person-type filter (#2) — Doctor / Other / Self (Self only where it applies) */}
+              {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG' || referralViewMode === 'ROSTER') && (
                 <div style={{ display: 'flex', background: '#f8fafc', padding: '4px', borderRadius: '14px', border: '1px solid #e2e8f0', gap: '3px', flexWrap: 'wrap' }}>
-                  {[['ALL', 'All'], ['DOCTOR', '👨‍⚕️ Doctor'], ['OTHER', '👤 Other'], ['SELF', '🏥 Self']].map(([k, lbl]) => (
+                  {[['ALL', 'All'], ['DOCTOR', '👨‍⚕️ Doctor'], ['OTHER', '👤 Other'], ...(referralViewMode === 'ROSTER' ? [] : [['SELF', '🏥 Self']])].map(([k, lbl]) => (
                     <button key={k} type="button" onClick={() => setPersonTypeFilter(k)}
                       style={{ padding: '9px 13px', borderRadius: '11px', border: 'none', background: personTypeFilter === k ? '#0f52ba' : 'transparent', color: personTypeFilter === k ? 'white' : '#64748b', fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {lbl}
@@ -4223,12 +4285,6 @@ export default function ReferralsPage() {
                        <span style={{ fontSize: '14px' }}>⇪</span> Upload Excel
                      </button>
                      <button
-                       onClick={() => setReferralViewMode('LINKS')}
-                       style={{ padding: '10px 18px', borderRadius: '12px', background: 'white', color: '#15803d', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #bbf7d0' }}
-                     >
-                       <span style={{ fontSize: '14px' }}>🔗</span> Doctor links
-                     </button>
-                     <button
                        onClick={handleExportRoster}
                        style={{ padding: '10px 18px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #bfdbfe', color: '#0f52ba', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                      >
@@ -4242,9 +4298,11 @@ export default function ReferralsPage() {
                     <tr>
                       <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>#</th>
                       <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Partner</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Type</th>
                       <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Contact</th>
                       <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Studies</th>
                       <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Total Commission</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#16a34a', letterSpacing: '0.5px' }}>Total Paid Incentive</th>
                       <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Unpaid</th>
                       <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Actions</th>
                     </tr>
@@ -4252,7 +4310,7 @@ export default function ReferralsPage() {
                   <tbody>
                     {caseLedgerList.length === 0 ? (
                       <tr>
-                        <td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
+                        <td colSpan="9" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
                       </tr>
                     ) : (
                       caseLedgerList
@@ -4266,18 +4324,25 @@ export default function ReferralsPage() {
                           </td>
                           <td style={{ padding: '16px 24px' }}>
                             <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{s.name || 'Unnamed'}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
-                                {s.isDoctor ? '👨‍⚕️ Doctor' : '👤 Other person'}
-                              </span>
-                              {s.isDoctor && (s.specialty || s.degree) && (
-                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
-                              )}
-                              {!s.isDoctor && s.supportedByDoctor && (
-                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>refers for Dr. {s.supportedByDoctor}</span>
-                              )}
-                            </div>
+                            {(s.specialty || s.degree || s.supportedByDoctor || getReferrerProfileCompletion(s).pct < 100) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
+                                {s.isDoctor && (s.specialty || s.degree) && (
+                                  <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
+                                )}
+                                {!s.isDoctor && s.supportedByDoctor && (
+                                  <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>refers for Dr. {s.supportedByDoctor}</span>
+                                )}
+                                {(() => { const c = getReferrerProfileCompletion(s); return c.pct < 100 ? (
+                                  <span title={`Profile ${c.pct}% complete — add: ${c.missing.join(', ')}`} style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: '#fff7ed', color: completionColor(c.pct), border: `1px solid ${completionColor(c.pct)}33` }}>{c.pct}% profile</span>
+                                ) : null; })()}
+                              </div>
+                            )}
                             {s.address && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '3px' }}>📍 {s.address}</div>}
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            <span style={{ fontSize: '9px', fontWeight: 800, padding: '3px 9px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309', whiteSpace: 'nowrap' }}>
+                              {s.isDoctor ? '👨‍⚕️ Doctor' : '👤 Other person'}
+                            </span>
                           </td>
                           <td style={{ padding: '16px 24px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>{s.contact || '—'}</div>
@@ -4288,7 +4353,9 @@ export default function ReferralsPage() {
                           </td>
                           <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                             <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba' }}>₹{(s.totalCommission || 0).toLocaleString()}</div>
-                            {s.paidCommission > 0 && <div style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a', marginTop: '2px' }}>₹{(s.paidCommission || 0).toLocaleString()} paid</div>}
+                          </td>
+                          <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                            <div style={{ fontSize: '14px', fontWeight: 900, color: s.paidCommission > 0 ? '#16a34a' : '#94a3b8' }}>₹{(s.paidCommission || 0).toLocaleString()}</div>
                           </td>
                           <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                             <div style={{ fontSize: '14px', fontWeight: 900, color: s.unpaidCommission > 0 ? '#b45309' : '#94a3b8' }}>₹{(s.unpaidCommission || 0).toLocaleString()}</div>
@@ -4344,6 +4411,9 @@ export default function ReferralsPage() {
                                    {!s.isDoctor && s.supportedByDoctor && (
                                      <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>refers for Dr. {s.supportedByDoctor}</span>
                                    )}
+                                   {(() => { const c = getReferrerProfileCompletion(s); return c.pct < 100 ? (
+                                     <span title={`Profile ${c.pct}% complete — add: ${c.missing.join(', ')}`} style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: '#fff7ed', color: completionColor(c.pct), border: `1px solid ${completionColor(c.pct)}33` }}>{c.pct}% profile</span>
+                                   ) : null; })()}
                                  </div>
                                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>{s.contact || '—'}{s.email ? ` · ${s.email}` : ''}</div>
                                  {s.address && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>📍 {s.address}</div>}
@@ -4357,6 +4427,10 @@ export default function ReferralsPage() {
                                  <div style={{ flex: 1, textAlign: 'center' }}>
                                    <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f52ba' }}>₹{(s.totalCommission || 0).toLocaleString()}</div>
                                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>Commission</div>
+                                 </div>
+                                 <div style={{ flex: 1, textAlign: 'center' }}>
+                                   <div style={{ fontSize: '15px', fontWeight: 900, color: s.paidCommission > 0 ? '#16a34a' : '#94a3b8' }}>₹{(s.paidCommission || 0).toLocaleString()}</div>
+                                   <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>Paid</div>
                                  </div>
                                  <div style={{ flex: 1, textAlign: 'center' }}>
                                    <div style={{ fontSize: '15px', fontWeight: 900, color: s.unpaidCommission > 0 ? '#b45309' : '#94a3b8' }}>₹{(s.unpaidCommission || 0).toLocaleString()}</div>
@@ -5026,7 +5100,7 @@ return (
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={submitLinkSend} disabled={linkSend.saving}
                 style={{ flex: 1, padding: '12px', borderRadius: '11px', border: 'none', background: linkSend.saving ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 950, cursor: linkSend.saving ? 'not-allowed' : 'pointer' }}>
-                {linkSend.saving ? 'Sending…' : (ch === 'email' ? 'Save & email' : 'Save & open WhatsApp')}
+                {linkSend.saving ? 'Sending…' : (ch === 'email' ? 'Save & email' : 'Save & send on WhatsApp')}
               </button>
               <button onClick={() => setLinkSend(null)} disabled={linkSend.saving} style={{ padding: '12px 16px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
             </div>
@@ -5037,62 +5111,138 @@ return (
     );
   };
 
-  // The "Doctor Links" tab — premium hero + per-doctor send/copy.
+  // The "Doctor Links" tab — slim toolbar + tabular per-doctor send/copy
+  // (table on desktop, cards on mobile), availability-gated one-click sends.
   const renderLinksView = () => {
     const q = referralLinksSearch.trim().toLowerCase();
     const list = q ? doctorList.filter(d => (d.name || '').toLowerCase().includes(q)) : doctorList;
     const withEmail = doctorList.filter(d => d.email).length;
     const withContact = doctorList.filter(d => d.contact).length;
+    // Local style helpers keep the card markup readable.
+    const bulkBtn = (color, on) => ({ padding: '9px 14px', borderRadius: '11px', border: 'none', background: on ? color : '#e2e8f0', color: on ? 'white' : '#94a3b8', fontSize: '11.5px', fontWeight: 900, cursor: on ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' });
+    const chIcon = (color, on) => ({ width: '22px', height: '22px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', background: on ? `${color}14` : '#f1f5f9', opacity: on ? 1 : 0.5, flexShrink: 0 });
+    const actBtn = (fg, bg, bd, busy) => ({ flex: 1, padding: '9px', borderRadius: '10px', border: `1px solid ${bd}`, background: busy ? '#f1f5f9' : bg, color: busy ? '#cbd5e1' : fg, fontSize: '11.5px', fontWeight: 900, cursor: busy ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' });
+    const actGhost = (fg) => ({ flex: 1, padding: '9px', borderRadius: '10px', border: `1px dashed ${fg}55`, background: 'white', color: fg, fontSize: '11px', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' });
+    const iconBtn = { width: '40px', flexShrink: 0, padding: '9px 0', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '15px', fontWeight: 900, cursor: 'pointer' };
+    // Table-cell variants (no flex-grow) for the desktop tabular layout.
+    const tSend = (fg, bg, bd, busy) => ({ padding: '7px 11px', borderRadius: '9px', border: `1px solid ${bd}`, background: busy ? '#f1f5f9' : bg, color: busy ? '#cbd5e1' : fg, fontSize: '11px', fontWeight: 900, cursor: busy ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' });
+    const tGhost = (fg) => ({ padding: '7px 11px', borderRadius: '9px', border: `1px dashed ${fg}55`, background: 'white', color: fg, fontSize: '11px', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' });
+    const thStyle = { padding: '14px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' };
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px', padding: isMobile ? '24px' : '30px 34px', background: 'linear-gradient(135deg,#0a1628 0%,#0f52ba 100%)', color: 'white', boxShadow: '0 18px 44px -14px rgba(15,82,186,0.5)' }}>
-          <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(96,165,250,0.4), transparent 70%)', pointerEvents: 'none' }} />
-          <div style={{ position: 'relative' }}>
-            <div style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '2px', opacity: 0.75 }}>🔗 DOCTOR PORTAL LINKS</div>
-            <div style={{ fontSize: isMobile ? '20px' : '26px', fontWeight: 950, marginTop: '8px', letterSpacing: '-0.4px' }}>Give every doctor their private dashboard</div>
-            <div style={{ fontSize: '12.5px', fontWeight: 600, opacity: 0.82, marginTop: '6px', maxWidth: '560px', lineHeight: 1.6 }}>A live, secure link showing each doctor the patients they referred and their earnings. Send by email or WhatsApp — we&apos;ll capture any missing contact as you go.</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '18px' }}>
-              {[['👨‍⚕️', doctorList.length, 'doctors'], ['📧', withEmail, 'with email'], ['💬', withContact, 'with mobile']].map(([i, v, l], k) => (
-                <div key={k} style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '9px 14px', border: '1px solid rgba(255,255,255,0.14)' }}>
-                  <span style={{ fontSize: '15px', fontWeight: 950 }}>{i} {v}</span>
-                  <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.7, letterSpacing: '0.5px', textTransform: 'uppercase', marginLeft: '6px' }}>{l}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: '18px' }}>
-              <button onClick={() => emailDoctors(doctorList.filter(d => d.email).map(d => d.referrerId))} disabled={linksBusy || withEmail === 0}
-                style={{ padding: '11px 18px', borderRadius: '12px', border: 'none', background: (linksBusy || withEmail === 0) ? 'rgba(255,255,255,0.2)' : 'white', color: (linksBusy || withEmail === 0) ? 'rgba(255,255,255,0.6)' : '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: (linksBusy || withEmail === 0) ? 'not-allowed' : 'pointer' }}>
-                {linksBusy ? 'Sending…' : `📧 Email all (${withEmail})`}
-              </button>
-            </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        {/* Slim toolbar — title, search, and bulk sends (shown only when reachable) */}
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: '14px' }}>
+          <div>
+            <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a', letterSpacing: '-0.3px' }}>Doctor portal links</div>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginTop: '3px' }}>Send each doctor their private dashboard in one tap — WhatsApp, email, or a copied link.</div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {withContact > 0 && (
+              <button onClick={() => whatsappDoctors(doctorList.filter(d => d.contact).map(d => d.referrerId))} disabled={linksBusy} style={bulkBtn('#16a34a', !linksBusy)}>💬 WhatsApp all ({withContact})</button>
+            )}
+            {withEmail > 0 && (
+              <button onClick={() => emailDoctors(doctorList.filter(d => d.email).map(d => d.referrerId))} disabled={linksBusy} style={bulkBtn('#0f52ba', !linksBusy)}>📧 Email all ({withEmail})</button>
+            )}
           </div>
         </div>
 
-        <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-          {list.length === 0 ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>{doctorList.length === 0 ? 'No doctor partners yet.' : 'No doctors match your search.'}</div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))' }}>
-              {list.map(d => {
-                const reachable = d.email || d.contact;
-                return (
-                  <div key={d.referrerId} style={{ padding: '16px 18px', borderBottom: '1px solid #f1f5f9', borderRight: !isMobile ? '1px solid #f1f5f9' : 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                      <div style={{ fontSize: '10.5px', fontWeight: 700, color: reachable ? '#64748b' : '#e11d48', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {d.email ? `📧 ${d.email}` : ''}{d.email && d.contact ? ' · ' : ''}{d.contact ? `💬 ${d.contact}` : ''}{!reachable ? '⚠ no contact on file' : ''}
+        {list.length === 0 ? (
+          <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #eef2f7', padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>{doctorList.length === 0 ? 'No doctor partners yet.' : 'No doctors match your search.'}</div>
+        ) : !isMobile ? (
+          <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #eef2f7', overflow: 'hidden', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <tr>
+                  <th style={{ ...thStyle, width: '44px' }}>#</th>
+                  <th style={thStyle}>Doctor</th>
+                  <th style={thStyle}>Mobile</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Send link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((d, i) => (
+                  <tr key={d.referrerId} style={{ borderBottom: '1px solid #f1f5f9' }}
+                      onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
+                      onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                    <td style={{ padding: '12px 20px', fontSize: '11px', fontWeight: 900, color: '#94a3b8' }}>{i + 1}</td>
+                    <td style={{ padding: '12px 20px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{d.name}</div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>{[d.specialty, d.degree].filter(Boolean).join(' · ') || 'Referring doctor'}</div>
+                    </td>
+                    <td style={{ padding: '12px 20px' }}>
+                      {d.contact
+                        ? <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>{d.contact}</span>
+                        : <span style={{ fontSize: '11px', fontWeight: 800, color: '#e11d48' }}>Not available</span>}
+                    </td>
+                    <td style={{ padding: '12px 20px' }}>
+                      {d.email
+                        ? <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>{d.email}</span>
+                        : <span style={{ fontSize: '11px', fontWeight: 800, color: '#e11d48' }}>Not available</span>}
+                    </td>
+                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: '7px' }}>
+                        {d.contact
+                          ? <button onClick={() => whatsappDoctors([d.referrerId])} disabled={linksBusy} style={tSend('#16a34a', '#ecfdf5', '#bbf7d0', linksBusy)}>💬 WhatsApp</button>
+                          : <button onClick={() => openLinkSend(d, 'whatsapp')} style={tGhost('#16a34a')}>+ Add mobile</button>}
+                        {d.email
+                          ? <button onClick={() => emailDoctors([d.referrerId])} disabled={linksBusy} style={tSend('#0f52ba', '#eff6ff', '#bfdbfe', linksBusy)}>📧 Email</button>
+                          : <button onClick={() => openLinkSend(d, 'email')} style={tGhost('#0f52ba')}>+ Add email</button>}
+                        <button onClick={() => copyDoctorLink(d.referrerId)} title="Copy link to send personally" style={{ ...iconBtn, width: '36px', padding: '7px 0', fontSize: '13px' }}>🔗</button>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
-                      <button onClick={() => copyDoctorLink(d.referrerId)} style={linkBtn('#0f52ba', '#eff6ff', '#bfdbfe')}>Copy link</button>
-                      <button onClick={() => openLinkSend(d)} style={{ padding: '7px 13px', borderRadius: '9px', border: 'none', background: 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>Send link →</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '14px' }}>
+            {list.map(d => {
+              const initial = (d.name || '?').trim().charAt(0).toUpperCase();
+              const subtitle = [d.specialty, d.degree].filter(Boolean).join(' · ') || 'Referring doctor';
+              return (
+                <div key={d.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #eef2f7', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 12px rgba(15,23,42,0.03)' }}>
+                  {/* Identity */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 950, flexShrink: 0 }}>{initial}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+
+                  {/* Channel availability — clearly marks what's missing */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <span style={chIcon('#16a34a', !!d.contact)}>💬</span>
+                      {d.contact
+                        ? <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>{d.contact}</span>
+                        : <span style={{ fontSize: '11px', fontWeight: 800, color: '#e11d48' }}>Mobile not available</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <span style={chIcon('#0f52ba', !!d.email)}>📧</span>
+                      {d.email
+                        ? <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.email}</span>
+                        : <span style={{ fontSize: '11px', fontWeight: 800, color: '#e11d48' }}>Email not available</span>}
+                    </div>
+                  </div>
+
+                  {/* One-click actions — disabled/availability-driven */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {d.contact
+                      ? <button onClick={() => whatsappDoctors([d.referrerId])} disabled={linksBusy} style={actBtn('#16a34a', '#ecfdf5', '#bbf7d0', linksBusy)}>💬 WhatsApp</button>
+                      : <button onClick={() => openLinkSend(d, 'whatsapp')} style={actGhost('#16a34a')}>+ Add mobile</button>}
+                    {d.email
+                      ? <button onClick={() => emailDoctors([d.referrerId])} disabled={linksBusy} style={actBtn('#0f52ba', '#eff6ff', '#bfdbfe', linksBusy)}>📧 Email</button>
+                      : <button onClick={() => openLinkSend(d, 'email')} style={actGhost('#0f52ba')}>+ Add email</button>}
+                    <button onClick={() => copyDoctorLink(d.referrerId)} title="Copy link to send personally" style={iconBtn}>🔗</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {linkSend && renderLinkSendSheet()}
       </div>
@@ -5347,8 +5497,33 @@ return (
             const refIsDoctor = editingReferrer?.isDoctor !== false; // default Doctor
             const fieldStyle = { width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none', boxSizing: 'border-box' };
             const labelStyle = { fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' };
+            const comp = getReferrerProfileCompletion(editingReferrer);
+            const compColor = completionColor(comp.pct);
             return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+              {/* Profile-completion suggestion: live % + which details still help */}
+              <div style={{ background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: '14px', padding: '16px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>PROFILE COMPLETION</span>
+                  <span style={{ fontSize: '16px', fontWeight: 950, color: compColor }}>{comp.pct}%</span>
+                </div>
+                <div style={{ height: '8px', borderRadius: '999px', background: '#e2e8f0', overflow: 'hidden' }}>
+                  <div style={{ width: `${comp.pct}%`, height: '100%', background: compColor, borderRadius: '999px', transition: 'width 0.25s' }} />
+                </div>
+                {comp.missing.length > 0 ? (
+                  <div style={{ marginTop: '13px' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '8px' }}>SUGGESTED · ADD TO COMPLETE</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {comp.missing.map(m => (
+                        <span key={m} style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '999px', padding: '4px 10px' }}>{m}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: '11px', fontSize: '11px', fontWeight: 800, color: '#16a34a' }}>✓ All details added — profile complete</div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <label style={labelStyle}>NAME</label>
                 <input type="text" required value={editingReferrer?.name || ''}
@@ -5566,104 +5741,6 @@ return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Referral Intelligence</h1>
             <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 400, letterSpacing: '0' }}>Strategic networks & payouts</span>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', width: isMobile ? '100%' : 'auto' }}>
-          {/* Institutional Hub Switcher */}
-          <div className="center-switcher-hud" style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-            <button 
-              id="center-switcher-btn"
-              className="command-core-btn"
-              onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
-              style={{ 
-                display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px', 
-                borderRadius: '14px', background: 'white', border: '1px solid #e2e8f0', 
-                cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
-                width: '100%'
-              }}
-            >
-              <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
-              <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
-                <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'Switching...' : 'Active Center'}</div>
-                <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: isMobile ? '100%' : '350px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase() || 'SELECT CENTER...'}</div>
-              </div>
-              <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                  ▼
-              </div>
-            </button>
-
-            {isSwitcherOpen && (
-              <>
-                <div 
-                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1050, background: 'transparent' }} 
-                  onClick={() => setIsSwitcherOpen(false)}
-                />
-                <div 
-                  id="center-dropdown-menu"
-                  className="tactical-hub-dropdown"
-                  style={{ 
-                    position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: isMobile ? '100%' : '350px', 
-                    zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
-                    boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px', boxSizing: 'border-box'
-                  }}
-                >
-                <div style={{ padding: '0 5px 12px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #f1f5f9', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>AUTHORIZED CLINICAL NODES</span>
-                  <span style={{ opacity: 0.5 }}>ACTIVE LIST</span>
-                </div>
-                
-                 <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
-                   {centers.length > 0 ? (
-                     centers.map(center => (
-                       <button
-                         key={center.id}
-                         onClick={async () => { 
-                           const normalizedActiveId = String(activeCenter?.id || '').toLowerCase();
-                           const normalizedTargetId = String(center.id).toLowerCase();
-                           
-                           if (normalizedActiveId === normalizedTargetId || isSwitchingNode) return;
-                           setIsSwitchingNode(true);
-                           const result = await switchCenter(center.id); 
-                           setIsSwitchingNode(false);
-                           setIsSwitcherOpen(false); 
-                           if (result?.success && result.roles) {
-                             window.location.reload(); 
-                           }
-                         }}
-                         className={`hub-option ${activeCenter?.id === center.id ? 'active-hub' : ''}`}
-                         style={{ 
-                           width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
-                           display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
-                           background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
-                           border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
-                           transition: 'all 0.2s', marginBottom: '6px'
-                         }}
-                       >
-
-                         <div style={{ 
-                           width: '10px', height: '10px', borderRadius: '50%', 
-                           background: activeCenter?.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
-                           boxShadow: activeCenter?.id === center.id ? '0 0 10px rgba(46, 204, 113, 0.3)' : 'none'
-                         }}></div>
-                         <div style={{ flex: 1, overflow: 'hidden' }}>
-                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                             <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name || 'Unnamed Center'}</span>
-                             {activeCenter?.id === center.id && <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>ACTIVE</span>}
-                           </div>
-                         </div>
-                       </button>
-                     ))
-                   ) : (
-                     <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '32px', marginBottom: '15px' }}>🛰️</div>
-                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>No Authorized Nodes</div>
-                     </div>
-                   )}
-                 </div>
-               </div>
-              </>
-            )}
           </div>
         </div>
       </div>

@@ -1445,6 +1445,22 @@ export default function AdminBoard() {
       return;
     }
 
+    // Same-centre duplicate guard (instant feedback; the backend enforces it
+    // authoritatively too). Only for a NEW staff member — an edit keeps its own
+    // identity. We don't OTP-verify emails, so we check this centre's roster.
+    if (!editUser.id) {
+      const email = String(editUser.email || '').trim().toLowerCase();
+      const mobileDigits = String(editUser.mobile || '').replace(/\D/g, '');
+      const clash = (personnel || []).find(p =>
+        (email && String(p.email || '').trim().toLowerCase() === email) ||
+        (mobileDigits && String(p.mobile || '').replace(/\D/g, '') === mobileDigits)
+      );
+      if (clash) {
+        notifyToast(`“${(clash.name || 'A staff member').toUpperCase()}” already uses this email or mobile at this centre. Open their profile to edit it instead of adding them again.`, 'error');
+        return;
+      }
+    }
+
     const payload = {
       fullName: editUser.name,
       email: editUser.email,
