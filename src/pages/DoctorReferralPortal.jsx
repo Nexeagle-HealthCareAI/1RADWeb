@@ -44,12 +44,25 @@ const monthLabel = (ym) => {
 // Warm ramp for the profile-completion ring: red (sparse) → amber → green (full).
 const ringColor = (pct) => (pct >= 80 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#ef4444');
 
+// Where a referred patient is in the journey, and why the incentive is / isn't
+// eligible yet. Drives the per-row "Eligibility" badge + the pipeline summary.
+const stageOf = (p) => {
+  const s = String(p?.status || '').toLowerCase();
+  if (s.includes('cancel')) return { key: 'cancelled', label: 'Cancelled', icon: '✕', bg: '#fee2e2', fg: '#991b1b', hint: 'This appointment was cancelled.' };
+  if (p?.paymentStatus === 'PAID') return { key: 'paid', label: 'Paid', icon: '✓', bg: '#dcfce7', fg: '#166534', hint: 'Patient has paid — this referral is eligible for your incentive.' };
+  if (p?.paymentStatus === 'PARTIAL') return { key: 'partial', label: 'Part-paid', icon: '◐', bg: '#dbeafe', fg: '#1e40af', hint: 'Patient has part-paid — this referral is eligible for your incentive.' };
+  if (p?.arrived) return { key: 'arrived', label: 'Arrived · unpaid', icon: '⏳', bg: '#fef3c7', fg: '#b45309', hint: 'Patient arrived but has not paid yet — not eligible for any incentive until the payment is made.' };
+  return { key: 'booked', label: 'Booked · not arrived', icon: '🗓', bg: '#f1f5f9', fg: '#475569', hint: 'Appointment booked — the patient has not arrived at the centre yet.' };
+};
+const STAGE_RANK = { cancelled: -1, booked: 0, arrived: 1, partial: 2, paid: 3 };
+
 // Sortable patient-table columns (key drives the comparator; align drives text).
 const COLS = [
   { key: 'date', label: 'Date', align: 'left', num: false },
   { key: 'patient', label: 'Patient', align: 'left', num: false },
   { key: 'modality', label: 'Study', align: 'left', num: false },
   { key: 'status', label: 'Status', align: 'left', num: false },
+  { key: 'stage', label: 'Eligibility', align: 'left', num: false },
   { key: 'total', label: 'Total amount', align: 'right', num: true },
   { key: 'discount', label: 'Net discount', align: 'right', num: true },
   { key: 'incentive', label: 'Net incentive', align: 'right', num: true },
@@ -139,6 +152,11 @@ export default function DoctorReferralPortal() {
         const f = valNum[key];
         return dir === 'asc' ? num(a[f]) - num(b[f]) : num(b[f]) - num(a[f]);
       }
+      if (key === 'stage') {
+        const av = STAGE_RANK[stageOf(a).key] ?? 0;
+        const bv = STAGE_RANK[stageOf(b).key] ?? 0;
+        return dir === 'asc' ? av - bv : bv - av;
+      }
       // date (default)
       const av = a.date || '', bv = b.date || '';
       return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -196,6 +214,23 @@ export default function DoctorReferralPortal() {
       eligible, paid, payoutRate: pctOf(paid, eligible), avg,
       mods, series, hasMomentum, momentum,
     };
+  }, [filtered]);
+
+  // Patient pipeline over the active filter — where each referred patient sits and
+  // why their incentive is / isn't payable yet. "Served" = distinct patients who
+  // actually arrived and took their tests at the centre.
+  const pipeline = useMemo(() => {
+    let booked = 0, arrivedUnpaid = 0, eligible = 0, arrivedUnpaidAmt = 0;
+    const served = new Set();
+    (filtered || []).forEach(p => {
+      const k = stageOf(p).key;
+      if (k === 'cancelled') return;
+      if (k === 'paid' || k === 'partial') eligible += 1;
+      else if (k === 'arrived') { arrivedUnpaid += 1; arrivedUnpaidAmt += Number(p.eligible) || 0; }
+      else if (k === 'booked') booked += 1;
+      if (p.arrived) served.add(String(p.patient || '').toLowerCase());
+    });
+    return { booked, arrivedUnpaid, arrivedUnpaidAmt, eligible, served: served.size };
   }, [filtered]);
 
   const todayCount = useMemo(() => presentPatients.filter(p => p.date === today).length, [presentPatients, today]);
@@ -272,10 +307,13 @@ export default function DoctorReferralPortal() {
       {/* Gamified upcoming / optimistic cuts */}
       {upcoming.count > 0 && <Upcoming upcoming={upcoming} />}
 
+      {/* Patient pipeline — booked vs arrived-unpaid vs paid, + patients served */}
+      <Pipeline pipeline={pipeline} />
+
       {/* Patient table (scrolls on small screens) — every column header sorts */}
       <div style={{ background: 'white', border: '1px solid #e7ecf3', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 18px rgba(15,23,42,0.05)' }}>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '940px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1060px' }}>
             <thead style={{ background: 'linear-gradient(180deg,#f8fafc,#f1f5f9)' }}>
               <tr>
                 {COLS.map(c => (
@@ -302,6 +340,11 @@ export default function DoctorReferralPortal() {
                     <td style={{ padding: '13px 14px', fontSize: '12px', fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{p.modality}</td>
                     <td style={{ padding: '13px 14px' }}>
                       <span style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 900, background: tone.bg, color: tone.fg, whiteSpace: 'nowrap' }}>{(p.status || '—').toUpperCase()}</span>
+                    </td>
+                    <td style={{ padding: '13px 14px' }}>
+                      {(() => { const st = stageOf(p); return (
+                        <span title={st.hint} style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 900, background: st.bg, color: st.fg, whiteSpace: 'nowrap' }}>{st.icon} {st.label}</span>
+                      ); })()}
                     </td>
                     <td style={{ padding: '13px 14px', textAlign: 'right', fontSize: '12.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{inr(p.total)}</td>
                     <td style={{ padding: '13px 14px', textAlign: 'right', fontSize: '12.5px', fontWeight: 800, color: (Number(p.discount) || 0) > 0 ? '#b45309' : '#cbd5e1', whiteSpace: 'nowrap' }}>{(Number(p.discount) || 0) > 0 ? `− ${inr(p.discount)}` : inr(0)}</td>
@@ -677,6 +720,31 @@ function Upcoming({ upcoming }) {
       <div style={{ textAlign: 'center', fontSize: '10.5px', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.4px', marginTop: '12px' }}>
         ✨ These unlock automatically once each patient is served — keep referring to grow them.
       </div>
+    </div>
+  );
+}
+
+// Patient journey at a glance: booked → arrived (unpaid) → paid (eligible), plus
+// how many distinct patients actually came in and took their tests.
+function Pipeline({ pipeline }) {
+  const items = [
+    { icon: '🗓', label: 'Booked · awaiting visit', value: pipeline.booked, note: 'not arrived yet', bg: '#f8fafc', bd: '#e2e8f0', fg: '#475569' },
+    { icon: '⏳', label: 'Arrived · payment pending', value: pipeline.arrivedUnpaid, note: pipeline.arrivedUnpaidAmt > 0 ? `${inr(pipeline.arrivedUnpaidAmt)} not yet eligible` : 'not eligible yet', bg: '#fffbeb', bd: '#fde68a', fg: '#b45309' },
+    { icon: '✓', label: 'Paid · eligible', value: pipeline.eligible, note: 'incentive payable', bg: '#f0fdf4', bd: '#bbf7d0', fg: '#166534' },
+    { icon: '🏥', label: 'Patients served', value: pipeline.served, note: 'came in & took tests', bg: '#eff6ff', bd: '#bfdbfe', fg: '#1d4ed8' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ background: it.bg, border: `1px solid ${it.bd}`, borderRadius: '14px', padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '15px' }}>{it.icon}</span>
+            <span style={{ fontSize: '9.5px', fontWeight: 950, letterSpacing: '0.4px', textTransform: 'uppercase', color: it.fg }}>{it.label}</span>
+          </div>
+          <div style={{ fontSize: '22px', fontWeight: 950, color: it.fg, marginTop: '6px', letterSpacing: '-0.4px' }}>{it.value}</div>
+          <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>{it.note}</div>
+        </div>
+      ))}
     </div>
   );
 }

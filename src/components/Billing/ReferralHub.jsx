@@ -6,6 +6,15 @@ import { notifyToast } from '../../utils/toast';
 // Self / walk-in visits earn no commission, so their payouts are never editable.
 const isSelfReferrer = (name) => String(name || '').trim().toLowerCase() === 'self';
 
+// Payout eligibility for a single cut, mirroring the on-screen breakdown:
+// Settled (already paid out), Eligible (patient paid → payable now), Non-eligible
+// (patient hasn't paid yet), Deficit (carried over-commission, not a payable).
+const eligibilityLabel = (cut) => {
+  if (cut?.status === 'PAID') return 'Settled';
+  if ((Number(cut?.amount) || 0) <= 0) return 'Deficit';
+  return (cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL') ? 'Eligible' : 'Non-eligible';
+};
+
 // Group cuts by payee/partner with aggregates. Shared by the Earned and Upcoming
 // views. Sorted: outstanding DESC, then total DESC; "DIRECT" pinned to the bottom.
 const groupCutsByPartner = (cuts) => {
@@ -336,12 +345,13 @@ const ReferralHub = ({
       'Commission Status': cut?.status || 'UNPAID',
       'Commission Type': cut?.type || '',
       'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
+      'Payout Eligibility': eligibilityLabel(cut),
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = [
       { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
-      { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }
+      { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }, { wch: 16 }
     ];
     const wb = XLSX.utils.book_new();
     const sheetName = activePartner.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
@@ -400,9 +410,11 @@ const ReferralHub = ({
       'Total Amount (INR)': g.total,
       'Settled (INR)': g.paid,
       'Outstanding (INR)': g.unpaid,
+      'Eligible to Pay (INR)': g.eligible,
+      'Non-eligible (INR)': g.awaiting,
     }));
     const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
-    summaryWs['!cols'] = [{ wch: 28 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 18 }];
+    summaryWs['!cols'] = [{ wch: 28 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
 
     // ── One sheet per partner ────────────────────────────────────────────
@@ -421,11 +433,12 @@ const ReferralHub = ({
         'Commission Status': cut?.status || 'UNPAID',
         'Commission Type': cut?.type || '',
         'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
+        'Payout Eligibility': eligibilityLabel(cut),
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
       ws['!cols'] = [
         { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
-        { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }
+        { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }, { wch: 16 }
       ];
       const sheetName = group.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -751,7 +764,7 @@ const ReferralHub = ({
              <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>ELIGIBLE TO PAY</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e3a8a' }}>₹{referralStats.eligibleToPay.toLocaleString()}</div>
              <div style={{ fontSize: '9px', fontWeight: 700, color: '#60a5fa', marginTop: '6px', lineHeight: 1.4 }}>
-               patient paid · ready to disburse{referralStats.eligiblePartial > 0 ? ` · incl. ₹${referralStats.eligiblePartial.toLocaleString()} from ½ part-paid` : ''}
+               patient paid · ready to disburse{referralStats.eligiblePartial > 0 ? ` · incl. ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
              </div>
           </div>
 
@@ -874,6 +887,16 @@ const ReferralHub = ({
                         <div style={{ fontSize: '12px', fontWeight: 950, color: group.unpaid > 0 ? '#e11d48' : '#cbd5e1', marginTop: '2px' }}>₹{group.unpaid.toLocaleString()}</div>
                       </div>
                     </div>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px' }}>ELIGIBLE</div>
+                        <div style={{ fontSize: '12px', fontWeight: 950, color: group.eligible > 0 ? '#1d4ed8' : '#cbd5e1', marginTop: '2px' }}>₹{group.eligible.toLocaleString()}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px' }}>NON-ELIGIBLE</div>
+                        <div style={{ fontSize: '12px', fontWeight: 950, color: group.awaiting > 0 ? '#c2410c' : '#cbd5e1', marginTop: '2px' }}>₹{group.awaiting.toLocaleString()}</div>
+                      </div>
+                    </div>
                     {group.deficit > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 9px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
                         <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#9a3412', letterSpacing: '0.5px' }}>EARNED ₹{group.earned.toLocaleString()} · DEFICIT</span>
@@ -905,6 +928,8 @@ const ReferralHub = ({
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Total Payouts</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Paid</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Unpaid</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient has paid — ready to disburse">Eligible</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient not paid yet — not eligible">Non-eligible</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Number of Payouts</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
                       <th style={{ padding: '12px 14px', textAlign: 'right' }}></th>
@@ -932,6 +957,8 @@ const ReferralHub = ({
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: '#1e293b', textAlign: 'right' }}>₹{group.total.toLocaleString()}</td>
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: '#166534', textAlign: 'right' }}>₹{group.paid.toLocaleString()}</td>
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: group.unpaid > 0 ? '#e11d48' : '#cbd5e1', textAlign: 'right' }}>₹{group.unpaid.toLocaleString()}</td>
+                        <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: group.eligible > 0 ? '#1d4ed8' : '#cbd5e1', textAlign: 'right' }}>₹{group.eligible.toLocaleString()}</td>
+                        <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: group.awaiting > 0 ? '#c2410c' : '#cbd5e1', textAlign: 'right' }}>₹{group.awaiting.toLocaleString()}</td>
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 700, color: '#64748b', textAlign: 'center' }}>{group.count}</td>
                         <td style={{ padding: '14px', textAlign: 'center' }}>
                           <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', background: group.unpaid > 0 ? '#fee2e2' : '#dcfce7', color: group.unpaid > 0 ? '#991b1b' : '#166534' }}>
@@ -1126,7 +1153,7 @@ const ReferralHub = ({
                               background: cut.patientPaymentStatus === 'PAID' ? '#dcfce7' : cut.patientPaymentStatus === 'PARTIAL' ? '#fef9c3' : '#fee2e2',
                               color: cut.patientPaymentStatus === 'PAID' ? '#166534' : cut.patientPaymentStatus === 'PARTIAL' ? '#713f12' : '#991b1b',
                             }}>
-                              {cut.patientPaymentStatus === 'PAID' ? '✓ RECEIVED' : cut.patientPaymentStatus === 'PARTIAL' ? '½ PARTIAL' : '✗ NOT RECEIVED'}
+                              {cut.patientPaymentStatus === 'PAID' ? '✓ RECEIVED' : cut.patientPaymentStatus === 'PARTIAL' ? 'PARTIAL' : '✗ NOT RECEIVED'}
                             </span>
                           ) : (
                             <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
@@ -1260,7 +1287,7 @@ const ReferralHub = ({
                               {cut.patientPaymentStatus === 'PAID'
                                 ? '✓ RECEIVED'
                                 : cut.patientPaymentStatus === 'PARTIAL'
-                                ? '½ PARTIAL PAYMENT'
+                                ? 'PARTIAL PAYMENT'
                                 : '✗ NOT RECEIVED'}
                             </span>
                           ) : (

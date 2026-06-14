@@ -1493,6 +1493,22 @@ export default function AppointmentBoard() {
       })),
     ].filter(s => s.serviceName);
 
+    // Guard: a single visit can't carry the same modality + service twice. Catches
+    // a duplicate left in the primary draft alongside an identical queued line even
+    // if the user never clicked "Add to visit". (Same modality, different service
+    // name is allowed.)
+    {
+      const seen = new Set();
+      for (const s of serviceLines) {
+        const k = `${String(s.modality || '').trim().toLowerCase()}|${String(s.serviceName || '').trim().toLowerCase()}`;
+        if (seen.has(k)) {
+          showNotif('warning', 'DUPLICATE SERVICE', 'This visit has the same modality & service added more than once. Please remove the duplicate before saving.');
+          return;
+        }
+        seen.add(k);
+      }
+    }
+
     const primary = serviceLines[0] || {
       serviceName: '', modality: '', amount: 0, referralCutValue: 0,
     };
@@ -3219,7 +3235,21 @@ export default function AppointmentBoard() {
                                   const active = refIsDoctor === opt.k;
                                   return (
                                     <button key={String(opt.k)} type="button"
-                                      onClick={() => setNewPatient({ ...newPatient, referrerIsDoctor: opt.k })}
+                                      onClick={() => setNewPatient(prev => {
+                                        if (opt.k === false) {
+                                          // Other person → default the (mandatory) referring
+                                          // doctor to the centre's own doctor for this visit:
+                                          // the chosen Lead Specialist, else the first centre
+                                          // doctor on the roster. Pre-fills but stays editable.
+                                          const centreDoc = String(newBooking.doctor || '').trim() || (doctors && doctors[0]) || '';
+                                          return {
+                                            ...prev,
+                                            referrerIsDoctor: false,
+                                            referrerSupportedByDoctor: String(prev.referrerSupportedByDoctor || '').trim() || centreDoc,
+                                          };
+                                        }
+                                        return { ...prev, referrerIsDoctor: true };
+                                      })}
                                       style={{ flex: 1, padding: '12px 10px', borderRadius: '12px', border: `1.5px solid ${active ? '#0f52ba' : '#dee2e6'}`, background: active ? '#eff6ff' : 'white', color: active ? '#0f52ba' : '#64748b', fontSize: '12px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                       <span style={{ fontSize: '18px' }}>{opt.icon}</span>
                                       {opt.label}
@@ -4557,6 +4587,15 @@ export default function AppointmentBoard() {
 
                   const addCurrentDraft = () => {
                     if (!draftHasService) return;
+                    // Block adding the same modality + service twice to one visit
+                    // (mirrors the booking-time duplicate rule). The same modality
+                    // with a different service name is allowed (e.g. two MRI lines).
+                    const norm = (s) => String(s ?? '').trim().toLowerCase();
+                    const draftKey = `${norm(editingAppointment.modality)}|${norm(editingAppointment.service)}`;
+                    if ((editServices || []).some(l => `${norm(l.modality)}|${norm(l.serviceName)}` === draftKey)) {
+                      showNotif('warning', 'SERVICE ALREADY ADDED', 'This modality & service is already on the visit. Pick a different service, or rename it to tell them apart.');
+                      return;
+                    }
                     setEditServices(prev => [
                       ...prev,
                       {
