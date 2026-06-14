@@ -90,6 +90,9 @@ export const InvoiceDrawer = ({
   const [freeReason, setFreeReason] = React.useState('');
   const [freeSubmitting, setFreeSubmitting] = React.useState(false);
   const [freeBearer, setFreeBearer] = React.useState('BOTH'); // CENTRE | BOTH | REFERRER (default: shared)
+  // Per-service free: which service line to free. null = whole visit (legacy).
+  const [freeServiceId, setFreeServiceId] = React.useState(null);
+  const [freeServiceLabel, setFreeServiceLabel] = React.useState('');
 
   // Show the "who bears it" choice whenever there's a real (non-Self) referrer.
   // Self / walk-in / no-referrer visits are always centre-borne, so the choice
@@ -100,17 +103,21 @@ export const InvoiceDrawer = ({
   const submitFreeRequest = async () => {
     if (!freeReason.trim() || !onRequestApproval) return;
     const bearer = hasReferrerCut ? freeBearer : 'CENTRE';
+    // appointmentServiceId scopes the free to ONE service line; null = whole visit.
+    const scope = freeServiceId ? `service “${freeServiceLabel}”` : 'whole visit';
     setFreeSubmitting(true);
     try {
       await onRequestApproval({
         type: 'MARK_FREE',
         invoiceId: selectedInvoice.invoiceId,
         appointmentId: selectedInvoice.appointmentId || null,
-        title: `${selectedInvoice.displayId || ''} · ${selectedInvoice.patientName || ''} — mark FREE (${bearer.toLowerCase()}-borne)`.trim(),
-        payload: JSON.stringify({ bearer }),
+        title: `${selectedInvoice.displayId || ''} · ${selectedInvoice.patientName || ''} — free ${scope} (${bearer.toLowerCase()}-borne)`.trim(),
+        payload: JSON.stringify({ bearer, appointmentServiceId: freeServiceId || null }),
         reason: freeReason.trim(),
       });
       setFreeReqOpen(false);
+      setFreeServiceId(null);
+      setFreeServiceLabel('');
     } finally {
       setFreeSubmitting(false);
     }
@@ -412,13 +419,28 @@ export const InvoiceDrawer = ({
                               }}>
                                 {qty} × ₹{rate.toLocaleString()}
                               </span>
-                              <span style={{
-                                textAlign: 'right',
-                                fontSize: '12px', fontWeight: 950, color: '#0f52ba',
-                                fontVariantNumeric: 'tabular-nums',
-                              }}>
-                                ₹{subtotal.toLocaleString()}
-                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                                {item.isFree ? (
+                                  <>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textDecoration: 'line-through', fontVariantNumeric: 'tabular-nums' }}>₹{subtotal.toLocaleString()}</span>
+                                    <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: '6px', letterSpacing: '0.5px' }}>FREE</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontVariantNumeric: 'tabular-nums' }}>₹{subtotal.toLocaleString()}</span>
+                                    {/* Per-service free — only for catalogue-attached lines (need the
+                                        AppointmentServiceId to scope the approval to this one line). */}
+                                    {item.appointmentServiceId && onRequestApproval && (
+                                      <button
+                                        type="button"
+                                        onClick={() => { setFreeServiceId(item.appointmentServiceId); setFreeServiceLabel(item.description || mod || 'service'); setFreeReason(''); setFreeReqOpen(true); }}
+                                        style={{ fontSize: '8.5px', fontWeight: 800, color: '#0d9488', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                                        title="Make this one service free (needs admin approval)"
+                                      >Make free</button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -645,11 +667,17 @@ export const InvoiceDrawer = ({
               {onRequestApproval && (
                 <div style={{ marginTop: '12px', borderTop: '1px dashed #e2e8f0', paddingTop: '12px' }}>
                   {!freeReqOpen ? (
-                    <button onClick={() => { setFreeReason(''); setFreeReqOpen(true); }} style={{ width: '100%', padding: '11px', borderRadius: '12px', border: '1px solid #99f6e4', background: '#f0fdfa', color: '#0d9488', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>🎁 MARK AS FREE</button>
+                    <button onClick={() => { setFreeServiceId(null); setFreeServiceLabel(''); setFreeReason(''); setFreeReqOpen(true); }} style={{ width: '100%', padding: '11px', borderRadius: '12px', border: '1px solid #99f6e4', background: '#f0fdfa', color: '#0d9488', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>🎁 MARK WHOLE VISIT FREE</button>
                   ) : (
                     <div style={{ padding: '13px', background: '#f0fdfa', borderRadius: '12px', border: '1px solid #99f6e4', display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                       <div style={{ fontSize: '9px', fontWeight: 950, color: '#0d9488', letterSpacing: '0.8px' }}>MARK FREE · NEEDS ADMIN APPROVAL</div>
-                       <div style={{ fontSize: '10px', color: '#0f766e', lineHeight: 1.5 }}>No bill, no income — the patient pays ₹0 and any money already collected is reversed.</div>
+                       <div style={{ fontSize: '9px', fontWeight: 950, color: '#0d9488', letterSpacing: '0.8px' }}>
+                         {freeServiceId ? `FREE THIS SERVICE · NEEDS ADMIN APPROVAL` : `MARK WHOLE VISIT FREE · NEEDS ADMIN APPROVAL`}
+                       </div>
+                       <div style={{ fontSize: '10px', color: '#0f766e', lineHeight: 1.5 }}>
+                         {freeServiceId
+                           ? <>Only <b>{freeServiceLabel}</b> becomes free — the rest of the visit stays payable.</>
+                           : <>No bill, no income — the patient pays ₹0 and any money already collected is reversed.</>}
+                       </div>
 
                        {/* Who bears the free test? Only when there's a referrer cut to
                            share — Self / no-commission visits are always centre-borne. */}
@@ -664,7 +692,7 @@ export const InvoiceDrawer = ({
                                </button>
                              ))}
                            </div>
-                           {(() => {
+                           {!freeServiceId && (() => {
                              const refLabel = (selectedInvoice.referrerName || 'The referrer');
                              const fee = Number(selectedInvoice.grossAmount) || 0;
                              const commission = Number(selectedInvoice.commissionAmount) || 0;
@@ -695,6 +723,11 @@ export const InvoiceDrawer = ({
                                </div>
                              );
                            })()}
+                           {freeServiceId && (
+                             <div style={{ marginTop: '6px', padding: '8px 11px', borderRadius: '9px', background: '#f0fdfa', fontSize: '10px', fontWeight: 700, color: '#0f766e', lineHeight: 1.5 }}>
+                               This service&apos;s referral cut is settled per the choice above; the other services&apos; commissions stay untouched.
+                             </div>
+                           )}
                          </div>
                        )}
 

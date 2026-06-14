@@ -184,6 +184,19 @@ function shouldSuppressToast(axiosError, errorCode, status) {
   // Per-request opt-out
   if (axiosError.config?.suppressErrorToast) return true;
 
+  // Product-module gates (RIS / PACS SKUs). A centre on a limited plan will hit
+  // endpoints its subscription doesn't include — almost always from a background
+  // poll (e.g. the global overdue-appointment poll on a Cloud PACS-only centre)
+  // or a deep link, since the nav itself is already module-gated. These 403s are
+  // EXPECTED ("this feature isn't in your plan"), not failures the user should
+  // see as a popup. Suppress them so RIS-only / PACS-only centres aren't spammed
+  // with "Access denied" every poll cycle. A genuine permission denial (wrong
+  // role) returns FORBIDDEN / a plain 403 WITHOUT one of these codes and still
+  // surfaces normally.
+  if (errorCode === 'MODULE_NOT_ENABLED'
+   || errorCode === 'MODULE_GRACE_READONLY'
+   || errorCode === 'MODULE_NO_CENTER_CONTEXT') return true;
+
   const url = axiosError.config?.url || '';
 
   // Browser is truly offline — suppress every network-failure toast.

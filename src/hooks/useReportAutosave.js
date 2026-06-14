@@ -184,15 +184,22 @@ export default function useReportAutosave({
     if (saveStatus !== 'DIRTY' || !ownerKey || isFinalized || !isOnline || isCloudSyncing) return;
 
     const failures = autosaveFailuresRef.current;
-    // Max-wait cadence: stamp when the content first went dirty so this timer —
-    // which is re-armed on every keystroke (editorText is a dep) — can't be
-    // postponed past ~45s of continuous typing. After a failure, fall back to the
-    // full exponential backoff instead.
+    // Idle-first cadence. This timer is re-armed on every edit (editorText is a
+    // dep), so it fires IDLE_MS after the LAST edit — i.e. as soon as the user
+    // pauses or is about to navigate away — but never later than MAX_WAIT_MS into
+    // a continuous typing burst (the cap, measured from when the content first
+    // went dirty). Previously there was NO idle debounce: the save only fired at
+    // the 45s cap, so writing a line and leaving a few seconds later never
+    // reached the server (the autosave that fixes the "intermittent" loss). After
+    // a failure, fall back to the exponential backoff instead.
     if (!dirtySinceRef.current) dirtySinceRef.current = Date.now();
+    const IDLE_MS = 4000;        // save ~4s after the user stops editing
+    const MAX_WAIT_MS = 45_000;  // …but at least every 45s of continuous typing
     const cappedBackoff = Math.min(45_000 * Math.pow(2, failures), 24 * 60 * 1000);
+    const maxWaitRemaining = Math.max(1000, MAX_WAIT_MS - (Date.now() - dirtySinceRef.current));
     const delay = failures > 0
       ? cappedBackoff
-      : Math.max(1000, 45_000 - (Date.now() - dirtySinceRef.current));
+      : Math.min(IDLE_MS, maxWaitRemaining);
     if (failures > 0) {
       console.info(`[AUTOSAVE] Backing off after ${failures} failure(s); next attempt in ${Math.round(delay / 1000)}s`);
     }
@@ -297,6 +304,65 @@ export default function useReportAutosave({
 
     return () => clearTimeout(cloudTimer);
   }, [saveStatus, editorText, impression, advice, appointmentId, imagingStudyId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing, cloudAutosaveDisabledReason]);
+
+  // ── Flush pending edits when leaving ──────────────────────────────────────
+  // The autosave timers are cancelled when the editor unmounts (the user
+  // navigates back) or the tab is hidden/closed — so anything typed since the
+  // last save would be lost. We flush on the way out. The logic lives in a ref
+  // updated every render so the teardown handlers always act on the CURRENT
+  // content, not a stale closure captured at mount.
+  const flushRef = useRef(() => {});
+  flushRef.current = () => {
+    if (!ownerKey || isFinalized || cloudAutosaveDisabledReason) return;
+    const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
+    // Nothing changed since the server's last known content → nothing to flush.
+    const dirty = saveStatus === 'DIRTY' || saveStatus === 'SAVING'
+      || (serverBaselineRef.current != null && freshFindings !== serverBaselineRef.current);
+    if (!dirty) return;
+
+    // 1) Persist the local draft immediately (crash-recovery + offline re-open).
+    try {
+      nativeStorage.set(reportDraftKey(ownerKey, activeServiceId), {
+        findings: freshFindings, impression, advice, selectedTemplateId,
+        timestamp: Date.now(), serverBaseline: serverBaselineRef.current,
+      });
+    } catch { /* storage unavailable */ }
+
+    // 2) Best-effort cloud save. On an in-app "go back" the JS context survives,
+    //    so this axios POST completes normally; on a hard tab close it may be cut
+    //    short — the local draft above is the safety net there.
+    if (!isOnline) return;
+    try {
+      apiClient.post('/reporting/save', {
+        appointmentId,
+        imagingStudyId: imagingStudyId || null,
+        appointmentServiceId: activeServiceId || null,
+        templateId: selectedTemplateId,
+        findings: freshFindings,
+        impression: impression || '',
+        advice: advice || '',
+        reportingMode: 'Narrative',
+        isFinalized: false,
+        rowVersion: rowVersionRef.current,
+      }).catch(() => { /* best-effort — the local draft already preserved it */ });
+    } catch { /* never let a flush throw during teardown */ }
+  };
+
+  // Flush once when the editor unmounts (in-app navigation away — the reported
+  // "write something and go back after a few seconds" case).
+  useEffect(() => () => { try { flushRef.current?.(); } catch { /* ignore */ } }, []);
+
+  // Flush when the tab is backgrounded or closed (best-effort).
+  useEffect(() => {
+    const onHide = () => { try { flushRef.current?.(); } catch { /* ignore */ } };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') onHide(); };
+    window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   // ── Manual Save / Finalize (shares the /reporting/save endpoint + OCC). ────
   const saveNow = useCallback(async (finalizing = false) => {

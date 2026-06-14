@@ -274,8 +274,10 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   }, []);
 
   // Poll the pending-approvals count (only for users who can see /approvals).
-  // Refreshes on a 60s tick, on window focus, and whenever an approval is
-  // created/decided (the '1rad_approvals_changed' event).
+  // Refreshes on a 12s tick, on window focus / tab re-visible, on in-app
+  // navigation, and instantly whenever an approval is created/decided in THIS
+  // tab (the '1rad_approvals_changed' event). Cross-session changes (another
+  // user raising a request) surface via the poll within ~12s.
   useEffect(() => {
     const roles = currentUser?.roles || [];
     const allowed = roles.reduce(
@@ -301,17 +303,30 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
       } catch { /* keep the last known count on a transient error */ }
     };
     load();
-    const id = setInterval(load, 30000);
+    // 12s poll — the count query is a cheap CountAsync, so a snappier cadence is
+    // fine and cuts the cross-session lag (another user raising a request shows
+    // on the admin's badge within ~12s instead of 30s). The '1rad_approvals_
+    // changed' event still gives an INSTANT refresh for same-session actions.
+    const id = setInterval(load, 12000);
     const onChanged = () => load();
+    // visibilitychange is more reliable than focus for "user came back to this
+    // tab" (focus doesn't fire on every tab switch), so a returning admin sees a
+    // fresh count immediately.
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('focus', onChanged);
     window.addEventListener('1rad_approvals_changed', onChanged);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       clearInterval(id);
       window.removeEventListener('focus', onChanged);
       window.removeEventListener('1rad_approvals_changed', onChanged);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [currentUser, activeCenter]);
+    // sidebarLocation.pathname: re-fetch on every in-app navigation too, so the
+    // badge refreshes as the admin moves around (SPA route changes don't fire
+    // focus/visibility).
+  }, [currentUser, activeCenter, sidebarLocation.pathname]);
 
   const isMobile = viewW < 640;
   const isTablet = viewW >= 640 && viewW < 1024;

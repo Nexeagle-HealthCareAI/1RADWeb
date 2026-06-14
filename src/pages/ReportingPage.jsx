@@ -838,29 +838,54 @@ const ReportingPage = () => {
           applyEditorContent(findingsHtml);
         }
       } else {
-        // FALLBACK: New Case. Auto-match a template against the
-        // ACTIVE service's name (or fall back to the visit's primary
-        // service for legacy single-service visits). This makes the
-        // template binding follow whichever service tab the
-        // radiologist is on — switching from CT → X-Ray now re-binds
-        // to the X-Ray template instead of leaving the CT template
-        // mismatched on the page.
-        const targetServiceLine = lines.find(l => l.id && l.id === activeServiceId) || lines[0];
-        const targetServiceName = targetServiceLine?.serviceName || appointmentData.service;
-        console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${targetServiceName}`);
+        // FALLBACK: New Case (no saved SERVER report for this appointment/service).
+        //
+        // FIRST restore any local draft for this appointment+service. When the
+        // technician wrote OFFLINE, saved, navigated away and came back, that
+        // draft is the ONLY copy of their work — it hasn't synced to the server,
+        // and offline the report AND template fetches both fail, so without this
+        // the editor opens blank ("the place is empty" — doesn't match the
+        // template). The draft-recovery logic above only runs when a server
+        // report exists, which it doesn't for a brand-new offline report.
+        let restoredDraft = false;
+        try {
+          const localDraft = await nativeStorage.get(reportDraftKey(appId, activeServiceId));
+          if (localDraft && (localDraft.findings || localDraft.impression || localDraft.advice)) {
+            console.info('[1RAD] New case — restoring unsynced local draft.');
+            applyEditorContent(localDraft.findings || '');
+            if (localDraft.impression) setImpression(localDraft.impression);
+            if (localDraft.advice) setAdvice(localDraft.advice);
+            const draftTpl = localDraft.selectedTemplateId || localDraft.templateId;
+            if (draftTpl) setSelectedTemplateId(String(draftTpl));
+            restoredDraft = true;
+          }
+        } catch (draftErr) {
+          console.warn('[1RAD] New-case local draft check failed', draftErr);
+        }
 
-        if (templRes.data?.success && targetServiceName) {
-          const templatesList = templRes.data.data || [];
-          const serviceMatch = findTemplateForService(templatesList, targetServiceName);
+        // No draft → auto-match a template against the ACTIVE service's name (or
+        // fall back to the visit's primary service for legacy single-service
+        // visits). This makes the template binding follow whichever service tab
+        // the radiologist is on — switching from CT → X-Ray re-binds to the
+        // X-Ray template instead of leaving the CT template mismatched.
+        if (!restoredDraft) {
+          const targetServiceLine = lines.find(l => l.id && l.id === activeServiceId) || lines[0];
+          const targetServiceName = targetServiceLine?.serviceName || appointmentData.service;
+          console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${targetServiceName}`);
 
-          if (serviceMatch) {
-            const matchId = serviceMatch.id ?? serviceMatch.Id;
-            const matchContent = serviceMatch.content ?? serviceMatch.Content ?? '';
-            console.info(`[1RAD] Template matched: "${serviceMatch.name ?? serviceMatch.Name}" → ${matchContent.length} chars`);
-            setSelectedTemplateId(String(matchId));
-            applyEditorContent(matchContent);
-          } else {
-            console.info(`[1RAD] No matching template for service "${targetServiceName}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
+          if (templRes.data?.success && targetServiceName) {
+            const templatesList = templRes.data.data || [];
+            const serviceMatch = findTemplateForService(templatesList, targetServiceName);
+
+            if (serviceMatch) {
+              const matchId = serviceMatch.id ?? serviceMatch.Id;
+              const matchContent = serviceMatch.content ?? serviceMatch.Content ?? '';
+              console.info(`[1RAD] Template matched: "${serviceMatch.name ?? serviceMatch.Name}" → ${matchContent.length} chars`);
+              setSelectedTemplateId(String(matchId));
+              applyEditorContent(matchContent);
+            } else {
+              console.info(`[1RAD] No matching template for service "${targetServiceName}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
+            }
           }
         }
       }

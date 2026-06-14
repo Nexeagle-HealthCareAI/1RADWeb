@@ -357,6 +357,59 @@ export default function AppointmentBoard() {
     addedServices: [],
   });
 
+  // ── Quick-add a service to the catalogue during booking ───────────────────
+  // When the chosen modality has no matching service yet, the front desk can
+  // save a new one (name + price + max referral) so it's reusable. The backend
+  // does the smart upsert (create-with-template / price an unpriced service /
+  // return an already-priced one) — we just send the three fields and refresh.
+  const [quickAddBusy, setQuickAddBusy] = useState(false);
+  const handleQuickAddService = async () => {
+    const modality = String(newBooking.modality || '').trim().toUpperCase();
+    const serviceName = String(newBooking.service || '').trim();
+    const amount = Number(newBooking.amount) || 0;
+    const referralCutValue = Number(newBooking.referralCutValue) || 0;
+
+    if (!modality)        { showNotif('error', 'MODALITY REQUIRED', 'Select a modality before adding a service.'); return; }
+    if (!serviceName)     { showNotif('error', 'SERVICE NAME REQUIRED', 'Enter the service / procedure name first.'); return; }
+    if (!(amount > 0))    { showNotif('error', 'PRICE REQUIRED', 'Enter a price greater than ₹0 for this service.'); return; }
+    if (referralCutValue < 0 || referralCutValue > amount) {
+      showNotif('error', 'INVALID REFERRAL', 'The referral amount must be between ₹0 and the service price.'); return;
+    }
+
+    setQuickAddBusy(true);
+    try {
+      const res = await apiClient.post('/finance/registry/quick-add', { modality, serviceName, amount, referralCutValue });
+      if (res.data?.success) {
+        const svc = res.data.data;
+        // Refresh the catalogue cache so the new service is selectable and
+        // auto-fills its price on subsequent bookings. The liveQuery on
+        // serviceRegistry picks it up automatically.
+        try {
+          const reg = await apiClient.get('/finance/registry');
+          await snapshotServiceCharges(reg.data);
+        } catch { /* non-fatal — the booking can still proceed with the draft */ }
+        // Keep the draft populated (name/price/referral already match) so the
+        // user can tap "Add this service to the visit" next.
+        setNewBooking(prev => ({
+          ...prev,
+          amount: svc?.amount ?? prev.amount,
+          referralCutValue: svc?.referralCutValue ?? prev.referralCutValue,
+        }));
+        showNotif('success', 'SERVICE ADDED', `“${serviceName}” is now in your ${modality} catalogue.`);
+      }
+    } catch (err) {
+      if (!err.response) {
+        showNotif('error', 'NETWORK ERROR', 'Could not reach the server. Check your connection and try again.');
+      } else if (err.response.status === 403) {
+        showNotif('error', 'NOT ALLOWED', 'Your role cannot add services to the catalogue. Ask an admin to add it.');
+      } else {
+        showNotif('error', 'COULD NOT ADD', err.response?.data?.error || 'The service could not be added. Please try again.');
+      }
+    } finally {
+      setQuickAddBusy(false);
+    }
+  };
+
   const [newPatient, setNewPatient] = useState({
     name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female',
     village: '', district: '', address: '', sourceOfInfo: '', referrerId: null,
@@ -3624,6 +3677,62 @@ export default function AppointmentBoard() {
                       </div>
                       </div>
 
+                      {/* New-service quick-add: appears only when the typed
+                          service isn't in this modality's catalogue yet (incl.
+                          the "no services available for this modality" case).
+                          Lets the front desk save name + price + max referral so
+                          it's reusable; the backend does the smart upsert. */}
+                      {(() => {
+                        const mod  = String(newBooking.modality || '').trim();
+                        const name = String(newBooking.service || '').trim();
+                        if (!mod || !name) return null;
+                        const inCatalogue = serviceRegistry.some(s =>
+                          String(s.modality).toUpperCase() === mod.toUpperCase() &&
+                          String(s.serviceName).toLowerCase() === name.toLowerCase());
+                        if (inCatalogue) return null;
+                        const priced = Number(newBooking.amount) > 0;
+                        return (
+                          <div style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', border: '1px dashed #f59e0b', background: '#fffbeb' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                              NEW SERVICE — NOT IN YOUR {mod.toUpperCase()} CATALOGUE
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#78716c', marginBottom: '10px', lineHeight: 1.5 }}>
+                              Save “{name}” to reuse it and auto-fill its price next time. Set the maximum referral payout, then save.
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                              <div style={{ flex: 1, minWidth: '130px' }}>
+                                <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#92400e', marginBottom: '4px', display: 'block' }}>MAX REFERRAL (₹)</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={newBooking.referralCutValue}
+                                  onChange={e => setNewBooking({ ...newBooking, referralCutValue: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                                  placeholder="e.g. 100"
+                                  style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px', width: '100%', border: '1px solid #fde68a' }}
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                disabled={quickAddBusy || !priced}
+                                onClick={handleQuickAddService}
+                                title={priced ? 'Save this service to your catalogue' : 'Enter a price above first'}
+                                style={{
+                                  padding: '9px 16px', height: '36px', borderRadius: '10px', border: 'none',
+                                  background: (quickAddBusy || !priced) ? '#fcd34d' : '#f59e0b',
+                                  color: '#fff', fontSize: '12px', fontWeight: 900, fontFamily: 'inherit',
+                                  cursor: (quickAddBusy || !priced) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {quickAddBusy ? 'Saving…' : '＋ Save to catalogue'}
+                              </button>
+                            </div>
+                            {!priced && (
+                              <div style={{ fontSize: '9px', color: '#b45309', marginTop: '6px', fontWeight: 700 }}>Enter a price in the field above to enable saving.</div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {/* Multi-service line-item tray.
                           The inputs above represent the "current draft" service.
                           Clicking "Add another service" pushes that draft into
@@ -5322,6 +5431,8 @@ export default function AppointmentBoard() {
               </div>
 
               <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST</div>
+              {/* Clean brand line — matches the scanned live-tracker footer. */}
+              <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed #000', fontSize: '8px', fontWeight: 800, letterSpacing: '0.5px', color: '#000' }}>POWERED BY NEXEAGLE</div>
             </div>
           </div>
           <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>

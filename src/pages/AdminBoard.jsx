@@ -939,13 +939,13 @@ export default function AdminBoard() {
     e.preventDefault();
     const payload = newChainData;
 
-    if (!isOnline) {
-      await addToOutbox('CHAIN_DEPLOY', payload);
-      notifyToast({ title: 'Queued for sync', message: 'Centre expansion will sync when connection is restored.' }, 'info');
-      setIsChainDrawerOpen(false);
-      return;
-    }
-
+    // NOTE: we intentionally do NOT pre-queue on `!isOnline`. navigator.onLine
+    // (the source of `isOnline`) is only advisory and has false negatives — it
+    // reports "offline" on VPNs, captive portals, Electron, and right after a
+    // network transition even when the API is reachable. Gating on it made
+    // chain-create intermittently queue instead of run (the "intermittent
+    // working" bug). Instead we always attempt the request and fall back to the
+    // outbox ONLY on a genuine network error (no response) in the catch below.
     try {
       setIsDeployingChain(true);
       const res = await apiClient.post('/hospitals/chain', payload);
@@ -1599,14 +1599,11 @@ export default function AdminBoard() {
   const handleSavePrice = async (e) => {
       e.preventDefault();
       const payload = editPrice;
-      
-      if (!isOnline) {
-        await addToOutbox('PRICE_UPDATE', payload);
-        notifyToast({ title: 'Queued for sync', message: 'Service price update will sync when connection is restored.' }, 'info');
-        setIsPriceDrawerOpen(false);
-        return;
-      }
-  
+
+      // Don't pre-queue on `!isOnline` — navigator.onLine is advisory and has
+      // false negatives, which made "add service" intermittently queue instead
+      // of save (the "intermittent working" bug). Always attempt the request;
+      // the catch falls back to the outbox only on a real network error.
       try {
         await apiClient.post('/finance/registry', payload);
         
@@ -1631,6 +1628,11 @@ export default function AdminBoard() {
         await addToOutbox('PRICE_UPDATE', payload);
         notifyToast({ title: 'Network error', message: 'Price update queued in offline outbox.' }, 'warning');
         setIsPriceDrawerOpen(false);
+      } else {
+        // Server rejected the save (validation/permission/etc.). Surface it —
+        // previously this branch was silent, so a failed save looked like
+        // nothing happened.
+        notifyToast({ title: 'Save failed', message: err.response?.data?.message || err.response?.data?.error || 'Could not save the service. Please try again.' }, 'error');
       }
     }
   };

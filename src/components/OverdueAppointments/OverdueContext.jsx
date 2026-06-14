@@ -60,7 +60,12 @@ function fireDesktopNotification(item) {
 }
 
 export function OverdueProvider({ children }) {
-  const { currentUser } = useAuth();
+  // The overdue alert is a RIS (clinic-workflow) feature — the endpoint is
+  // RIS-module-gated. On a Cloud PACS-only centre this global 30s poll would
+  // 403 forever, so gate it on the RIS module. hasModule() is permissive while
+  // the subscription is still loading, so RIS/RIS+PACS centres aren't delayed.
+  const { currentUser, hasModule } = useAuth();
+  const risEnabled = hasModule('RIS');
   const [overdue, setOverdue] = useState([]);
   const [thresholdMinutes, setThresholdMinutes] = useState(180);
   const [loading, setLoading] = useState(false);
@@ -75,7 +80,7 @@ export function OverdueProvider({ children }) {
   const notifiedRef = useRef(new Set());
 
   const fetchOverdue = useCallback(async () => {
-    if (!currentUser) return;
+    if (!currentUser || !risEnabled) return;
     setLoading(true);
     try {
       const res = await apiClient.get('/appointments/overdue');
@@ -114,7 +119,7 @@ export function OverdueProvider({ children }) {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!currentUser) {
+    if (!currentUser || !risEnabled) {
       setOverdue([]);
       notifiedRef.current.clear();
       return;
@@ -122,7 +127,7 @@ export function OverdueProvider({ children }) {
     fetchOverdue();
     const id = setInterval(fetchOverdue, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [currentUser, fetchOverdue]);
+  }, [currentUser, risEnabled, fetchOverdue]);
 
   // O(1) lookups so per-row decorators don't scan the whole array on every
   // render. Two separate sets so a row can answer "is this overdue AND

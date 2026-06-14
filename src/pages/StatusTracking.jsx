@@ -200,6 +200,7 @@ export default function StatusTracking() {
           booking slip. If you still see this message, the centre can issue
           you a fresh link.
         </p>
+        <PoweredByNexEagle dark />
       </div>
     </div>
   );
@@ -371,6 +372,8 @@ export default function StatusTracking() {
           <div style={{ textAlign: 'center', marginTop: '14px', fontSize: '10px', color: '#94a3b8' }}>
             Scanned via 1Rad QR · Token #{study?.displayId || id}
           </div>
+
+          <PoweredByNexEagle dark={false} />
         </div>
 
         <style>{`
@@ -467,6 +470,7 @@ export default function StatusTracking() {
           <div style={{ marginTop: '24px', padding: '14px 18px', background: 'rgba(255,255,255,0.04)', borderRadius: '12px', display: 'inline-block', fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>
             Token #{study?.dailyTokenNumber ?? study?.displayId ?? id}
           </div>
+          <PoweredByNexEagle dark />
         </div>
       </div>
     );
@@ -653,9 +657,42 @@ export default function StatusTracking() {
           })}
         </div>
 
+        {/* Live status — the current stage at a glance, pinned at the bottom so
+            the patient always lands on "where am I right now". Updates with the
+            30s auto-refresh. */}
+        {(() => {
+          const liveStep = steps[currentIndex] || steps[0];
+          const isReady = currentStatus === 'reported';
+          return (
+            <div style={{
+              marginTop: '30px', padding: '16px 18px', borderRadius: '16px',
+              background: isReady ? 'rgba(22,163,74,0.12)' : 'rgba(15,82,186,0.14)',
+              border: `1px solid ${isReady ? 'rgba(22,163,74,0.35)' : 'rgba(96,165,250,0.3)'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '1.5px', color: '#94a3b8', textTransform: 'uppercase' }}>Current Status</div>
+                <div style={{ fontSize: '17px', fontWeight: 900, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '20px', flexShrink: 0 }}>{liveStep.icon}</span>
+                  <span style={{ color: isReady ? '#4ade80' : '#60a5fa', wordBreak: 'break-word' }}>{isReady ? 'Report ready' : liveStep.label}</span>
+                </div>
+              </div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                background: isReady ? '#16a34a' : '#0f52ba', color: 'white',
+                padding: '6px 11px', borderRadius: '999px',
+                fontSize: '9px', fontWeight: 900, letterSpacing: '1px',
+              }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#fff', animation: 'liveBlink 1.4s ease-in-out infinite' }} />
+                {isReady ? 'READY' : 'LIVE'}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Footer */}
         <div style={{
-          marginTop: '32px', textAlign: 'center', padding: '18px 20px',
+          marginTop: '14px', textAlign: 'center', padding: '18px 20px',
           background: 'rgba(255,255,255,0.03)', borderRadius: '16px',
           border: '1px solid rgba(255,255,255,0.06)',
         }}>
@@ -673,12 +710,34 @@ export default function StatusTracking() {
           </p>
         </div>
 
+        <PoweredByNexEagle dark />
+
         <style>{`
           @keyframes trackPulse {
             0%, 100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(15, 82, 186, 0.7); }
             50%      { transform: scale(1.15); box-shadow: 0 0 0 10px rgba(15, 82, 186, 0); }
           }
+          @keyframes liveBlink {
+            0%, 100% { opacity: 1; }
+            50%      { opacity: 0.25; }
+          }
         `}</style>
+      </div>
+    </div>
+  );
+}
+
+// Clean, understated "Powered by NexEagle" footer shown at the very bottom of
+// every tracker state. `dark` = on the dark (#0a1628) tracker background;
+// otherwise the light-sheet (report) variant.
+function PoweredByNexEagle({ dark = true }) {
+  return (
+    <div className="track-powered" style={{ textAlign: 'center', marginTop: '24px' }}>
+      <div style={{
+        fontSize: '10px', fontWeight: 700, letterSpacing: '1.4px', textTransform: 'uppercase',
+        color: dark ? '#64748b' : '#94a3b8',
+      }}>
+        Powered by <span style={{ color: dark ? '#60a5fa' : '#0f52ba', fontWeight: 900 }}>NexEagle</span>
       </div>
     </div>
   );

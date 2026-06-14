@@ -327,6 +327,7 @@ export default function ReferralsPage() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Partners');
     XLSX.writeFile(wb, 'partner_upload_template.xlsx');
+    notifyToast('Template download started — check your downloads, fill it in, then choose the file.', 'success');
   };
 
   const parseBulkExcel = async (file) => {
@@ -375,8 +376,28 @@ export default function ReferralsPage() {
     setBulkSubmitting(true);
     try {
       const res = await apiClient.post('/referrers/bulk', { referrers: payload });
-      setBulkResult(res.data || { created: payload.length, merged: 0, skipped: 0 });
+      const r = res.data || { created: payload.length, merged: 0, skipped: 0 };
+      setBulkResult(r);
       fetchReferralIntelligence();
+
+      // Smooth journey: close the modal and surface a clear summary so the user
+      // knows exactly what happened (how many new, merged into existing, skipped).
+      const created = Number(r.created) || 0;
+      const merged  = Number(r.merged)  || 0;
+      const skipped = Number(r.skipped) || 0;
+      const total   = created + merged + skipped;
+      const parts = [];
+      if (created) parts.push(`${created} added`);
+      if (merged)  parts.push(`${merged} merged into existing`);
+      if (skipped) parts.push(`${skipped} skipped`);
+      const summary = parts.length ? parts.join(' · ') : 'no changes';
+      // success when everything landed; info when some rows were skipped but
+      // others applied; error when nothing could be added.
+      const tone = skipped === 0 ? 'success' : (created + merged > 0 ? 'info' : 'error');
+      notifyToast(`Partners imported — ${summary} (of ${total} row${total === 1 ? '' : 's'}).`, tone);
+
+      setBulkOpen(false);
+      setBulkRows([]);
     } catch (e) {
       notifyToast(e?.response?.data?.error || e?.response?.data?.message || 'Could not add partners.', 'error');
     } finally {
@@ -472,7 +493,10 @@ export default function ReferralsPage() {
   };
 
   const handleExportRoster = () => {
-    if (!caseLedgerList) return;
+    if (!caseLedgerList || caseLedgerList.length === 0) {
+      notifyToast('No partners to export yet.', 'info');
+      return;
+    }
     // Plain, complete headers — every detail a partner row carries.
     const headers = [
       'Rank', 'Partner Name', 'Type', 'Speciality', 'Degree', 'Supporting Doctor',
@@ -499,6 +523,9 @@ export default function ReferralsPage() {
     a.href = url;
     a.download = `Partner_Network_${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
+    // Release the object URL once the download has spooled (avoids a leak).
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    notifyToast(`Download started — ${caseLedgerList.length} partner${caseLedgerList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
   };
 
   // Sync settings when doctor selection changes
