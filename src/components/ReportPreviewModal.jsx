@@ -7,10 +7,11 @@ import QRCode from 'qrcode';
 import { downloadReportPdf } from '../utils/downloadPdf';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { notifyToast } from '../utils/toast';
+import { sanitizeReportHtml, sanitizeMarkup } from '../utils/sanitizeHtml';
 
-// Configure PDF.js worker
-// Configure PDF.js worker to use CDN for maximum reliability
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker — load the LOCALLY-bundled worker, never a public CDN
+// (a CDN compromise/MITM of executable worker JS = arbitrary code execution).
+pdfjs.GlobalWorkerOptions.workerSrc = `${import.meta.env.BASE_URL}pdf.worker.min.mjs`;
 
 // Re-paginate ONE editor page-chunk by MEASURING each top-level block against
 // the real A4 writable area, then splitting at block boundaries so a page never
@@ -487,7 +488,7 @@ const ReportPreviewModal = ({
     const _extractEditorPages = (html) => {
       if (!html) return [];
       const tmp = document.createElement('div');
-      tmp.innerHTML = html;
+      tmp.innerHTML = sanitizeReportHtml(html);
       _hydrateSpacing(tmp);
       _preserveBlankLines(tmp);
 
@@ -986,7 +987,7 @@ const ReportPreviewModal = ({
     const cleanedMobile = mobile.replace(/\D/g, '');
     const finalMobile = cleanedMobile.length === 10 ? `91${cleanedMobile}` : cleanedMobile;
     
-    window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank');
+    window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank', 'noopener,noreferrer');
   };
 
   const modalContent = (
@@ -1176,7 +1177,7 @@ const ReportPreviewModal = ({
                         savedMetadata={savedMetadata}
                       />
                     )}
-                    <div className="report-content" dangerouslySetInnerHTML={{ __html: pageHTML }} />
+                    <div className="report-content" dangerouslySetInnerHTML={sanitizeMarkup(pageHTML)} />
                   </div>
 
                   {/* Page indicator (preview only) */}
@@ -1479,7 +1480,7 @@ const ReportPreviewModal = ({
                   savedMetadata={savedMetadata}
                 />
               )}
-              <div className="report-content" dangerouslySetInnerHTML={{ __html: pageHTML }} />
+              <div className="report-content" dangerouslySetInnerHTML={sanitizeMarkup(pageHTML)} />
             </div>
           </div>
         );

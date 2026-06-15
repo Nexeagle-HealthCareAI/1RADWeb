@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { buildReportPages, getReportCssVars, printReport } from './utils/printReport';
+import { sanitizeMarkup } from '../../utils/sanitizeHtml';
 
 /**
  * PrintPreviewModal — a full-screen, true-to-print preview of the report's A4
@@ -206,7 +207,7 @@ export default function PrintPreviewModal({ open, onClose, containerEl, header, 
                 <div
                   className="ppv-page-scale"
                   style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: PAGE_W }}
-                  dangerouslySetInnerHTML={{ __html: html }}
+                  dangerouslySetInnerHTML={sanitizeMarkup(html)}
                 />
               </div>
             ))}

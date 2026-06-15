@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { BASE_URL } from '../api/apiClient';
 
-// Configure PDF.js worker
-// Configure PDF.js worker to use CDN for maximum reliability
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker — load the LOCALLY-bundled worker, never a public CDN
+// (a CDN compromise/MITM of executable worker JS = arbitrary code execution).
+pdfjs.GlobalWorkerOptions.workerSrc = `${import.meta.env.BASE_URL}pdf.worker.min.mjs`;
 
 const PrescriptionPreview = ({ 
   prescriptionSettings, 

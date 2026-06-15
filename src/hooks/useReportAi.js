@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import apiClient from '../api/apiClient';
+import { sanitizeReportHtml } from '../utils/sanitizeHtml';
 
 // Maps a study's modality + service name to a RadAI knowledge-pack test_code for
 // the structured formatter. Returns { modality, testCode } or null (=> the generic
@@ -68,7 +69,7 @@ export default function useReportAi({ activeService, activeAppointment, appointm
     // text reaches Gemini — PHI never leaves our API.
     const res = await apiClient.post('/reporting/ai-assist', { action, text, context, appointmentId });
     const data = res?.data || {};
-    if (data.success && data.html) return data.html;
+    if (data.success && data.html) return sanitizeReportHtml(data.html);
     throw new Error(data.error || data.message || 'AI request failed.');
   }, [activeService, activeAppointment, appointmentId]);
 
@@ -121,7 +122,7 @@ export default function useReportAi({ activeService, activeAppointment, appointm
       const body = res?.data || {};
       if (!body.success || !body.html) throw new Error(body.error || 'Formatter returned nothing.');
       setAiReview({
-        open: true, mode: 'format', before, after: body.html, busy: false,
+        open: true, mode: 'format', before, after: sanitizeReportHtml(body.html), busy: false,
         corrections: body.data?.corrections || [],
         flags: body.data?.flags || [],
         protectedItems: body.data?.unchangedProtected || [],

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import SearchableTemplatePicker from '../SearchableTemplatePicker';
+import { sanitizeMarkup } from '../../utils/sanitizeHtml';
 
 /**
  * ReportingEditorPanel — the REPORTING tab's editor surface (panel-right):
@@ -71,11 +72,11 @@ export default function ReportingEditorPanel({
                             <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1px', background: '#eef2f7' }}>
                               <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
                                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.6px', marginBottom: '10px' }}>BEFORE</div>
-                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#334155' }} dangerouslySetInnerHTML={{ __html: aiReview.before }} />
+                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#334155' }} dangerouslySetInnerHTML={sanitizeMarkup(aiReview.before)} />
                               </div>
                               <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
                                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '0.6px', marginBottom: '10px' }}>AI SUGGESTION ✨</div>
-                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#0f172a' }} dangerouslySetInnerHTML={{ __html: aiReview.after }} />
+                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#0f172a' }} dangerouslySetInnerHTML={sanitizeMarkup(aiReview.after)} />
                               </div>
                             </div>
                             {aiReview.mode === 'format' && ((aiReview.flags?.length || 0) + (aiReview.corrections?.length || 0) + (aiReview.protectedItems?.length || 0)) > 0 && (

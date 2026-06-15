@@ -4,6 +4,7 @@ import apiClient, { BASE_URL } from '../api/apiClient';
 import { PatientInfoBlock } from './ReportPreviewModal';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { notifyToast } from '../utils/toast';
+import { sanitizeReportHtml, sanitizeMarkup } from '../utils/sanitizeHtml';
 
 // Read-only viewer for a SAVED radiology report.
 //
@@ -170,7 +171,7 @@ export default function SavedReportViewer({
       }
     }
     const tmp = document.createElement('div');
-    tmp.innerHTML = raw;
+    tmp.innerHTML = sanitizeReportHtml(raw);
     // Unwrap .word-page-inner / .word-page so content becomes one continuous
     // flow. We keep all the actual content nodes intact, only dropping the
     // outer pagination scaffolding the editor injected.
@@ -530,7 +531,7 @@ export default function SavedReportViewer({
                 <div
                   className="report-content"
                   style={{ fontFamily, fontSize: `${baseFontSize}pt`, color: fontColor, lineHeight: 1.6 }}
-                  dangerouslySetInnerHTML={{ __html: findingsHtml }}
+                  dangerouslySetInnerHTML={sanitizeMarkup(findingsHtml)}
                 />
 
                 {report.impression && (

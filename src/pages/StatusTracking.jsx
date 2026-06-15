@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed } from '../utils/timeTracking';
+import { sanitizeReportHtml, sanitizeMarkup } from '../utils/sanitizeHtml';
 
 export default function StatusTracking() {
   const { id } = useParams();
@@ -111,7 +112,7 @@ export default function StatusTracking() {
       }
     }
     const tmp = document.createElement('div');
-    tmp.innerHTML = raw;
+    tmp.innerHTML = sanitizeReportHtml(raw);
     tmp.querySelectorAll('.word-page-inner').forEach(el => {
       const parent = el.parentNode;
       while (el.firstChild) parent.insertBefore(el.firstChild, el);
@@ -164,7 +165,7 @@ export default function StatusTracking() {
     // Fallback: open WhatsApp with a pre-filled message. No phone number,
     // so WhatsApp lets the patient choose the contact themselves.
     const text = encodeURIComponent(`${shareData.text}: ${shareUrl}`);
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleSaveOrPrint = () => {
@@ -346,7 +347,7 @@ export default function StatusTracking() {
                 lineHeight: 1.6,
                 color: protocol?.fontColor || '#000',
               }}
-              dangerouslySetInnerHTML={{ __html: findingsHtml }}
+              dangerouslySetInnerHTML={sanitizeMarkup(findingsHtml)}
             />
 
             {/* Impression / advice if present */}

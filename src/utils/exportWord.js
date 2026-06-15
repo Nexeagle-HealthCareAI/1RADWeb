@@ -39,7 +39,8 @@ async function renderPdfFirstPageToPng(url) {
   try {
     const pdfjs = await import('pdfjs-dist');
     if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+      // Locally-bundled worker only — never load executable worker JS from a CDN.
+      pdfjs.GlobalWorkerOptions.workerSrc = `${import.meta.env.BASE_URL}pdf.worker.min.mjs`;
     }
     const doc = await pdfjs.getDocument({ url }).promise;
     const page = await doc.getPage(1);

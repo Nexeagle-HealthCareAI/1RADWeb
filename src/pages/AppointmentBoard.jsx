@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { QRCodeCanvas } from 'qrcode.react';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
 import useOffline from '../hooks/useOffline';
@@ -5452,16 +5453,13 @@ export default function AppointmentBoard() {
 
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
-                  {/* ecc=M (15% correction) packs the tokenized URL sparse
-                      enough that 14mm of paper is still scannable; ecc=H
-                      was forcing too many modules and the printed result
-                      was effectively a black blob. */}
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&ecc=M&data=${encodeURIComponent(tokenPrintQrUrl)}`}
-                    alt="QR"
-                    crossOrigin="anonymous"
-                    style={{ width: '18mm', height: '18mm' }}
-                  />
+                  {/* QR generated LOCALLY (qrcode.react) — the tokenized tracking
+                      URL must never be sent to a third-party QR service, where it
+                      would leak the capability token + PHI URL into their logs.
+                      level="M" (15% correction) keeps 18mm of paper scannable. */}
+                  <div style={{ width: '18mm', height: '18mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <QRCodeCanvas value={tokenPrintQrUrl || ''} size={180} level="M" includeMargin={false} style={{ width: '18mm', height: '18mm' }} />
+                  </div>
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
                     <div style={{ fontSize: '7px', fontWeight: 700, color: '#64748b' }}>SCAN TO TRACK YOUR JOURNEY</div>

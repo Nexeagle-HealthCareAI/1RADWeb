@@ -250,7 +250,7 @@ export default function AdminBoard() {
         selectedData.forEach((p, i) => {
             msg += `${i+1}. *${p.name.toUpperCase()}* (${p.modality})\n   ID: ${p.patientIdentifier || 'N/A'}\n   Service: ${p.service}\n   Payout: ₹${p.commissionAmount}\n   Status: ${p.status}\n\n`;
         });
-        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -1403,7 +1403,7 @@ export default function AdminBoard() {
     const encoded = encodeURIComponent(message);
     const mobile = user.mobile?.replace(/\D/g, ''); // Ensure only numbers
     const finalMobile = mobile?.length === 10 ? `91${mobile}` : mobile; // Default to India if 10 digits
-    window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank');
+    window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleOpenUserDrawer = (user = null) => {

@@ -230,7 +230,7 @@ export default function useElectron() {
     app: IS_ELECTRON ? window.electron.app : {
       version: () => Promise.resolve('1.0.0-web'),
       platform: () => Promise.resolve(navigator.platform),
-      openExternal: (url) => { window.open(url, '_blank'); }
+      openExternal: (url) => { window.open(url, '_blank', 'noopener,noreferrer'); }
     }
   };
 }

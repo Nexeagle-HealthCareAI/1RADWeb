@@ -78,6 +78,7 @@
     "dexie": "^4.4.3",
     "dicom-parser": "^1.8.21",
     "docx-preview": "^0.3.7",
+    "dompurify": "^3.4.10",
     "electron-store": "^6.0.1",
     "electron-updater": "^6.8.3",
     "fflate": "^0.8.3",
