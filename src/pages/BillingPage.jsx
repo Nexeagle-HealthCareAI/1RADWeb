@@ -14,6 +14,7 @@ import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
 import { computeStats, computeMatrix } from '../analytics/financialAggregator';
 import { matchesAnyModality } from '../utils/appointmentServices';
+import { notifyToast } from '../utils/toast';
 import '../styles/BillingPage.css';
 
 // Modular Hub Components
@@ -24,6 +25,7 @@ import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
+import AdvancesHub from '../components/Billing/AdvancesHub';
 import FinanceManager from '../components/FinanceManager';
 import Pagination from '../components/Pagination';
 
@@ -1750,12 +1752,13 @@ export default function BillingPage() {
     const currentPaid = selectedInvoice.paidAmount || 0;
     const balance = Math.max(0, currentNet - currentPaid);
     // Partial payment: when the drawer supplies an explicit amount-received,
-    // collect exactly that (clamped to the balance) and leave the rest due;
-    // otherwise collect the full balance. The API records the Payment and flips
-    // the invoice to PARTIAL when 0 < paid < total.
+    // collect exactly that and leave the rest due; otherwise collect the full
+    // balance. Over-tender is now allowed — we send the FULL amount and the API
+    // settles the invoice and parks the excess as a patient advance (it flips the
+    // invoice to PARTIAL when 0 < paid < total, PAID at/above the balance).
     const paymentAmount = (meta.amountReceived === null || meta.amountReceived === undefined)
       ? balance
-      : Math.min(Math.max(0, Number(meta.amountReceived) || 0), balance);
+      : Math.max(0, Number(meta.amountReceived) || 0);
 
     // When the referral concession exceeds the doctor's commission, the excess
     // is his carried deficit — flag it (with the biller's reason) so the API can
@@ -1821,6 +1824,23 @@ export default function BillingPage() {
            offline: true
          });
       }
+    }
+  };
+
+  // Carry a patient's advance forward onto this invoice (settles it without fresh
+  // cash). Amount null = apply the max possible (min of balance owed & wallet).
+  const handleApplyCredit = async (invoiceId, amount) => {
+    try {
+      const { data } = await apiClient.post('/finance/credit/apply', { invoiceId, amount: amount ?? null });
+      if (data?.success) {
+        notifyToast(`Applied ₹${Number(data.applied || 0).toLocaleString('en-IN')} from the patient's advance ✓`, 'success');
+        setIsInvoiceDrawerOpen(false);
+        refreshAllFinancialData();
+      } else {
+        notifyToast(data?.error || 'Could not apply the advance.', 'error');
+      }
+    } catch (err) {
+      notifyToast(err?.response?.data?.error || err?.message || 'Could not apply the advance.', 'error');
     }
   };
 
@@ -2359,6 +2379,7 @@ export default function BillingPage() {
               { id: 'INVOICES',      label: 'Revenue' },
               { id: 'EXPENSES',      label: 'Expenses' },
               { id: 'REFERRAL_CUTS', label: 'Referrals' },
+              { id: 'ADVANCES',      label: 'Advances' },
               { id: 'ANALYTICS',     label: 'Analytics' },
               { id: 'FINANCE',       label: 'Control' },
             ].map(tab => (
@@ -2556,6 +2577,10 @@ export default function BillingPage() {
 
       )}
 
+      {billingViewMode === 'ADVANCES' && (
+        <AdvancesHub isMobile={isMobile} />
+      )}
+
       {billingViewMode === 'ANALYTICS' && matrix && (
         <AnalyticsHub 
           isMobile={isMobile}
@@ -2625,6 +2650,7 @@ export default function BillingPage() {
           setPaymentMethod={setPaymentMethod}
           handleSaveInvoice={handleSaveInvoice}
           handleCollectPayment={handleCollectPayment}
+          handleApplyCredit={handleApplyCredit}
           handlePrintA4={handlePrintA4}
           handlePrintThermal={handlePrintThermal}
           onApplyAdjustment={handleApplyAdjustment}

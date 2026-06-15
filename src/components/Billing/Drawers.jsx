@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import apiClient from '../../api/apiClient';
 
 export const InvoiceDrawer = ({
   isMobile,
@@ -14,6 +15,7 @@ export const InvoiceDrawer = ({
   setPaymentMethod,
   handleSaveInvoice,
   handleCollectPayment,
+  handleApplyCredit,
   handlePrintA4,
   handlePrintThermal,
   onApplyAdjustment,
@@ -50,6 +52,18 @@ export const InvoiceDrawer = ({
   // Partial payment: amount the biller is collecting now. null = default to the
   // full outstanding balance; a number = take exactly that (rest stays due).
   const [enteredAmount, setEnteredAmount] = React.useState(null);
+  // Patient's wallet credit (advances). Fetched on open so the drawer can offer
+  // "apply ₹X advance" against this bill. Drawer remounts per open, so [] is fine.
+  const [walletBalance, setWalletBalance] = React.useState(0);
+  React.useEffect(() => {
+    let active = true;
+    const pid = selectedInvoice?.patientId;
+    if (!pid) return undefined;
+    apiClient.get(`/finance/credit/${pid}`)
+      .then(({ data }) => { if (active) setWalletBalance(Number(data?.balance) || 0); })
+      .catch(() => { /* no credit / offline — just hide the offer */ });
+    return () => { active = false; };
+  }, [selectedInvoice?.patientId]);
 
   const openEditRequest = () => {
     setEditCentre(Number(selectedInvoice.centreDiscount) || 0);
@@ -178,16 +192,19 @@ export const InvoiceDrawer = ({
   const totalDeductions = centreDisc + referrerDisc + deduction;
   const netSettlement = (selectedInvoice.grossAmount || 0) - totalDeductions;
 
-  // Partial payments. The patient can pay part now and keep the rest due. The
-  // biller types the amount received; the default is the whole balance (net −
-  // already-paid). `enteredAmount === null` keeps the default tracking the
-  // balance as discounts change; once typed, we clamp the value to [0, balance].
+  // Partial payments + advances. The biller types the cash tendered; the default
+  // is the whole balance (net − already-paid). Paying LESS leaves a balance due;
+  // paying MORE is allowed now — the excess is auto-held as a patient advance
+  // (refundable / carry-forward), handled by the backend. So we no longer clamp
+  // the upper bound; only the floor stays at 0.
   const paidSoFar = Number(selectedInvoice?.paidAmount) || 0;
   const balanceDue = Math.max(0, netSettlement - paidSoFar);
   const amountReceived = enteredAmount === null
     ? balanceDue
-    : Math.min(Math.max(0, Number(enteredAmount) || 0), balanceDue);
+    : Math.max(0, Number(enteredAmount) || 0);
   const remainingAfter = Math.max(0, balanceDue - amountReceived);
+  // Over-tender → advance held for the patient (returned later or carried forward).
+  const advanceHeld = Math.max(0, amountReceived - balanceDue);
 
   // Max the centre may discount: total − referral commission (and ≤ what's left
   // after the other deductions). Shown next to the centre concession field.
@@ -595,6 +612,19 @@ export const InvoiceDrawer = ({
                       </div>
                    </div>
 
+                   {/* Carry forward: this patient holds an advance — offer to apply
+                       it to this bill (settles without fresh cash). */}
+                   {walletBalance > 0.01 && balanceDue > 0.01 && (
+                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '12px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                       <div style={{ minWidth: 0 }}>
+                         <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#1e3a8a' }}>💳 Patient has ₹{walletBalance.toLocaleString()} advance</div>
+                         <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#60a5fa', marginTop: '2px' }}>Apply ₹{Math.min(balanceDue, walletBalance).toLocaleString()} to this bill</div>
+                       </div>
+                       <button type="button" onClick={() => handleApplyCredit && handleApplyCredit(selectedInvoice.invoiceId, Math.min(balanceDue, walletBalance))}
+                         style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11.5px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap' }}>Apply advance</button>
+                     </div>
+                   )}
+
                    {/* Amount received now — defaults to the full balance; type a
                        lower number to take a part-payment (the rest stays due). */}
                    <div>
@@ -604,11 +634,10 @@ export const InvoiceDrawer = ({
                          <input
                            type="number"
                            min="0"
-                           max={balanceDue}
                            value={enteredAmount === null ? balanceDue : enteredAmount}
                            onChange={(e) => {
                              const v = e.target.value;
-                             setEnteredAmount(v === '' ? 0 : Math.min(Math.max(0, parseFloat(v) || 0), balanceDue));
+                             setEnteredAmount(v === '' ? 0 : Math.max(0, parseFloat(v) || 0));
                            }}
                            style={{ flex: 1, padding: '8px 0', border: 'none', outline: 'none', fontSize: '18px', fontWeight: 950, color: '#0f52ba', minWidth: 0 }}
                          />
@@ -617,6 +646,11 @@ export const InvoiceDrawer = ({
                       {remainingAfter > 0 && (
                         <div style={{ fontSize: '9px', fontWeight: 900, color: '#ea580c', marginTop: '6px', lineHeight: 1.4 }}>
                           Part-payment — ₹{remainingAfter.toLocaleString()} stays due after this. Invoice will be marked PARTIAL.
+                        </div>
+                      )}
+                      {advanceHeld > 0 && (
+                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '8px 10px', marginTop: '6px', lineHeight: 1.45 }}>
+                          💳 Advance held: ₹{advanceHeld.toLocaleString()} — kept as the patient&apos;s credit (refund later or apply to a future visit). Invoice is fully paid.
                         </div>
                       )}
                    </div>

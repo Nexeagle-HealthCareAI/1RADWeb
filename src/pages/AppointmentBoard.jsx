@@ -3236,21 +3236,7 @@ export default function AppointmentBoard() {
                                   const active = refIsDoctor === opt.k;
                                   return (
                                     <button key={String(opt.k)} type="button"
-                                      onClick={() => setNewPatient(prev => {
-                                        if (opt.k === false) {
-                                          // Other person → default the (mandatory) referring
-                                          // doctor to the centre's own doctor for this visit:
-                                          // the chosen Lead Specialist, else the first centre
-                                          // doctor on the roster. Pre-fills but stays editable.
-                                          const centreDoc = String(newBooking.doctor || '').trim() || (doctors && doctors[0]) || '';
-                                          return {
-                                            ...prev,
-                                            referrerIsDoctor: false,
-                                            referrerSupportedByDoctor: String(prev.referrerSupportedByDoctor || '').trim() || centreDoc,
-                                          };
-                                        }
-                                        return { ...prev, referrerIsDoctor: true };
-                                      })}
+                                      onClick={() => setNewPatient({ ...newPatient, referrerIsDoctor: opt.k })}
                                       style={{ flex: 1, padding: '12px 10px', borderRadius: '12px', border: `1.5px solid ${active ? '#0f52ba' : '#dee2e6'}`, background: active ? '#eff6ff' : 'white', color: active ? '#0f52ba' : '#64748b', fontSize: '12px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                       <span style={{ fontSize: '18px' }}>{opt.icon}</span>
                                       {opt.label}
