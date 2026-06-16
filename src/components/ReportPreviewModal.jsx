@@ -844,6 +844,18 @@ const ReportPreviewModal = ({
           .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
           .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
           .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
+          .report-content ul[data-list-style="triangle"]  > li::marker  { content: "‣  "; color: #475569; }
+          .report-content ul[data-list-style="circ-fill"] > li::marker  { content: "●  "; color: #1f2937; font-size: 0.8em; }
+          /* Multi-colour arrowhead — rendered as a ::before glyph (matches the editor). */
+          .report-content ul[data-list-style="arrowhead"] { list-style: none; }
+          .report-content ul[data-list-style="arrowhead"] > li { position: relative; }
+          .report-content ul[data-list-style="arrowhead"] > li::before { content: "➤"; position: absolute; left: -1.15em; top: 0; font-size: 0.95em; background: linear-gradient(135deg, #000000 0%, #000000 50%, #9ca3af 50%, #e5e7eb 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+          /* Parenthesised numbering ( 1)  a)  A) ) — CSS counter + ::marker. */
+          .report-content ol[data-list-style="decimal-paren"], .report-content ol[data-list-style="alpha-paren"], .report-content ol[data-list-style="upper-paren"] { counter-reset: li-paren; }
+          .report-content ol[data-list-style="decimal-paren"] > li, .report-content ol[data-list-style="alpha-paren"] > li, .report-content ol[data-list-style="upper-paren"] > li { counter-increment: li-paren; }
+          .report-content ol[data-list-style="decimal-paren"] > li::marker { content: counter(li-paren, decimal) ")  "; }
+          .report-content ol[data-list-style="alpha-paren"]   > li::marker { content: counter(li-paren, lower-alpha) ")  "; }
+          .report-content ol[data-list-style="upper-paren"]   > li::marker { content: counter(li-paren, upper-alpha) ")  "; }
           /* word-page wrappers from the editor's pagination model — strip
              their margins/padding so they don't add extra vertical space
              inside our own per-page containers. */
@@ -1299,6 +1311,16 @@ const ReportPreviewModal = ({
         .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
         .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
         .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
+        .report-content ul[data-list-style="triangle"]  > li::marker  { content: "‣  "; color: #475569; }
+        .report-content ul[data-list-style="circ-fill"] > li::marker  { content: "●  "; color: #1f2937; font-size: 0.8em; }
+        .report-content ul[data-list-style="arrowhead"] { list-style: none; }
+        .report-content ul[data-list-style="arrowhead"] > li { position: relative; }
+        .report-content ul[data-list-style="arrowhead"] > li::before { content: "➤"; position: absolute; left: -1.15em; top: 0; font-size: 0.95em; background: linear-gradient(135deg, #000000 0%, #000000 50%, #9ca3af 50%, #e5e7eb 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+        .report-content ol[data-list-style="decimal-paren"], .report-content ol[data-list-style="alpha-paren"], .report-content ol[data-list-style="upper-paren"] { counter-reset: li-paren; }
+        .report-content ol[data-list-style="decimal-paren"] > li, .report-content ol[data-list-style="alpha-paren"] > li, .report-content ol[data-list-style="upper-paren"] > li { counter-increment: li-paren; }
+        .report-content ol[data-list-style="decimal-paren"] > li::marker { content: counter(li-paren, decimal) ")  "; }
+        .report-content ol[data-list-style="alpha-paren"]   > li::marker { content: counter(li-paren, lower-alpha) ")  "; }
+        .report-content ol[data-list-style="upper-paren"]   > li::marker { content: counter(li-paren, upper-alpha) ")  "; }
 
         @media print {
           /* Each .a4-page is already 297mm tall with its own safe-zone padding,

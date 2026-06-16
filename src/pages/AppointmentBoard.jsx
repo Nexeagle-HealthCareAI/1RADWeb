@@ -17,6 +17,7 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
+import { formatToken } from '../utils/tokenFormat';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments, insertCachedAppointment, applyServerDeltas } from '../db/repos/appointmentsRepo';
 import { watchInvoices, applyServerDeltas as applyInvoiceDeltas } from '../db/repos/invoicesRepo';
@@ -78,6 +79,23 @@ const MODALITY_ICONS = {
   'NUCLEAR MEDICINE': 'NM',
   'FLUOROSCOPY': 'FL'
 };
+
+// Token-slip helpers (shared by the thermal print + the HTML slip).
+// Age spelled out with its unit (yrs / months / days) + sex on one line.
+function tokenAgeSex(app) {
+  const { value, unit } = parsePatientAge(app?.patientAge);
+  const ageLabel = value ? `${value} ${unit === 'M' ? 'months' : unit === 'D' ? 'days' : 'yrs'}` : '';
+  const g = String(app?.patientGender || '').trim().toUpperCase();
+  const sex = (g === 'M' || g === 'MALE') ? 'Male' : (g === 'F' || g === 'FEMALE') ? 'Female' : (app?.patientGender || '');
+  return [ageLabel, sex].filter(Boolean).join(' · ');
+}
+// Referred-by with a doctor / other-person tag (blank for Self / walk-in).
+function tokenReferredBy(app) {
+  const name = String(app?.referredBy || '').trim();
+  if (!name || name.toLowerCase() === 'self') return '';
+  const tag = app?.referrerIsDoctor === false ? 'Other person' : 'Doctor';
+  return `${name} (${tag})`;
+}
 
 export default function AppointmentBoard() {
   const navigate = useNavigate();
@@ -1468,9 +1486,13 @@ export default function AppointmentBoard() {
           name: activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS',
           address: activeCenter?.address || '',
         },
-        token: app.tokenNo ?? app.dailyTokenNumber ?? app.id,
+        token: (app.tokenNo ?? app.dailyTokenNumber) != null ? formatToken(app.tokenNo ?? app.dailyTokenNumber) : (app.id || '-'),
         patientName: app.patientName || '',
         patientId: app.patientIdentifier || app.ptid || app.patientId || '',
+        // Age (yrs/months/days) + sex, combined on one line.
+        ageSex: tokenAgeSex(app),
+        // Referred-by with a doctor / other-person tag (omitted for Self).
+        referredBy: tokenReferredBy(app),
         datetime: app.dateTime
           ? new Date(app.dateTime).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
           : '',
@@ -2378,7 +2400,7 @@ export default function AppointmentBoard() {
                 fontWeight: 950, fontSize: '13px',
                 border: '1.5px solid rgba(15, 82, 186, 0.18)',
               }}>
-                {app.tokenNo || '—'}
+                {app.tokenNo != null ? formatToken(app.tokenNo) : '—'}
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 {/* Top line — patient name + gender/age + priority +
@@ -3292,24 +3314,55 @@ export default function AppointmentBoard() {
                               boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100,
                               maxHeight: '150px', overflowY: 'auto', marginTop: '4px'
                             }}>
-                              {referrers.map(r => (
+                              {referrers.map(r => {
+                                const rIsDoctor = r.isDoctor !== false;
+                                const cred = [r.specialty, r.degree].filter(Boolean).join(' · ');
+                                return (
                                 <div
                                   key={r.referrerId || r.id}
                                   onClick={() => {
-                                    setNewPatient({...newPatient, referredBy: r.name, referrerId: r.referrerId || r.id});
+                                    // Capture the chosen referrer's profile so the
+                                    // selected-detail line + the booking payload carry
+                                    // their speciality/degree/type.
+                                    setNewPatient({
+                                      ...newPatient,
+                                      referredBy: r.name,
+                                      referrerId: r.referrerId || r.id,
+                                      referrerIsDoctor: rIsDoctor,
+                                      referrerSpecialty: r.specialty || '',
+                                      referrerDegree: r.degree || '',
+                                      referrerContact: r.contact || newPatient.referrerContact || '',
+                                    });
                                     setReferrers([]);
                                   }}
                                   style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', fontSize: '12px' }}
                                   onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
                                   onMouseOut={e => e.currentTarget.style.background = 'white'}
                                 >
-                                  <strong>{r.name}</strong>
-                                  <span style={{ marginLeft: '8px', color: '#888', fontSize: '10px' }}>{r.contact}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '8px', fontWeight: 900, padding: '1px 6px', borderRadius: '999px', background: rIsDoctor ? '#eff6ff' : '#fef3c7', color: rIsDoctor ? '#1d4ed8' : '#b45309' }}>{rIsDoctor ? '👨‍⚕️ Doctor' : '👤 Other'}</span>
+                                    <strong>{r.name}</strong>
+                                    {r.contact && <span style={{ color: '#888', fontSize: '10px' }}>{r.contact}</span>}
+                                  </div>
+                                  {cred && <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>{cred}</div>}
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>
+
+                        {/* Selected existing referrer — show their type + speciality/
+                            degree so the operator can confirm the right person. */}
+                        {newPatient.referrerId && (newPatient.referredBy || '').trim().toLowerCase() !== 'self' && (
+                          <div style={{ marginTop: '8px', padding: '8px 11px', borderRadius: '10px', background: '#f0f7ff', border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: newPatient.referrerIsDoctor !== false ? '#eff6ff' : '#fef3c7', color: newPatient.referrerIsDoctor !== false ? '#1d4ed8' : '#b45309' }}>{newPatient.referrerIsDoctor !== false ? '👨‍⚕️ Doctor' : '👤 Other person'}</span>
+                            <span style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a' }}>{newPatient.referredBy}</span>
+                            {[newPatient.referrerSpecialty, newPatient.referrerDegree].filter(Boolean).length > 0 && (
+                              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}>{[newPatient.referrerSpecialty, newPatient.referrerDegree].filter(Boolean).join(' · ')}</span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Self / walk-in — no external referrer. Credits the centre's
                             own doctor by default (overridable in the Supporting doctor
@@ -3365,7 +3418,9 @@ export default function AppointmentBoard() {
                                   key={name}
                                   type="button"
                                   onClick={() => {
-                                    setNewPatient(prev => ({ ...prev, referredBy: name, referrerId: match ? (match.referrerId || match.id) : null }));
+                                    setNewPatient(prev => ({ ...prev, referredBy: name, referrerId: match ? (match.referrerId || match.id) : null,
+                                      referrerIsDoctor: match ? (match.isDoctor !== false) : prev.referrerIsDoctor,
+                                      referrerSpecialty: match?.specialty || '', referrerDegree: match?.degree || '', referrerContact: match?.contact || prev.referrerContact || '' }));
                                     setReferrers([]);
                                   }}
                                   style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #dbeafe', background: '#f0f7ff', color: '#0f52ba', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
@@ -3388,13 +3443,15 @@ export default function AppointmentBoard() {
                                 key={s.referrer.referrerId || s.referrer.id}
                                 type="button"
                                 onClick={() => {
-                                  setNewPatient(prev => ({ ...prev, referredBy: s.referrer.name, referrerId: s.referrer.referrerId || s.referrer.id }));
+                                  setNewPatient(prev => ({ ...prev, referredBy: s.referrer.name, referrerId: s.referrer.referrerId || s.referrer.id,
+                                    referrerIsDoctor: s.referrer.isDoctor !== false,
+                                    referrerSpecialty: s.referrer.specialty || '', referrerDegree: s.referrer.degree || '', referrerContact: s.referrer.contact || prev.referrerContact || '' }));
                                   setReferrerSuggestions([]);
                                   setReferrers([]);
                                 }}
                                 style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                               >
-                                {s.referrer.name}{s.referrer.contact ? ` · ${s.referrer.contact}` : ''}
+                                {s.referrer.name}{[s.referrer.specialty, s.referrer.degree].filter(Boolean).length ? ` · ${[s.referrer.specialty, s.referrer.degree].filter(Boolean).join(' · ')}` : (s.referrer.contact ? ` · ${s.referrer.contact}` : '')}
                               </button>
                             ))}
                           </div>
@@ -5461,7 +5518,7 @@ export default function AppointmentBoard() {
                   {String(app.status || 'BOOKED').replace(/_/g, ' ')}
                 </span>
                 {app.dailyTokenNumber != null && (
-                  <span style={{ fontSize: '10px', fontWeight: 800, opacity: 0.9 }}>TOKEN #{app.dailyTokenNumber}</span>
+                  <span style={{ fontSize: '10px', fontWeight: 800, opacity: 0.9 }}>TOKEN {formatToken(app.dailyTokenNumber)}</span>
                 )}
               </div>
             </div>
@@ -5588,7 +5645,7 @@ export default function AppointmentBoard() {
                 {isPatientArrived(tokenPrintData) ? (
                   <>
                     <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
-                    <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+                    <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{(tokenPrintData.tokenNo ?? tokenPrintData.dailyTokenNumber) != null ? formatToken(tokenPrintData.tokenNo ?? tokenPrintData.dailyTokenNumber) : tokenPrintData.id}</div>
                   </>
                 ) : (
                   // Not arrived yet — no queue token exists, so withhold the number.
@@ -5604,10 +5661,22 @@ export default function AppointmentBoard() {
                   <span style={{ fontSize: '8px', fontWeight: 700 }}>NAME:</span>
                   <span style={{ fontSize: '11px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
                 </div>
+                {tokenAgeSex(tokenPrintData) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '8px', fontWeight: 700 }}>AGE / SEX:</span>
+                    <span style={{ fontSize: '10px', fontWeight: 900 }}>{tokenAgeSex(tokenPrintData)}</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '8px', fontWeight: 700 }}>DATE:</span>
                   <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })} - {new Date(tokenPrintData.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST</span>
                 </div>
+                {tokenReferredBy(tokenPrintData) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                    <span style={{ fontSize: '8px', fontWeight: 700 }}>REFERRED BY:</span>
+                    <span style={{ fontSize: '10px', fontWeight: 900, textAlign: 'right' }}>{tokenReferredBy(tokenPrintData)}</span>
+                  </div>
+                )}
               </div>
               {(() => {
                 // Multi-service token. Lists every service availed on
@@ -6576,7 +6645,7 @@ export default function AppointmentBoard() {
               {arrivedModal.tokenNo != null ? (
                 <div style={{ textAlign: 'center', marginBottom: '18px' }}>
                   <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>TODAY&apos;S TOKEN</div>
-                  <div style={{ fontSize: '52px', fontWeight: 950, color: '#0f52ba', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>#{arrivedModal.tokenNo}</div>
+                  <div style={{ fontSize: '52px', fontWeight: 950, color: '#0f52ba', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>{formatToken(arrivedModal.tokenNo)}</div>
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', marginBottom: '14px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>Token will appear once assigned.</div>

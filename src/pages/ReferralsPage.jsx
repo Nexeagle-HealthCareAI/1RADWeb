@@ -3918,8 +3918,7 @@ export default function ReferralsPage() {
           marginBottom: '30px' 
         }}>
           <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: '12px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '15px' }}>Intelligence Engine</h2>
-            <div style={{ 
+            <div style={{
               display: 'flex', 
               background: '#f1f5f9', 
               padding: '4px', 

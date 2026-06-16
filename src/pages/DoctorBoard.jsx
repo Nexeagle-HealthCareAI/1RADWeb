@@ -396,46 +396,22 @@ export default function DoctorBoard() {
 
       <div className="board-padding">
         {view === 'QUEUE' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px', marginBottom: '20px' }}>
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#ef4444', marginBottom: '6px' }}>Needs Report</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#ef4444' }}>{stats.pendingReports}</span>
-                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#ef4444' }}>Awaiting</span>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'nowrap' }}>
+            {[
+              { label: 'Needs Report',    value: stats.pendingReports, sub: 'Awaiting',           c: '#dc2626', g1: '#fef2f2', g2: '#fee2e2', bd: '#fecaca' },
+              { label: 'In Progress',     value: stats.drafts,         sub: 'Drafts',             c: '#d97706', g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a' },
+              { label: 'Finalized Today', value: stats.finalizedToday, sub: 'Reports',            c: '#16a34a', g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0' },
+              { label: 'Incoming',        value: stats.upcoming,       sub: 'Studies',            c: '#1d4ed8', g1: '#eff6ff', g2: '#dbeafe', bd: '#bfdbfe' },
+              { label: 'Delivered',       value: stats.delivered,      sub: 'Handed to patient',  c: '#15803d', g1: '#ecfdf5', g2: '#d1fae5', bd: '#a7f3d0' },
+            ].map((k) => (
+              <div key={k.label} className="summary-card" style={{ flex: '1 1 0', minWidth: 0, background: `linear-gradient(135deg, ${k.g1} 0%, ${k.g2} 100%)`, border: `1px solid ${k.bd}`, padding: '14px 16px', borderRadius: '18px', boxShadow: '0 8px 24px -10px rgba(15,23,42,0.18)' }}>
+                <div style={{ fontSize: '9px', fontWeight: 900, color: k.c, letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '5px' }}>
+                  <span style={{ fontSize: '24px', fontWeight: 950, color: k.c, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{k.value}</span>
+                  <span style={{ fontSize: '9px', fontWeight: 700, color: k.c, opacity: 0.72, whiteSpace: 'nowrap' }}>{k.sub}</span>
+                </div>
               </div>
-            </div>
-
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>In Progress</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#f59e0b' }}>{stats.drafts}</span>
-                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
-              </div>
-            </div>
-
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized Today</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#2ecc71' }}>{stats.finalizedToday}</span>
-                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#2ecc71' }}>Reports</span>
-              </div>
-            </div>
-
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Incoming</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#1d4ed8' }}>{stats.upcoming}</span>
-                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
-              </div>
-            </div>
-
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Delivered</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#15803d' }}>{stats.delivered}</span>
-                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#15803d' }}>Handed to Patient</span>
-              </div>
-            </div>
+            ))}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>

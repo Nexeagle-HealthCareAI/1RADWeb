@@ -964,6 +964,20 @@ const ReportingPage = () => {
       });
       setAppointmentServices([]);
 
+      // --- PATIENT TIMELINE FETCH (study path) ---
+      // Opening from the study board's "View" must still show the patient's
+      // prior studies. The appointment path does this in fetchReportingContext;
+      // mirror it here off the study's demographics so the Timeline tab isn't
+      // empty. Uses the patient Guid when present (dedicated API), else falls
+      // back to a name/identifier search.
+      setShowTimeline(true);
+      fetchPatientTimeline({
+        patientId: study.patientId || study.PatientId || null,
+        patientName: study.patientName,
+        patientIdentifier: study.dicomPatientId,
+        appointmentId: study.appointmentId || study.AppointmentId || null,
+      }, study.appointmentId || study.AppointmentId || sId);
+
       if (templRes.data?.success) {
         setTemplates((templRes.data.data || []).map(t => ({
           id: t.id ?? t.Id, name: t.name ?? t.Name ?? '', modality: t.modality ?? t.Modality ?? '', content: t.content ?? t.Content ?? '',
@@ -1024,7 +1038,7 @@ const ReportingPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [setReportBaseline]);
+  }, [setReportBaseline, fetchPatientTimeline]);
 
   useEffect(() => {
     if (studyId) {

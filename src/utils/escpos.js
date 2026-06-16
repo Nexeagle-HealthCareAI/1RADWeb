@@ -159,9 +159,11 @@ export function buildTokenBytes(data = {}) {
   p.align('left');
   if (data.patientName) p.bold(true).line(String(data.patientName).toUpperCase()).bold(false);
   if (data.patientId) p.line('ID  : ' + data.patientId);
+  if (data.ageSex) p.line('AGE/SEX: ' + data.ageSex);
   if (data.datetime) p.line('TIME: ' + data.datetime);
   if (data.service) p.line('FOR : ' + String(data.service).slice(0, cols === 32 ? 24 : 38));
   if (data.modality) p.line('MOD : ' + data.modality);
+  if (data.referredBy) p.line('REF BY: ' + String(data.referredBy).slice(0, cols === 32 ? 22 : 40));
 
   p.align('center');
   if (data.qr) p.qr(String(data.qr), { size: 6, ec: 'M' });
