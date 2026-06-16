@@ -329,7 +329,12 @@ function printViaIframe(html) {
   return new Promise((resolve) => {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    // The iframe MUST have a real, page-width, full-content height — a 0×0 (or
+    // 1px) hidden iframe gives the print layout a zero viewport, and Chrome then
+    // prints only the FIRST page even though the document has several. We keep it
+    // off-screen (left:-99999px) so it's invisible, size it to A4 width, and grow
+    // its height to the full document height just before printing.
+    iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;height:1123px;border:0;background:#fff;';
     document.body.appendChild(iframe);
 
     let done = false;
@@ -344,6 +349,15 @@ function printViaIframe(html) {
     iframe.onload = () => {
       setTimeout(() => {
         try {
+          // Grow the iframe to contain ALL pages so the layout engine renders the
+          // full multi-page document (not just the first viewport) before print.
+          const d = iframe.contentWindow.document;
+          const fullH = Math.max(
+            d.body?.scrollHeight || 0,
+            d.documentElement?.scrollHeight || 0,
+            1123
+          );
+          iframe.style.height = `${fullH}px`;
           iframe.contentWindow.focus();
           iframe.contentWindow.print();
         } catch { /* ignore — print dialog may still appear */ }

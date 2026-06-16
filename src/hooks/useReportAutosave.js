@@ -72,6 +72,12 @@ export default function useReportAutosave({
   //    = the concurrency token. Seeded on load via setBaseline(). ─────────────
   const serverBaselineRef = useRef(null);
   const rowVersionRef = useRef(null);
+  // In-flight save lock. Both the background autosave and the manual saveNow read
+  // + advance rowVersionRef; if they overlap, the slower one sends a now-stale
+  // token and the server rejects it as a (spurious, single-user) OCC conflict —
+  // "updated by another user". This ref serialises them: a save sets it to its
+  // own promise; the other waits (manual) or skips (autosave) until it clears.
+  const inFlightSaveRef = useRef(null);
 
   const setBaseline = useCallback(({ findings, rowVersion }) => {
     serverBaselineRef.current = findings ?? '';
@@ -205,7 +211,16 @@ export default function useReportAutosave({
     }
 
     const cloudTimer = setTimeout(async () => {
+      // A manual save (or another save) is mid-flight — skip this tick rather
+      // than racing it with a stale OCC token. The effect reschedules, so we'll
+      // autosave on the next idle window with the freshly-advanced token.
+      if (inFlightSaveRef.current) {
+        console.info('[AUTOSAVE] Save already in flight — skipping this tick.');
+        return;
+      }
       console.info(`[AUTOSAVE] Triggering background cloud sync...`);
+      let releaseLock;
+      inFlightSaveRef.current = new Promise(r => { releaseLock = r; });
       setIsCloudSyncing(true);
       setSaveStatus('SAVING');
       // Only show "Saving…" if the save lasts longer than 500ms. Fast saves
@@ -294,6 +309,9 @@ export default function useReportAutosave({
         }
       } finally {
         setIsCloudSyncing(false);
+        // Release the save lock so a queued manual save / next autosave can run.
+        if (releaseLock) releaseLock();
+        inFlightSaveRef.current = null;
         // Cancel the deferred "Saving…" label and hide it regardless of
         // success/failure — the next paint either shows "Saved just now"
         // or an error banner, both of which supersede the saving label.
@@ -371,6 +389,12 @@ export default function useReportAutosave({
       return;
     }
 
+    // Wait out any background autosave that's mid-flight, so we read the OCC
+    // token AFTER it has advanced rowVersionRef. Skipping this is what made a
+    // single user hit "updated by another user": the manual save raced the
+    // autosave and sent the now-stale token.
+    if (inFlightSaveRef.current) { try { await inFlightSaveRef.current; } catch { /* ignore */ } }
+
     // Flush any pending editor changes (debounce is 300ms) so all content is saved
     let currentFindings = editorText;
     if (editorRef.current?.editor) {
@@ -403,6 +427,11 @@ export default function useReportAutosave({
     }
 
     setIsSaving(true);
+    // Hold the shared lock for the duration of this save so a background
+    // autosave tick that fires mid-flight skips itself instead of racing us
+    // with the same (about-to-be-stale) token.
+    let releaseLock;
+    inFlightSaveRef.current = new Promise((r) => { releaseLock = r; });
     try {
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
@@ -470,6 +499,8 @@ export default function useReportAutosave({
       }
     } finally {
       setIsSaving(false);
+      if (releaseLock) releaseLock();
+      inFlightSaveRef.current = null;
     }
   }, [appointmentId, imagingStudyId, activeServiceId, selectedTemplateId, editorText, impression, advice, isOnline, editorRef, applyContent, addToOutbox, notify, logEvent, onFinalized]);
 

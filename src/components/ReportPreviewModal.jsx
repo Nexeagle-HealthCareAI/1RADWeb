@@ -340,20 +340,10 @@ const ReportPreviewModal = ({
   }, [isOpen, appointmentId]);
 
   useEffect(() => {
-    const handleResize = () => {
-      // Calculate scale to fit A4 (794x1123 @ 96dpi) into the viewport
-      const padding = 80;
-      const availableWidth = window.innerWidth - (window.innerWidth < 768 ? 20 : 80);
-      const availableHeight = window.innerHeight - (window.innerWidth < 768 ? 100 : 180);
-      const scale = Math.min(availableWidth / 794, availableHeight / 1123);
-      setSheetScale(scale);
-    };
-
-    if (isOpen) {
-      handleResize();
-      window.addEventListener('resize', handleResize);
-    }
-    return () => window.removeEventListener('resize', handleResize);
+    // Default to 100% zoom on open. The report sits in its own scrollable pane,
+    // so it no longer needs to be shrunk to fit the whole sheet on screen; users
+    // adjust with the zoom controls in the sidebar.
+    if (isOpen) setSheetScale(1);
   }, [isOpen]);
 
 
@@ -707,7 +697,7 @@ const ReportPreviewModal = ({
       : '';
 
     return `
-      <div style="
+      <div class="rp-sheet${isLast ? ' rp-sheet-last' : ''}" style="
         width: 210mm;
         height: 297mm;
         page-break-after: ${isLast ? 'auto' : 'always'};
@@ -757,19 +747,43 @@ const ReportPreviewModal = ({
   // rebuilt the HTML separately and drifted out of sync). Works in the browser
   // and in the desktop app (Electron's window.print() opens the system dialog).
   const handlePrint = () => {
-    // Let the print tree's letterhead/QR settle, then hand off to the OS dialog.
-    setTimeout(() => { try { window.print(); } catch (_) {} }, 60);
+    // Robust multi-page print: render the SAME self-contained document the
+    // preview is built from into a hidden, FULL-SIZE iframe and print THAT.
+    // The previous in-place window.print() relied on @media print flattening the
+    // live modal DOM, which dropped every page past the first on some browsers.
+    // A real-sized iframe (A4 width + enough height for all pages) gives the
+    // print layout the whole document, so all pages come through.
+    try {
+      const html = buildPrintContent();
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      const fullH = Math.max(1, pages.length) * 1123 + 300; // A4 px/page + buffer
+      iframe.style.cssText = `position:fixed;left:-99999px;top:0;width:794px;height:${fullH}px;border:0;background:#fff;`;
+      document.body.appendChild(iframe);
+      // Drop the iframe once the job has had time to spool.
+      setTimeout(() => { try { document.body.removeChild(iframe); } catch (_) { /* gone */ } }, 12000);
+      const doc = iframe.contentWindow?.document;
+      if (!doc) { try { document.body.removeChild(iframe); } catch (_) {} return; }
+      doc.open();
+      doc.write(html);
+      doc.close();
+      // The injected onload script in `html` waits for the letterhead image(s)
+      // then calls window.print() inside the iframe — printing every page.
+    } catch (_) {
+      // Last-ditch fallback to the old behaviour.
+      setTimeout(() => { try { window.print(); } catch (__) {} }, 60);
+    }
   };
 
   // Legacy fallback — opens a separate window with rebuilt HTML. Kept for
   // reference; no longer wired to the Print button (it drifted out of sync
   // with the preview).
-  const handlePrintInNewWindow = () => {
-    // Use the same helper function to generate complete pages
+  // Build the FULLY self-contained print document (all pages + inlined print
+  // CSS + an onload auto-print script). Used by handlePrint (hidden-iframe
+  // print) — reliable multi-page output independent of the live modal DOM.
+  const buildPrintContent = () => {
     const pagesHtml = pages.map((pageHTML, pageIdx) => generatePageHtml(pageHTML, pageIdx)).join('');
-
-    // Create print document with full styling
-    const printContent = `
+    return `
       <!DOCTYPE html>
       <html lang="en">
       <head>
@@ -794,6 +808,14 @@ const ReportPreviewModal = ({
             width: 100%;
             height: auto;
           }
+
+          /* Print each A4 sheet a HAIR under 297mm so sub-pixel rounding can't
+             spill a full-height page onto a second sheet — which is what inserted
+             a blank page between pages. (The on-screen preview keeps the full
+             297mm via the inline style; this class rule only wins inside the
+             print document.) The last sheet never forces a trailing break. */
+          .rp-sheet { height: 296mm !important; }
+          .rp-sheet:last-child, .rp-sheet-last { page-break-after: auto !important; break-after: auto !important; }
 
           /* Zero browser-default block margins so they don't double-up with
              the typography rules below. */
@@ -968,19 +990,6 @@ const ReportPreviewModal = ({
       </body>
       </html>
     `;
-
-    // Open in new window
-    const printWindow = window.open('', '_blank', 'width=1200,height=800');
-    if (!printWindow) {
-      notifyToast('Pop-up was blocked. Please allow pop-ups for this site and try again.', 'warning');
-      return;
-    }
-
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.focus();
-    // Print is triggered by the inline window.addEventListener('load', ...) script
-    // injected into the print HTML above — no more race-condition setTimeout here.
   };
 
   const handleWhatsAppShare = async () => {
@@ -1002,63 +1011,16 @@ const ReportPreviewModal = ({
     window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank', 'noopener,noreferrer');
   };
 
+  // Preview-modal layout helpers (premium popup: report pane + actions sidebar).
+  const isNarrowPreview = typeof window !== 'undefined' && window.innerWidth < 900;
+  const zoomBtn = { width: '34px', height: '32px', borderRadius: '9px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'white', fontWeight: 900, cursor: 'pointer', fontSize: '14px' };
+  const actionBtn = { flex: 1, padding: '13px 16px', borderRadius: '12px', fontWeight: 950, cursor: 'pointer', fontSize: '12.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.15s', whiteSpace: 'nowrap' };
+
   const modalContent = (
-    <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, backdropFilter: 'blur(10px)' }}>
-      <div style={{ width: '100vw', height: '100vh', background: '#0a1628', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div className="preview-header" style={{ 
-          padding: '12px 25px', 
-          background: 'rgba(15, 23, 42, 0.95)', 
-          backdropFilter: 'blur(20px)', 
-          color: 'white', 
-          display: 'flex', 
-          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
-          justifyContent: 'space-between', 
-          alignItems: window.innerWidth < 768 ? 'flex-start' : 'center', 
-          borderBottom: '1px solid rgba(255,255,255,0.1)', 
-          zIndex: 100,
-          gap: '15px',
-          boxShadow: '0 4px 30px rgba(0,0,0,0.5)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-             <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '24px', cursor: 'pointer', padding: '5px' }}>✕</button>
-             <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }} />
-             <div>
-              <h3 style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '3px', margin: 0, color: '#3b82f6', textTransform: 'uppercase' }}>Diagnostic Signal Preview</h3>
-              <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '2px', fontWeight: 700 }}>
-                {loadingProtocol ? 'SYNCHRONIZING_BRANDING...' : `MODE: ${mode?.toUpperCase()} • STATUS: ${isFinalized ? 'AUTHENTICATED' : 'DRAFT_RECON'}`}
-              </div>
-             </div>
-          </div>
+    <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, backdropFilter: 'blur(10px)', padding: isNarrowPreview ? 0 : '2vh' }}>
+      <div style={{ width: isNarrowPreview ? '100vw' : '96vw', height: isNarrowPreview ? '100vh' : '96vh', maxWidth: '1500px', background: '#0a1628', display: 'flex', flexDirection: isNarrowPreview ? 'column' : 'row', overflow: 'hidden', borderRadius: isNarrowPreview ? 0 : '18px', boxShadow: '0 40px 100px -20px rgba(0,0,0,0.6)' }}>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            {/* Zoom Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <button onClick={() => setSheetScale(s => Math.max(0.3, s - 0.1))} style={{ background: 'none', border: 'none', color: 'white', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 900 }}>−</button>
-              <div style={{ fontSize: '10px', fontWeight: 950, width: '45px', textAlign: 'center', color: '#60a5fa' }}>{Math.round(sheetScale * 100)}%</div>
-              <button onClick={() => setSheetScale(s => Math.min(2, s + 0.1))} style={{ background: 'none', border: 'none', color: 'white', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 900 }}>+</button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', width: window.innerWidth < 768 ? '100%' : 'auto', flexWrap: 'wrap' }}>
-              <button 
-                className="btn-preview-action" 
-                style={{ flex: 1, background: 'rgba(37, 211, 102, 0.15)', border: '1px solid rgba(37, 211, 102, 0.3)', color: '#25d366', padding: '10px 18px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '11px', transition: 'all 0.2s' }} 
-                onClick={handleWhatsAppShare}
-              >
-                <span>💬</span> {window.innerWidth > 600 ? 'WHATSAPP_SECURE' : 'SHARE'}
-              </button>
-              <button 
-                className="btn-preview-action" 
-                style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', padding: '10px 18px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '11px', transition: 'all 0.2s' }} 
-                onClick={handleDownload}
-              >
-                <span>📥</span> {window.innerWidth > 600 ? 'DOWNLOAD_PDF' : 'PDF'}
-              </button>
-              <button className="btn-preview-primary" style={{ flex: 1, background: '#0f52ba', border: 'none', color: 'white', padding: '10px 22px', borderRadius: '10px', fontWeight: 950, cursor: 'pointer', fontSize: '11px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.4)', transition: 'all 0.2s' }} onClick={handlePrint}>🖨️ {window.innerWidth > 600 ? 'AUTHENTIC_PRINT' : 'PRINT'}</button>
-            </div>
-          </div>
-        </div>
-        
-        <div className="preview-canvas" style={{ 
+        <div className="preview-canvas" style={{
           flex: 1, 
           background: '#0a1628', 
           backgroundImage: 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)',
@@ -1116,8 +1078,6 @@ const ReportPreviewModal = ({
 
             {pages.map((pageHTML, pageIdx) => {
               const isLast = pageIdx === pages.length - 1;
-              const showLetterhead = !!resolvedAssetUrl && (pageIdx === 0 || protocol?.overflowBackgroundMode === 'REUSE');
-              const isPdf = resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf');
               return (
                 <div
                   key={`a4-page-${pageIdx}`}
@@ -1136,61 +1096,12 @@ const ReportPreviewModal = ({
                     pageBreakAfter: isLast ? 'auto' : 'always',
                   }}
                 >
-                  {/* Letterhead layer for this page */}
-                  {showLetterhead && (
-                    <div className="letterhead-container" style={{ position: 'absolute', top: 0, left: 0, width: '210mm', height: '297mm', zIndex: 1, pointerEvents: 'none', overflow: 'hidden' }}>
-                      {isPdf ? (
-                        <Document
-                          file={resolvedAssetUrl}
-                          onLoadSuccess={({ numPages }) => setNumPdfPages(numPages)}
-                          onLoadError={(err) => console.error("[ReportPreview] PDF Load Error:", err)}
-                          loading={pageIdx === 0 ? <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Initializing PDF Engine...</div> : null}
-                        >
-                          <Page
-                            pageNumber={1}
-                            width={794}
-                            renderTextLayer={false}
-                            renderAnnotationLayer={false}
-                            renderMode="canvas"
-                            className="pdf-page-canvas"
-                          />
-                        </Document>
-                      ) : (
-                        <img
-                          src={resolvedAssetUrl}
-                          style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
-                          alt="Letterhead"
-                          onError={(e) => { e.target.style.opacity = 0; e.target.style.height = 0; }}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Per-page content area — sized to the safe zone.
-                      Typography intentionally NOT overridden inline — the
-                      .report-content class mirrors the editor's authored
-                      typography so the preview matches the editor. */}
-                  <div style={{
-                    position: 'absolute',
-                    top: m.top,
-                    left: m.left,
-                    right: m.right,
-                    bottom: m.bottom,
-                    zIndex: 2,
-                    // Let a slightly-tall last line spill into the bottom margin
-                    // (clipped only at the sheet edge by the parent) instead of
-                    // vanishing — keeps preview and print in sync, never drops content.
-                    overflow: 'visible',
-                  }}>
-                    {pageIdx === 0 && (
-                      <PatientInfoBlock
-                        appointmentId={appointmentId}
-                        fullAppointment={fullAppointment}
-                        savedMetadata={savedMetadata}
-                      />
-                    )}
-                    <div className="report-content" dangerouslySetInnerHTML={sanitizeMarkup(pageHTML)} />
-                  </div>
+                  {/* SINGLE SOURCE OF TRUTH — the preview renders the EXACT same
+                      generatePageHtml() the Print + Download PDF use (letterhead
+                      via the shared data-URL, the same patient banner, the same
+                      margins). So what you see here is byte-for-byte what prints
+                      and exports — no second renderer to drift out of sync. */}
+                  <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={sanitizeMarkup(generatePageHtml(pageHTML, pageIdx))} />
 
                   {/* Page indicator (preview only) */}
                   <div className="preview-page-badge" style={{
@@ -1215,6 +1126,71 @@ const ReportPreviewModal = ({
           </div>
         </div>
       </div>
+
+        {/* ── RIGHT: actions sidebar (1/4) ── */}
+        <div style={{
+          flex: isNarrowPreview ? '0 0 auto' : '0 0 300px',
+          width: isNarrowPreview ? '100%' : undefined,
+          background: 'linear-gradient(160deg, #0f52ba 0%, #0a2a63 55%, #071d45 100%)',
+          borderLeft: isNarrowPreview ? 'none' : '1px solid rgba(255,255,255,0.12)',
+          borderTop: isNarrowPreview ? '1px solid rgba(255,255,255,0.12)' : 'none',
+          display: 'flex', flexDirection: 'column', gap: '18px',
+          padding: isNarrowPreview ? '14px 16px' : '22px 20px',
+          color: 'white', boxSizing: 'border-box', overflowY: 'auto',
+        }}>
+          {/* Brand + title + status + close */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '2.5px', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>NexEagle · 1Rad</div>
+              <h3 style={{ fontSize: '18px', fontWeight: 950, margin: '5px 0 0', letterSpacing: '-0.3px' }}>Report Preview</h3>
+              <div style={{ marginTop: '8px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 900, padding: '3px 10px', borderRadius: '999px', background: isFinalized ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)', color: isFinalized ? '#4ade80' : '#fbbf24', border: `1px solid ${isFinalized ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.4)'}` }}>
+                  {loadingProtocol ? 'Loading…' : (isFinalized ? '✓ Final report' : '✎ Draft')}
+                </span>
+              </div>
+            </div>
+            <button onClick={onClose} title="Close" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: '#e2e8f0', fontSize: '15px', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0 }}>✕</button>
+          </div>
+
+          {/* Report context card */}
+          <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '14px', padding: '14px 15px' }}>
+            <div style={{ fontSize: '15px', fontWeight: 950, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(fullAppointment?.patientName || '—').toUpperCase()}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginTop: '11px' }}>
+              {[
+                ['Study', fullAppointment?.service || fullAppointment?.modality || '—'],
+                ['Patient ID', fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '—'],
+                ['Reported', savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()],
+                ['Pages', String(pages.length)],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.55)', fontWeight: 700, whiteSpace: 'nowrap' }}>{k}</span>
+                  <span style={{ color: 'white', fontWeight: 800, textAlign: 'right', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Zoom */}
+          <div>
+            <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '1px', color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>ZOOM</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button onClick={() => setSheetScale(s => Math.max(0.3, +(s - 0.1).toFixed(2)))} style={zoomBtn}>−</button>
+              <div style={{ flex: 1, textAlign: 'center', fontSize: '12px', fontWeight: 950, color: '#93c5fd' }}>{Math.round(sheetScale * 100)}%</div>
+              <button onClick={() => setSheetScale(s => Math.min(2, +(s + 0.1).toFixed(2)))} style={zoomBtn}>+</button>
+              <button onClick={() => setSheetScale(1)} style={{ ...zoomBtn, width: 'auto', padding: '0 12px', fontSize: '10px' }}>100%</button>
+            </div>
+          </div>
+
+          {/* Actions — pinned to the bottom on desktop */}
+          <div style={{ marginTop: isNarrowPreview ? 0 : 'auto' }}>
+            <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '1px', color: 'rgba(255,255,255,0.5)', marginBottom: '10px' }}>SHARE &amp; EXPORT</div>
+            <div style={{ display: 'flex', flexDirection: isNarrowPreview ? 'row' : 'column', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={handleWhatsAppShare} style={{ ...actionBtn, background: 'rgba(37,211,102,0.16)', border: '1px solid rgba(37,211,102,0.35)', color: '#4ade80' }}>💬 Share on WhatsApp</button>
+              <button onClick={handleDownload} style={{ ...actionBtn, background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.18)', color: 'white' }}>📥 Download PDF</button>
+              <button onClick={handlePrint} style={{ ...actionBtn, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', border: 'none', color: 'white', boxShadow: '0 6px 18px rgba(37,99,235,0.5)' }}>🖨️ Print</button>
+            </div>
+          </div>
+        </div>
     </div>
       <style>{`
         /* ───────────────────────────────────────────────────────────────
@@ -1539,7 +1515,9 @@ const ReportPreviewModal = ({
             width: 210mm !important;
             height: auto !important;
             z-index: auto !important;
-            page-break-inside: avoid;
+            /* NB: must NOT be page-break-inside:avoid — that forces the WHOLE
+               multi-page tree onto one sheet and clips to page 1. The per-page
+               .print-only-page children carry the page breaks instead. */
           }
           .print-only-tree * {
             -webkit-print-color-adjust: exact !important;
