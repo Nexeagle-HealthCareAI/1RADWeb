@@ -132,6 +132,9 @@ export default function AdminBoard() {
   const [isSwitchingNode, setIsSwitchingNode] = useState(false);
   const [userRegStep, setUserRegStep] = useState(1);
   const [editUser, setEditUser] = useState(null);
+  // Inline save error shown INSIDE the staff drawer (a toast can hide behind the
+  // drawer overlay) — e.g. duplicate email/mobile at this centre.
+  const [userSaveError, setUserSaveError] = useState('');
   const [selectedDocId, setSelectedDocId] = useState('');
   const [settings, setSettings] = useState({ allowCustom: true, lockApproved: false, reqFindings: true, reqImpression: true });
   const [showPasswords, setShowPasswords] = useState(false);
@@ -1422,12 +1425,14 @@ export default function AdminBoard() {
       mobile: ''
     });
     setUserRegStep(1);
+    setUserSaveError('');
     setIsUserDrawerOpen(true);
   };
 
   const handleSaveUser = async (e) => {
     e.preventDefault();
-    
+    setUserSaveError(''); // clear any prior failure
+
     const isDoctorRole = editUser.roles.some(r => r.toLowerCase().includes('doctor'));
     
     // Surcharge check for NEW doctors — a RIS per-doctor-seat billing concept.
@@ -1456,7 +1461,9 @@ export default function AdminBoard() {
         (mobileDigits && String(p.mobile || '').replace(/\D/g, '') === mobileDigits)
       );
       if (clash) {
-        notifyToast(`“${(clash.name || 'A staff member').toUpperCase()}” already uses this email or mobile at this centre. Open their profile to edit it instead of adding them again.`, 'error');
+        const msg = `“${(clash.name || 'A staff member').toUpperCase()}” already uses this email or mobile at this centre. Open their profile to edit it instead of adding them again.`;
+        setUserSaveError(msg);
+        notifyToast(msg, 'error');
         return;
       }
     }
@@ -1480,13 +1487,17 @@ export default function AdminBoard() {
       return;
     }
 
+    const staffName = (editUser.name || 'Staff member').toUpperCase();
     try {
       if (editUser.id) {
         await apiClient.put(`/personnel/${editUser.id}`, payload);
+        notifyToast(`“${staffName}” profile updated successfully.`, 'success');
       } else {
         await apiClient.post('/personnel', payload);
+        notifyToast(`“${staffName}” onboarded successfully.`, 'success');
       }
 
+      setUserSaveError('');
       setIsUserDrawerOpen(false);
       fetchPersonnel();
     } catch (err) {
@@ -1497,7 +1508,12 @@ export default function AdminBoard() {
         notifyToast({ title: 'Network error', message: 'Staff record queued in offline outbox.' }, 'warning');
         setIsUserDrawerOpen(false);
       } else {
-        notifyToast(err.response?.data?.message || 'Failed to save staff record.', 'error');
+        // Surface the server's reason BOTH as a toast and inline in the drawer
+        // (the drawer stays open, so an inline banner can't be missed) — e.g. the
+        // duplicate email/mobile guard.
+        const msg = err.response?.data?.message || 'Failed to save staff record.';
+        setUserSaveError(msg);
+        notifyToast(msg, 'error');
       }
     }
   };
@@ -5385,6 +5401,12 @@ return (
                       </div>
                     )}
 
+                      {userSaveError && (
+                        <div style={{ margin: '0 24px', padding: '12px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                          <span style={{ flexShrink: 0, fontSize: '14px' }}>⚠️</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#b91c1c', lineHeight: 1.45 }}>{userSaveError}</span>
+                        </div>
+                      )}
                       <div className="drawer-footer" style={{ padding:'16px 24px',borderTop:'1px solid #e8edf2',display:'flex',gap:'10px',background:'white',flexShrink:0, marginTop: '20px' }}>
                         {userRegStep === 1 ? (
                           <>

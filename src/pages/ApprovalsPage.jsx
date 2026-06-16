@@ -24,6 +24,7 @@ const TYPE_META = {
   CHANGE_REFERRER:    { label: 'Change referrer',         icon: '🔁', color: '#9333ea', bg: '#faf5ff' },
   MARK_FREE:          { label: 'Free test',               icon: '🎁', color: '#0d9488', bg: '#f0fdfa' },
   UNPAY_COMMISSION:   { label: 'Revert paid commission',  icon: '↩️', color: '#7c3aed', bg: '#f5f3ff' },
+  EDIT_SERVICES:      { label: 'Edit services (paid)',    icon: '🩺', color: '#b45309', bg: '#fffbeb' },
 };
 
 const STATUS_META = {

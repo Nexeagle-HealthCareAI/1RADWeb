@@ -79,11 +79,14 @@ export default function DoctorReferralPortal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [intro, setIntro] = useState(true);
-  const [range, setRange] = useState('ALL'); // TODAY | WEEK | MONTH | ALL | CUSTOM
+  const [range, setRange] = useState('TODAY'); // TODAY | WEEK | MONTH | ALL | CUSTOM — defaults to today's referrals
   const [cStart, setCStart] = useState('');
   const [cEnd, setCEnd] = useState('');
   const [page, setPage] = useState(1); // patient table — 6 rows per page
-  const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
+  // Default view: grouped by patient, each group ordered by arrival time ↑.
+  // Clicking any column header switches to that column's sort (see `sorted`).
+  const [sort, setSort] = useState({ key: 'grouped', dir: 'asc' });
+  const [query, setQuery] = useState(''); // table search (name / id / study / status)
 
   // 3-second branded splash.
   useEffect(() => {
@@ -130,12 +133,46 @@ export default function DoctorReferralPortal() {
     });
   }, [presentPatients, range, cStart, cEnd, today]);
 
+  // Free-text search over the active (date-filtered) rows — name, patient ID,
+  // study/modality, service name, or status. Drives the table + record count.
+  const searched = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return filtered;
+    return filtered.filter(p =>
+      [p.patient, p.patientId, p.uhid, p.displayId, p.modality, p.service, p.services, p.status]
+        .some(v => String(v ?? '').toLowerCase().includes(q))
+    );
+  }, [filtered, query]);
+
   // Sort the active view; numeric columns compare as numbers, text as locale.
   const sorted = useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...searched];
     const { key, dir } = sort;
     const num = (v) => Number(v) || 0;
     const valNum = { total: 'total', discount: 'discount', incentive: 'eligible', paid: 'paid', unpaid: 'unpaid' };
+
+    // Default "grouped" view: keep a patient's rows together and order the groups
+    // (and rows within a group) by arrival date+time ascending. A patient's group
+    // position = their EARLIEST arrival, so the first to arrive sits at the top.
+    if (key === 'grouped') {
+      const tOf = (p) => String(p.arrivedAt || p.date || '');
+      const nameOf = (p) => String(p.patient || '').trim().toLowerCase();
+      const earliest = {};
+      arr.forEach(p => {
+        const n = nameOf(p), t = tOf(p);
+        if (!(n in earliest) || (t && t < earliest[n])) earliest[n] = t;
+      });
+      arr.sort((a, b) => {
+        const ae = earliest[nameOf(a)] || '', be = earliest[nameOf(b)] || '';
+        if (ae !== be) return ae < be ? -1 : 1;          // groups by earliest arrival ↑
+        const an = nameOf(a), bn = nameOf(b);
+        if (an !== bn) return an.localeCompare(bn);        // tiebreak: patient name
+        const at = tOf(a), bt = tOf(b);
+        return at < bt ? -1 : at > bt ? 1 : 0;             // within a patient: arrival ↑
+      });
+      return arr;
+    }
+
     arr.sort((a, b) => {
       if (key === 'patient' || key === 'modality' || key === 'status') {
         const av = String(a[key === 'modality' ? 'modality' : key === 'status' ? 'status' : 'patient'] || '').toLowerCase();
@@ -156,7 +193,7 @@ export default function DoctorReferralPortal() {
       return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return arr;
-  }, [filtered, sort]);
+  }, [searched, sort]);
 
   const toggleSort = (key) => {
     setSort(s => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }));
@@ -168,63 +205,16 @@ export default function DoctorReferralPortal() {
     const eligible = filtered.reduce((s, p) => s + (Number(p.eligible) || 0), 0);
     const paid = filtered.reduce((s, p) => s + (Number(p.paid) || 0), 0);
     const unpaid = filtered.reduce((s, p) => s + (Number(p.unpaid) || 0), 0);
-    return { count: filtered.length, eligible, paid, unpaid };
-  }, [filtered]);
-
-  // Advanced performance KPIs — computed over the ACTIVE FILTER so the whole
-  // board (headline stats + these) responds to the date filter at the top.
-  const perf = useMemo(() => {
-    const list = filtered;
-    const total = list.length;
-    const done = list.filter(p => isDone(p.status)).length;
-    const eligible = list.reduce((s, p) => s + (Number(p.eligible) || 0), 0);
-    const paid = list.reduce((s, p) => s + (Number(p.paid) || 0), 0);
-    const avg = total ? eligible / total : 0;
-
-    // Modality mix (top 4 by volume).
-    const modMap = {};
-    list.forEach(p => { const m = p.modality || '—'; modMap[m] = (modMap[m] || 0) + 1; });
-    const mods = Object.entries(modMap).sort((a, b) => b[1] - a[1]).slice(0, 4)
-      .map(([name, count]) => ({ name, count, pct: pctOf(count, total) }));
-
-    // Incentive trend: the months present in the filtered set (latest 6), so the
-    // sparkline tracks whatever period the user is viewing.
-    const byMonth = {};
-    list.forEach(p => {
-      const ym = (p.date || '').slice(0, 7);
-      if (!ym) return;
-      (byMonth[ym] ||= { inc: 0, cnt: 0 });
-      byMonth[ym].inc += Number(p.eligible) || 0;
-      byMonth[ym].cnt += 1;
-    });
-    const series = Object.keys(byMonth).sort().slice(-6).map(ym => ({ ym, inc: byMonth[ym].inc, cnt: byMonth[ym].cnt }));
-    const hasMomentum = series.length > 1;
-    const lastBucket = series[series.length - 1]?.inc || 0;
-    const prevBucket = series[series.length - 2]?.inc || 0;
-    const momentum = prevBucket > 0 ? Math.round(((lastBucket - prevBucket) / prevBucket) * 100) : (lastBucket > 0 ? 100 : 0);
-
-    return {
-      total, done, completionRate: pctOf(done, total),
-      eligible, paid, payoutRate: pctOf(paid, eligible), avg,
-      mods, series, hasMomentum, momentum,
-    };
-  }, [filtered]);
-
-  // Patient pipeline over the active filter — where each referred patient sits and
-  // why their incentive is / isn't payable yet. "Served" = distinct patients who
-  // actually arrived and took their tests at the centre.
-  const pipeline = useMemo(() => {
-    let booked = 0, arrivedUnpaid = 0, eligible = 0, arrivedUnpaidAmt = 0;
-    const served = new Set();
-    (filtered || []).forEach(p => {
-      const k = stageOf(p).key;
-      if (k === 'cancelled') return;
-      if (k === 'paid' || k === 'partial') eligible += 1;
-      else if (k === 'arrived') { arrivedUnpaid += 1; arrivedUnpaidAmt += Number(p.eligible) || 0; }
-      else if (k === 'booked') booked += 1;
-      if (p.arrived) served.add(String(p.patient || '').toLowerCase());
-    });
-    return { booked, arrivedUnpaid, arrivedUnpaidAmt, eligible, served: served.size };
+    const discount = filtered.reduce((s, p) => s + (Number(p.discount) || 0), 0);
+    // Count DISTINCT patients, not service rows: one patient with several
+    // services is still one referred patient (the rows/records count stays
+    // separate, shown next to the date filter).
+    const patients = new Set(
+      (filtered || [])
+        .map(p => String(p.patientId || p.patient || '').trim().toLowerCase())
+        .filter(Boolean)
+    ).size;
+    return { count: filtered.length, patients, eligible, paid, unpaid, discount };
   }, [filtered]);
 
   const todayCount = useMemo(() => presentPatients.filter(p => p.date === today).length, [presentPatients, today]);
@@ -281,23 +271,36 @@ export default function DoctorReferralPortal() {
       </div>
 
       {/* Quick-glance stats */}
-      <div className="nx-kpi-grid" style={{ marginBottom: '20px' }}>
-        <Stat label="Referred patients" value={stats.count} tone="blue" icon="👥" />
+      <div className="nx-kpis" style={{ marginBottom: '20px' }}>
+        <Stat label="Referred patients" value={stats.patients} tone="blue" icon="👥" />
         <Stat label="Eligible incentive" value={inr(stats.eligible)} tone="slate" icon="💼" />
+        <Stat label="Discount given" value={inr(stats.discount)} tone="rose" icon="🏷️" />
         <Stat label="Received" value={inr(stats.paid)} tone="green" icon="✅" />
         <Stat label="Outstanding" value={inr(stats.unpaid)} tone="amber" icon="⏳" />
       </div>
 
-      {/* Advanced performance KPIs (lifetime) */}
-      <Performance perf={perf} />
+      {/* Performance + pipeline KPI panels removed per centre request — the four
+          quick-glance stats above + the table below are the focus now. */}
 
+      {/* Search — name / patient ID / study / service / status */}
+      <div style={{ position: 'relative', marginBottom: '12px' }}>
+        <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+        <input
+          type="text"
+          value={query}
+          onChange={e => { setQuery(e.target.value); setPage(1); }}
+          placeholder="Search by patient, ID, study, service or status…"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '11px 38px 11px 38px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#1e293b', outline: 'none', background: 'white' }}
+        />
+        {query && (
+          <button onClick={() => { setQuery(''); setPage(1); }} title="Clear"
+            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: '#f1f5f9', color: '#64748b', borderRadius: '8px', width: '24px', height: '24px', cursor: 'pointer', fontSize: '13px', fontWeight: 900 }}>×</button>
+        )}
+      </div>
 
-      {/* Patient pipeline — booked vs arrived-unpaid vs paid, + patients served */}
-      <Pipeline pipeline={pipeline} />
-
-      {/* Patient table (scrolls on small screens) — every column header sorts */}
+      {/* Patient list — full table on tablet/desktop, card list on phones */}
       <div style={{ background: 'white', border: '1px solid #e7ecf3', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 18px rgba(15,23,42,0.05)' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="nx-table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1060px' }}>
             <thead style={{ background: 'linear-gradient(180deg,#f8fafc,#f1f5f9)' }}>
               <tr>
@@ -342,6 +345,43 @@ export default function DoctorReferralPortal() {
             </tbody>
           </table>
         </div>
+
+        {/* Phone card list — same rows, finger-friendly. */}
+        <div className="nx-cards">
+          {sorted.length === 0 ? (
+            <div style={{ padding: '40px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No referrals in this period.</div>
+          ) : pageRows.map((p, i) => {
+            const tone = STATUS_TONE(p.status);
+            const st = stageOf(p);
+            return (
+              <div key={i} style={{ border: '1px solid #eef2f7', borderRadius: '13px', padding: '13px 14px', background: '#fff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>{p.patient}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>
+                      {p.date}{p.modality ? ` · ${p.modality}` : ''}{p.arrivedAt ? ` · 🕐 ${prettyTime(p.arrivedAt)}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '8.5px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px' }}>INCENTIVE</div>
+                    <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba', lineHeight: 1.1 }}>{inr(p.eligible)}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                  <span style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 900, background: tone.bg, color: tone.fg }}>{(p.status || '—').toUpperCase()}</span>
+                  <span title={st.hint} style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 900, background: st.bg, color: st.fg }}>{st.icon} {st.label}</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '10px', fontSize: '11px', fontWeight: 700 }}>
+                  <span style={{ color: '#64748b' }}>Total <b style={{ color: '#0f172a' }}>{inr(p.total)}</b></span>
+                  {(Number(p.discount) || 0) > 0 && <span style={{ color: '#b45309' }}>Disc <b>− {inr(p.discount)}</b></span>}
+                  <span style={{ color: '#166534' }}>Received <b>{inr(p.paid)}</b></span>
+                  {(Number(p.unpaid) || 0) > 0 && <span style={{ color: '#b45309' }}>Due <b>{inr(p.unpaid)}</b></span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         {pageCount > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderTop: '1px solid #f1f5f9' }}>
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
@@ -703,6 +743,7 @@ function Stat({ label, value, tone, icon }) {
     green: { g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0', icbg: '#dcfce7', lb: '#166534', vl: '#14532d' },
     amber: { g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a', icbg: '#fef3c7', lb: '#b45309', vl: '#92400e' },
     slate: { g1: '#f8fafc', g2: '#eef2f7', bd: '#e2e8f0', icbg: '#eef2f7', lb: '#475569', vl: '#0f172a' },
+    rose: { g1: '#fff1f2', g2: '#ffe4e6', bd: '#fecdd3', icbg: '#ffe4e6', lb: '#be123c', vl: '#9f1239' },
   }[tone] || {};
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '11px', borderRadius: '14px', padding: '11px 14px', background: `linear-gradient(135deg, ${T.g1} 0%, ${T.g2} 100%)`, border: `1px solid ${T.bd}`, boxShadow: '0 4px 14px rgba(15,23,42,0.04)' }}>
@@ -725,6 +766,14 @@ function Shell({ children, centre, location, adminName, contact, email, headerAc
       <style>{`
         .nx-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
         @media (max-width: 768px) { .nx-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+        /* Headline KPIs — all on ONE line. 5 equal columns on desktop; on narrower
+           screens they stay in a single row that scrolls horizontally (premium feel,
+           no awkward 4+1 wrap). */
+        .nx-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+        @media (max-width: 980px) {
+          .nx-kpis { display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+          .nx-kpis > * { flex: 0 0 160px; scroll-snap-align: start; }
+        }
         .nx-ty { position: relative; display: flex; align-items: center; gap: 12px; border-radius: 16px; padding: 13px 18px; margin-bottom: 16px; background: linear-gradient(120deg,#0a1628 0%,#0f52ba 100%); color: #fff; box-shadow: 0 10px 28px -12px rgba(15,82,186,0.5); overflow: hidden; animation: nxTyIn .5s cubic-bezier(0.16,1,0.3,1); }
         .nx-ty-wave { font-size: 22px; display: inline-block; transform-origin: 70% 70%; animation: nxWave 2.6s ease-in-out infinite; flex-shrink: 0; }
         .nx-ty-title { font-size: 15px; font-weight: 950; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -733,20 +782,40 @@ function Shell({ children, centre, location, adminName, contact, email, headerAc
         @keyframes nxTyIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
         @keyframes nxWave { 0%,60%,100% { transform: rotate(0); } 10% { transform: rotate(14deg); } 20% { transform: rotate(-8deg); } 30% { transform: rotate(14deg); } 40% { transform: rotate(-4deg); } 50% { transform: rotate(10deg); } }
         @media (max-width: 560px) { .nx-ty-sub { display: none; } }
+
+        /* Responsive shell (tablet + mobile) */
+        .nx-head { padding: 14px 24px; }
+        .nx-main { padding: 22px 24px 44px; }
+        @media (max-width: 1024px) { .nx-head { padding: 13px 18px; } .nx-main { padding: 18px 18px 40px; } }
+        @media (max-width: 768px) {
+          .nx-head { padding: 11px 14px; }
+          .nx-main { padding: 14px 13px 36px; }
+          .nx-brandrow { gap: 10px; flex-wrap: wrap; }
+          .nx-divider { display: none; }
+        }
+        /* Patient list: full table on tablet/desktop, friendly cards on phones */
+        .nx-table-wrap { display: block; overflow-x: auto; }
+        .nx-cards { display: none; }
+        @media (max-width: 768px) {
+          .nx-table-wrap { display: none; }
+          .nx-cards { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+        }
       `}</style>
       <header style={{ background: 'white', borderBottom: '1px solid #e7ecf3', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-          {/* LEFT: brand lockup (logo + NexEagle 1Rad, aligned) · centre identity */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+        <div className="nx-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          {/* LEFT: COMPANY brand (NexEagle over 1Rad) — then, clearly labelled and
+              divided, the DIAGNOSTIC CENTRE, so the two are never confused. */}
+          <div className="nx-brandrow" style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
               <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle 1Rad" style={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0 }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
                 <span style={{ fontSize: '16px', fontWeight: 950, color: '#0f172a', letterSpacing: '-0.3px' }}>NexEagle</span>
-                <span style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '0.5px', color: '#0f52ba', background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '6px', padding: '2px 7px' }}>1Rad</span>
+                <span style={{ fontSize: '10.5px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f52ba' }}>1Rad</span>
               </div>
             </div>
-            <div style={{ width: '1px', height: '34px', background: '#e7ecf3', flexShrink: 0 }} />
+            <div className="nx-divider" style={{ width: '1px', height: '38px', background: '#e7ecf3', flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase' }}>Diagnostic Centre</div>
               <div style={{ fontSize: '15px', fontWeight: 950, color: '#0f172a', letterSpacing: '-0.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{centre || 'Diagnostic Centre'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginTop: '2px' }}>
                 {location && <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>📍 {location}</span>}
@@ -766,7 +835,7 @@ function Shell({ children, centre, location, adminName, contact, email, headerAc
           </div>
         </div>
       </header>
-      <main style={{ padding: '22px 24px 44px' }}>{children}</main>
+      <main className="nx-main">{children}</main>
     </div>
   );
 }

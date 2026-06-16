@@ -14,6 +14,7 @@ import PrescriptionPreview from '../components/PrescriptionPreview';
 import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
+import { celebrate } from '../utils/celebrate';
 import * as XLSX from 'xlsx';
 
 
@@ -134,6 +135,14 @@ export default function ReferralsPage() {
   const [referralLogSearch, setReferralLogSearch] = useState('');
   const [referralRosterSearch, setReferralRosterSearch] = useState('');
   const [referralPatientsSearch, setReferralPatientsSearch] = useState('');
+  // Column sorting for the Partner Network (ROSTER) and Patient Section (PATIENTS)
+  // index tables. { key, dir }. Click a header to sort; click again to flip.
+  const [rosterSort, setRosterSort] = useState({ key: 'patientCount', dir: 'desc' });
+  const [masterSort, setMasterSort] = useState({ key: 'registeredAt', dir: 'desc' });
+  const [linksSort, setLinksSort] = useState({ key: 'name', dir: 'asc' });
+  const toggleRosterSort = (key) => setRosterSort(s => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }));
+  const toggleMasterSort = (key) => setMasterSort(s => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }));
+  const toggleLinksSort = (key) => setLinksSort(s => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'asc' }));
   const [referralViewMode, setReferralViewMode] = useState('MATRIX'); // 'MATRIX' or 'LOG'
   const [matrixPeriod, setMatrixPeriod] = useState('WEEK'); // 'DAY', 'WEEK', 'MONTH', 'YEAR'
   // Lazy-init both so a tab kept open overnight still picks up today's
@@ -275,6 +284,8 @@ export default function ReferralsPage() {
   const [linksBusy, setLinksBusy] = useState(false);
   const [referralLinksSearch, setReferralLinksSearch] = useState('');
   const [linkSend, setLinkSend] = useState(null); // { doctor, channel, email, contact, saving, err }
+  const [selectedLinks, setSelectedLinks] = useState(() => new Set()); // referrerIds checked in Doctor Links
+  const [bulkSend, setBulkSend] = useState(null); // null | { status:'sending'|'done', channel, sent, skipped, failed }
   const doctorList = useMemo(
     () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
     [allReferrers]
@@ -299,7 +310,7 @@ export default function ReferralsPage() {
     return 'WhatsApp gateway rejected the message — please check the WhatsApp setup.';
   };
   const whatsappDoctors = async (ids) => {
-    if (!ids.length) { notifyToast('No doctor with a mobile number to message.', 'error'); return; }
+    if (!ids.length) { notifyToast('No doctor with a mobile number to message.', 'error'); return null; }
     setLinksBusy(true);
     try {
       const { data } = await apiClient.post('/referrers/send-links-whatsapp', { referrerIds: ids, baseUrl: window.location.origin });
@@ -314,19 +325,45 @@ export default function ReferralsPage() {
       } else {
         notifyToast('Nothing to send.', 'info');
       }
+      return data;
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send on WhatsApp.', 'error');
+      return null;
     } finally { setLinksBusy(false); }
   };
   const emailDoctors = async (ids) => {
-    if (!ids.length) { notifyToast('No doctors to email.', 'error'); return; }
+    if (!ids.length) { notifyToast('No doctors to email.', 'error'); return null; }
     setLinksBusy(true);
     try {
       const { data } = await apiClient.post('/referrers/send-links', { referrerIds: ids, baseUrl: window.location.origin });
       notifyToast(`Emailed ${data.sent}${data.skipped ? ` · ${data.skipped} skipped (no email)` : ''}.`, data.sent > 0 ? 'success' : 'info');
+      return data;
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send emails.', 'error');
+      return null;
     } finally { setLinksBusy(false); }
+  };
+
+  // ── Doctor-link multi-select + bulk send ──────────────────────────────────
+  // Select many / all / a few doctors, then send their portal links in one go.
+  // bulkSend drives the loading→success modal (with a celebration on success).
+  const toggleLinkSel = (id) => setSelectedLinks(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const sendSelectedLinks = async (channel) => {
+    const ids = [...selectedLinks];
+    if (!ids.length) { notifyToast('Select at least one doctor first.', 'info'); return; }
+    setBulkSend({ status: 'sending', channel });
+    const data = channel === 'email' ? await emailDoctors(ids) : await whatsappDoctors(ids);
+    if (!data) { setBulkSend(null); return; } // error already surfaced by the sender
+    const sent = Number(data.sent) || 0;
+    const skipped = channel === 'email' ? (Number(data.skipped) || 0) : (data.noContact?.length || 0);
+    const failed = channel === 'email' ? 0 : (data.failed?.length || 0);
+    setBulkSend({ status: 'done', channel, sent, skipped, failed });
+    if (sent > 0) celebrate();
+    setSelectedLinks(new Set());
   };
 
   // Persist a newly-entered email / mobile onto the doctor's profile. Sends the
@@ -1425,6 +1462,38 @@ export default function ReferralsPage() {
     });
   }, [allReferrers, referralIntelligence, personTypeFilter]);
 
+  // Partner Network (ROSTER) — apply the chosen column sort over the default.
+  const sortedRoster = useMemo(() => {
+    const arr = [...(caseLedgerList || [])];
+    const { key, dir } = rosterSort;
+    const numKeys = new Set(['patientCount', 'totalCommission', 'paidCommission', 'unpaidCommission']);
+    arr.sort((a, b) => {
+      let r;
+      if (numKeys.has(key)) r = (Number(a[key]) || 0) - (Number(b[key]) || 0);
+      else if (key === 'isDoctor') r = (a.isDoctor ? 1 : 0) - (b.isDoctor ? 1 : 0);
+      else r = String(a[key] || '').toLowerCase().localeCompare(String(b[key] || '').toLowerCase());
+      return dir === 'asc' ? r : -r;
+    });
+    return arr;
+  }, [caseLedgerList, rosterSort]);
+
+  // Patient Section (PATIENTS / Master Index) — apply the chosen column sort.
+  const sortedMaster = useMemo(() => {
+    const arr = [...(patientMasterList || [])];
+    const { key, dir } = masterSort;
+    arr.sort((a, b) => {
+      let r;
+      if (key === 'age') r = (Number(a.age) || 0) - (Number(b.age) || 0);
+      else if (key === 'registeredAt') r = String(a.registeredAt || '').localeCompare(String(b.registeredAt || ''));
+      else r = String(a[key] || '').toLowerCase().localeCompare(String(b[key] || '').toLowerCase());
+      return dir === 'asc' ? r : -r;
+    });
+    return arr;
+  }, [patientMasterList, masterSort]);
+
+  // Tiny header arrow for the sortable index tables.
+  const sortArrow = (cur, key) => (cur.key === key ? (cur.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅');
+
   // Self / walk-in summary — the backend collapses every self visit into a
   // single "Self / Walk-in" intelligence node (referrerId = empty guid). Kept
   // out of the partner list and surfaced as its own section. (#20)
@@ -1646,11 +1715,28 @@ export default function ReferralsPage() {
           total: totalMatched,
           counts
         };
-      })
-      .sort((a, b) => b.total - a.total);
+      });
+
+    // Self / Walk-in folded in as ONE accumulated row (direct patients, no
+    // referral commission) — replaces the old standalone dark self card.
+    if (selfSummary && selfSummary.patientCount > 0 && personTypeFilter !== 'DOCTOR' && personTypeFilter !== 'OTHER'
+        && (!searchLow || 'self / walk-in'.includes(searchLow))) {
+      const selfCounts = {};
+      cols.forEach(c => { selfCounts[c] = 0; });
+      let selfTotal = 0;
+      (selfSummary.patients || []).forEach(p => {
+        const key = getColKey(p.registrationDate || p.date || TODAY);
+        if (key && selfCounts[key] !== undefined) { selfCounts[key]++; selfTotal++; }
+      });
+      if (selfTotal > 0) rows.push({ name: 'Self / Walk-in', contact: '', total: selfTotal, counts: selfCounts, isSelf: true });
+    }
+    rows.sort((a, b) => b.total - a.total);
+    // Self / Walk-in pinned to the TOP of the Case Ledger matrix by default.
+    const selfIdx = rows.findIndex(r => r.isSelf);
+    if (selfIdx > 0) { const [selfRow] = rows.splice(selfIdx, 1); rows.unshift(selfRow); }
 
     return { cols, rows };
-  }, [allReferrers, referralIntelligence, referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex, referralLogSearch]);
+  }, [allReferrers, referralIntelligence, referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex, referralLogSearch, selfSummary, personTypeFilter]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -3819,35 +3905,8 @@ export default function ReferralsPage() {
 
     return (
       <div className="referral-intel-view fade-in">
-        {/* Level 0: Referral Instinct Dashboard */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', 
-          gap: '15px', 
-          marginBottom: '30px' 
-        }}>
-           <div style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '25px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '60px', opacity: 0.1 }}>📈</div>
-              <span style={{ fontSize: '9px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Strategic Velocity</span>
-              <div style={{ fontSize: '28px', fontWeight: 950 }}>{totalMissions}</div>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--tactical-cyan)', marginTop: '5px' }}>Total Studies</div>
-           </div>
-           
-           <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Network Payout</span>
-              <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{totalPayout.toLocaleString()}</div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-                 <div style={{ fontSize: '9px', fontWeight: 900, color: '#059669' }}>PAID: ₹{paidPayout.toLocaleString()}</div>
-                 <div style={{ fontSize: '9px', fontWeight: 900, color: '#dc2626' }}>UNPAID: ₹{unpaidPayout.toLocaleString()}</div>
-              </div>
-           </div>
-
-           <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Revenue Integrity</span>
-              <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{(totalRevenue / (totalMissions || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: '#dc2626', marginTop: '5px' }}>Avg Revenue / Study</div>
-           </div>
-        </div>
+        {/* Level 0 KPIs (Strategic Velocity / Network Payout / Revenue Integrity)
+            removed per request. */}
 
         {/* Level 1: Tactical Control Deck */}
         <div style={{ 
@@ -3890,7 +3949,7 @@ export default function ReferralsPage() {
                     flex: isMobile ? '0 0 auto' : 1
                   }}
                 >
-                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : mode === 'PATIENTS' ? 'Master Index' : 'Doctor Links'}
+                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : mode === 'PATIENTS' ? 'Patient Section' : 'Doctor Links'}
                 </button>
               ))}
             </div>
@@ -3906,7 +3965,7 @@ export default function ReferralsPage() {
                     referralViewMode === 'MATRIX' ? "FILTER ANALYTICS..." : 
                     referralViewMode === 'LOG' ? "SEARCH CASE LEDGER..." : 
                     referralViewMode === 'ROSTER' ? "FILTER NETWORK..." :
-                    referralViewMode === 'LINKS' ? "SEARCH DOCTORS..." : "SEARCH MASTER INDEX..."
+                    referralViewMode === 'LINKS' ? "SEARCH DOCTORS..." : "SEARCH PATIENT SECTION..."
                   }
                   value={
                     referralViewMode === 'MATRIX' ? referralMatrixSearch : 
@@ -3931,14 +3990,16 @@ export default function ReferralsPage() {
 
               {/* Person-type filter (#2) — Doctor / Other / Self (Self only where it applies) */}
               {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG' || referralViewMode === 'ROSTER') && (
-                <div style={{ display: 'flex', background: '#f8fafc', padding: '4px', borderRadius: '14px', border: '1px solid #e2e8f0', gap: '3px', flexWrap: 'wrap' }}>
+                <select
+                  value={personTypeFilter}
+                  onChange={e => setPersonTypeFilter(e.target.value)}
+                  title="Filter by referral source type"
+                  style={{ padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', fontSize: '11px', fontWeight: 900, letterSpacing: '0.3px', cursor: 'pointer', outline: 'none' }}
+                >
                   {[['ALL', 'All'], ['DOCTOR', '👨‍⚕️ Doctor'], ['OTHER', '👤 Other'], ...(referralViewMode === 'ROSTER' ? [] : [['SELF', '🏥 Self']])].map(([k, lbl]) => (
-                    <button key={k} type="button" onClick={() => setPersonTypeFilter(k)}
-                      style={{ padding: '9px 13px', borderRadius: '11px', border: 'none', background: personTypeFilter === k ? '#0f52ba' : 'transparent', color: personTypeFilter === k ? 'white' : '#64748b', fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      {lbl}
-                    </button>
+                    <option key={k} value={k}>{lbl}</option>
                   ))}
-                </div>
+                </select>
               )}
 
               {/* Temporal Unit */}
@@ -4080,49 +4141,9 @@ export default function ReferralsPage() {
         ) : (
           <>
 
-            {/* Self / Walk-in — direct patients, NOT a partner (earn no
-                commission). Shown as its own block in Source Analytics, with the
-                full case list in Case Ledger. (#20) */}
-            {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG') && (personTypeFilter === 'ALL' || personTypeFilter === 'SELF') && selfSummary && selfSummary.patientCount > 0 && (
-              <div style={{ marginBottom: '16px', background: 'linear-gradient(135deg, #0f172a, #1e293b)', borderRadius: '20px', padding: '20px 24px', border: '1px solid #1e293b', color: 'white' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '26px' }}>🏥</span>
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '0.5px' }}>SELF / WALK-IN</div>
-                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>Direct patients — no referral commission</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px' }}>PATIENTS</div>
-                      <div style={{ fontSize: '22px', fontWeight: 950 }}>{selfSummary.patientCount}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px' }}>REVENUE</div>
-                      <div style={{ fontSize: '22px', fontWeight: 950, color: '#4ade80' }}>₹{(selfSummary.totalRevenue || 0).toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px' }}>DISCOUNT</div>
-                      <div style={{ fontSize: '22px', fontWeight: 950, color: '#f87171' }}>₹{(selfSummary.totalDiscount || 0).toLocaleString()}</div>
-                    </div>
-                  </div>
-                </div>
-                {referralViewMode === 'LOG' && selfSummary.patients.length > 0 && (
-                  <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', maxHeight: '280px', overflowY: 'auto' }}>
-                    {selfSummary.patients.slice(0, 100).map((p, i) => (
-                      <div key={p.appointmentId || p.patientId || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 800 }}>{(p.name || 'Unknown').toUpperCase()}</span>
-                          <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#94a3b8' }}>{p.registrationDate} · {p.modality || p.service || '—'}</span>
-                        </div>
-                        <span style={{ fontSize: '12px', fontWeight: 950, color: '#4ade80' }}>₹{(Number(p.totalAmount) || 0).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Self / Walk-in is no longer a standalone card — it's folded in as a
+                single accumulated row: a card in the Source Analytics referral list
+                and a row in the Case Ledger matrix grid. (#20) */}
 
             {/* Level 3: Dual-Mode Intelligence List */}
             {referralViewMode === 'LINKS' ? renderLinksView() : referralViewMode === 'PATIENTS' ? (
@@ -4139,11 +4160,11 @@ export default function ReferralsPage() {
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PTID (IDENTIFIER)</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>FULL NAME</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT NODE</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>AGE / GENDER</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REG DATE</th>
+                      <th onClick={() => toggleMasterSort('patientIdentifier')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'patientIdentifier' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>PTID (IDENTIFIER){sortArrow(masterSort, 'patientIdentifier')}</th>
+                      <th onClick={() => toggleMasterSort('fullName')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'fullName' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>FULL NAME{sortArrow(masterSort, 'fullName')}</th>
+                      <th onClick={() => toggleMasterSort('mobile')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'mobile' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>CONTACT NODE{sortArrow(masterSort, 'mobile')}</th>
+                      <th onClick={() => toggleMasterSort('age')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'age' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>AGE / GENDER{sortArrow(masterSort, 'age')}</th>
+                      <th onClick={() => toggleMasterSort('registeredAt')} style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'registeredAt' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>REG DATE{sortArrow(masterSort, 'registeredAt')}</th>
                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACTIONS</th>
                     </tr>
                   </thead>
@@ -4155,7 +4176,7 @@ export default function ReferralsPage() {
                         <td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</td>
                       </tr>
                     ) : (
-                      patientMasterList.map((p, i) => (
+                      sortedMaster.map((p, i) => (
                         <tr key={p.patientId} style={{ borderBottom: '1px solid #f1f5f9', transition: 'all 0.2s' }}>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8' }}>#{i + 1}</div>
@@ -4212,7 +4233,7 @@ export default function ReferralsPage() {
                     ) : patientMasterList.length === 0 ? (
                        <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</div>
                     ) : (
-                       patientMasterList.map((p, i) => (
+                       sortedMaster.map((p, i) => (
                          <div key={p.patientId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                <div style={{ fontSize: '12px', fontWeight: 950, color: '#94a3b8' }}>#{i + 1}</div>
@@ -4297,13 +4318,13 @@ export default function ReferralsPage() {
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>#</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Partner</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Type</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Contact</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Studies</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Total Commission</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#16a34a', letterSpacing: '0.5px' }}>Total Paid Incentive</th>
-                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Unpaid</th>
+                      <th onClick={() => toggleRosterSort('name')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'name' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Partner{sortArrow(rosterSort, 'name')}</th>
+                      <th onClick={() => toggleRosterSort('isDoctor')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'isDoctor' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Type{sortArrow(rosterSort, 'isDoctor')}</th>
+                      <th onClick={() => toggleRosterSort('contact')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'contact' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Contact{sortArrow(rosterSort, 'contact')}</th>
+                      <th onClick={() => toggleRosterSort('patientCount')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'patientCount' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Studies{sortArrow(rosterSort, 'patientCount')}</th>
+                      <th onClick={() => toggleRosterSort('totalCommission')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'totalCommission' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Total Commission{sortArrow(rosterSort, 'totalCommission')}</th>
+                      <th onClick={() => toggleRosterSort('paidCommission')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'paidCommission' ? '#0f52ba' : '#16a34a', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Total Paid Incentive{sortArrow(rosterSort, 'paidCommission')}</th>
+                      <th onClick={() => toggleRosterSort('unpaidCommission')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'unpaidCommission' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Unpaid{sortArrow(rosterSort, 'unpaidCommission')}</th>
                       <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Actions</th>
                     </tr>
                   </thead>
@@ -4313,7 +4334,7 @@ export default function ReferralsPage() {
                         <td colSpan="9" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
                       </tr>
                     ) : (
-                      caseLedgerList
+                      sortedRoster
                         .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
                         .map((s, i) => (
                         <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9' }}
@@ -4390,7 +4411,7 @@ export default function ReferralsPage() {
                     {caseLedgerList.length === 0 ? (
                        <div style={{ padding: '50px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Tap “Add Partner” to add your first referring doctor or person.</div>
                     ) : (
-                       caseLedgerList
+                       sortedRoster
                          .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
                          .map((s, i) => (
                            <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
@@ -4496,6 +4517,24 @@ export default function ReferralsPage() {
                       </div>
                     );
                   })}
+
+                  {/* Self / Walk-in — one accumulated row in the referral list
+                      (direct patients, no commission). Replaces the old card. */}
+                  {(personTypeFilter === 'ALL' || personTypeFilter === 'SELF') && selfSummary && selfSummary.patientCount > 0 && (
+                    <div style={{ background: 'white', padding: '20px 25px', borderRadius: '18px', border: '1px dashed #cbd5e1' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: '1px solid #f1f5f9' }}>🏥</div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>SELF / WALK-IN</div>
+                          <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>{selfSummary.patientCount} DIRECT PATIENTS • NO COMMISSION</div>
+                          <div style={{ display: 'flex', gap: '12px', marginTop: '5px' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669' }}>₹{(selfSummary.totalRevenue || 0).toLocaleString()} REVENUE</div>
+                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#dc2626' }}>₹{(selfSummary.totalDiscount || 0).toLocaleString()} DISCOUNT</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Detail Pane: Referral Briefing */}
@@ -5115,9 +5154,19 @@ return (
   // (table on desktop, cards on mobile), availability-gated one-click sends.
   const renderLinksView = () => {
     const q = referralLinksSearch.trim().toLowerCase();
-    const list = q ? doctorList.filter(d => (d.name || '').toLowerCase().includes(q)) : doctorList;
+    const baseList = q ? doctorList.filter(d => (d.name || '').toLowerCase().includes(q)) : doctorList;
+    const list = [...baseList].sort((a, b) => {
+      const r = String(a[linksSort.key] || '').toLowerCase().localeCompare(String(b[linksSort.key] || '').toLowerCase());
+      return linksSort.dir === 'asc' ? r : -r;
+    });
     const withEmail = doctorList.filter(d => d.email).length;
     const withContact = doctorList.filter(d => d.contact).length;
+    // Selection (multi-select bulk send) over the currently-listed doctors.
+    const selIds = list.map(d => d.referrerId);
+    const allSelected = selIds.length > 0 && selIds.every(id => selectedLinks.has(id));
+    const someSelected = selectedLinks.size > 0;
+    const toggleAllLinks = () => setSelectedLinks(allSelected ? new Set() : new Set(selIds));
+    const checkboxStyle = { width: '17px', height: '17px', cursor: 'pointer', accentColor: '#0f52ba', flexShrink: 0 };
     // Local style helpers keep the card markup readable.
     const bulkBtn = (color, on) => ({ padding: '9px 14px', borderRadius: '11px', border: 'none', background: on ? color : '#e2e8f0', color: on ? 'white' : '#94a3b8', fontSize: '11.5px', fontWeight: 900, cursor: on ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' });
     const chIcon = (color, on) => ({ width: '22px', height: '22px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', background: on ? `${color}14` : '#f1f5f9', opacity: on ? 1 : 0.5, flexShrink: 0 });
@@ -5137,14 +5186,47 @@ return (
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginTop: '3px' }}>Send each doctor their private dashboard in one tap — WhatsApp, email, or a copied link.</div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {withContact > 0 && (
-              <button onClick={() => whatsappDoctors(doctorList.filter(d => d.contact).map(d => d.referrerId))} disabled={linksBusy} style={bulkBtn('#16a34a', !linksBusy)}>💬 WhatsApp all ({withContact})</button>
-            )}
-            {withEmail > 0 && (
-              <button onClick={() => emailDoctors(doctorList.filter(d => d.email).map(d => d.referrerId))} disabled={linksBusy} style={bulkBtn('#0f52ba', !linksBusy)}>📧 Email all ({withEmail})</button>
+            {someSelected ? (
+              <>
+                <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap' }}>{selectedLinks.size} selected</span>
+                <button onClick={() => sendSelectedLinks('whatsapp')} disabled={linksBusy} style={bulkBtn('#16a34a', !linksBusy)}>💬 Send WhatsApp</button>
+                <button onClick={() => sendSelectedLinks('email')} disabled={linksBusy} style={bulkBtn('#0f52ba', !linksBusy)}>📧 Send Email</button>
+                <button onClick={() => setSelectedLinks(new Set())} disabled={linksBusy} style={{ padding: '9px 14px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '11.5px', fontWeight: 900, cursor: linksBusy ? 'not-allowed' : 'pointer' }}>Clear</button>
+              </>
+            ) : (
+              <button onClick={toggleAllLinks} disabled={list.length === 0} style={bulkBtn('#0f52ba', list.length > 0)}>☑ Select all ({list.length})</button>
             )}
           </div>
         </div>
+
+        {/* Bulk send — loading spinner while delivering, success + celebration after. */}
+        {bulkSend && (
+          <div onClick={bulkSend.status === 'done' ? () => setBulkSend(null) : undefined}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '380px', background: 'white', borderRadius: '22px', padding: '30px 26px', textAlign: 'center', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.45)' }}>
+              {bulkSend.status === 'sending' ? (
+                <>
+                  <div className="pulse-loader" style={{ margin: '4px auto 18px' }}></div>
+                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>Sending {bulkSend.channel === 'email' ? 'emails' : 'WhatsApp messages'}…</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginTop: '6px' }}>Delivering portal links — please hold on.</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: '44px', lineHeight: 1 }}>{bulkSend.sent > 0 ? '🎉' : '📭'}</div>
+                  <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', marginTop: '10px' }}>{bulkSend.sent > 0 ? 'Links sent!' : 'Nothing sent'}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginTop: '6px', lineHeight: 1.5 }}>
+                    {bulkSend.sent > 0
+                      ? `${bulkSend.sent} ${bulkSend.channel === 'email' ? 'email' : 'WhatsApp message'}${bulkSend.sent === 1 ? '' : 's'} delivered.`
+                      : 'No selected doctor had a usable contact.'}
+                    {bulkSend.skipped > 0 ? ` · ${bulkSend.skipped} skipped (no ${bulkSend.channel === 'email' ? 'email' : 'mobile'}).` : ''}
+                    {bulkSend.failed > 0 ? ` · ${bulkSend.failed} failed.` : ''}
+                  </div>
+                  <button onClick={() => setBulkSend(null)} style={{ marginTop: '18px', width: '100%', padding: '13px', borderRadius: '13px', border: 'none', background: 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '13px', fontWeight: 950, cursor: 'pointer' }}>Done</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {list.length === 0 ? (
           <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #eef2f7', padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>{doctorList.length === 0 ? 'No doctor partners yet.' : 'No doctors match your search.'}</div>
@@ -5153,19 +5235,23 @@ return (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                 <tr>
-                  <th style={{ ...thStyle, width: '44px' }}>#</th>
-                  <th style={thStyle}>Doctor</th>
-                  <th style={thStyle}>Mobile</th>
-                  <th style={thStyle}>Email</th>
+                  <th style={{ ...thStyle, width: '44px', textAlign: 'center' }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAllLinks} title="Select all" style={checkboxStyle} />
+                  </th>
+                  <th onClick={() => toggleLinksSort('name')} style={{ ...thStyle, color: linksSort.key === 'name' ? '#0f52ba' : '#94a3b8', cursor: 'pointer', userSelect: 'none' }}>Doctor{sortArrow(linksSort, 'name')}</th>
+                  <th onClick={() => toggleLinksSort('contact')} style={{ ...thStyle, color: linksSort.key === 'contact' ? '#0f52ba' : '#94a3b8', cursor: 'pointer', userSelect: 'none' }}>Mobile{sortArrow(linksSort, 'contact')}</th>
+                  <th onClick={() => toggleLinksSort('email')} style={{ ...thStyle, color: linksSort.key === 'email' ? '#0f52ba' : '#94a3b8', cursor: 'pointer', userSelect: 'none' }}>Email{sortArrow(linksSort, 'email')}</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Send link</th>
                 </tr>
               </thead>
               <tbody>
                 {list.map((d, i) => (
-                  <tr key={d.referrerId} style={{ borderBottom: '1px solid #f1f5f9' }}
-                      onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
-                      onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '12px 20px', fontSize: '11px', fontWeight: 900, color: '#94a3b8' }}>{i + 1}</td>
+                  <tr key={d.referrerId} style={{ borderBottom: '1px solid #f1f5f9', background: selectedLinks.has(d.referrerId) ? '#f0f7ff' : 'transparent' }}
+                      onMouseOver={e => { if (!selectedLinks.has(d.referrerId)) e.currentTarget.style.background = '#fafcff'; }}
+                      onMouseOut={e => { e.currentTarget.style.background = selectedLinks.has(d.referrerId) ? '#f0f7ff' : 'transparent'; }}>
+                    <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                      <input type="checkbox" checked={selectedLinks.has(d.referrerId)} onChange={() => toggleLinkSel(d.referrerId)} style={checkboxStyle} />
+                    </td>
                     <td style={{ padding: '12px 20px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{d.name}</div>
                       <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>{[d.specialty, d.degree].filter(Boolean).join(' · ') || 'Referring doctor'}</div>
@@ -5202,9 +5288,10 @@ return (
               const initial = (d.name || '?').trim().charAt(0).toUpperCase();
               const subtitle = [d.specialty, d.degree].filter(Boolean).join(' · ') || 'Referring doctor';
               return (
-                <div key={d.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #eef2f7', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 12px rgba(15,23,42,0.03)' }}>
+                <div key={d.referrerId} style={{ background: selectedLinks.has(d.referrerId) ? '#f0f7ff' : 'white', borderRadius: '16px', border: selectedLinks.has(d.referrerId) ? '1px solid #bfdbfe' : '1px solid #eef2f7', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 12px rgba(15,23,42,0.03)' }}>
                   {/* Identity */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                    <input type="checkbox" checked={selectedLinks.has(d.referrerId)} onChange={() => toggleLinkSel(d.referrerId)} style={checkboxStyle} />
                     <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 950, flexShrink: 0 }}>{initial}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>

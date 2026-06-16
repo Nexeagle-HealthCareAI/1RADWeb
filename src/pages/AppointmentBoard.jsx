@@ -19,7 +19,7 @@ import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments, insertCachedAppointment, applyServerDeltas } from '../db/repos/appointmentsRepo';
-import { watchInvoices } from '../db/repos/invoicesRepo';
+import { watchInvoices, applyServerDeltas as applyInvoiceDeltas } from '../db/repos/invoicesRepo';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
 import { getAllReferrers } from '../db/repos/referrersRepo';
 import { fetchApprovalMap, approvalForAppointment, approvalBadge } from '../utils/approvalLookup';
@@ -127,6 +127,9 @@ export default function AppointmentBoard() {
   });
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
   const [appointments, setAppointments] = useState([]);
+  // ALL cached appointments (not the active-tab slice) — drives the historical
+  // "most used services per modality" quick-picks in the booking modal.
+  const [statsAppointments, setStatsAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [ownerDetails, setOwnerDetails] = useState(null);
@@ -148,6 +151,17 @@ export default function AppointmentBoard() {
   // Shown when a paid/arrived visit is being moved to a future date — the
   // operator picks how the collected money is returned (wallet credit / cash).
   const [futureRefundModal, setFutureRefundModal] = useState(false);
+  // Shown when an edit removed/shrank a PAID service and left the bill overpaid —
+  // the operator picks how to return the excess (wallet credit / cash refund),
+  // then the edit re-submits with that mode. { open, amount }.
+  const [overpayRefundModal, setOverpayRefundModal] = useState({ open: false, amount: 0 });
+  // "Patient arrived" success popup — shows the freshly-minted token + who/what.
+  const [arrivedModal, setArrivedModal] = useState({ open: false, tokenNo: null, patientName: '', services: [] });
+  // "Appointment updated" success popup — summarises what the edit changed.
+  const [editSuccessModal, setEditSuccessModal] = useState({ open: false, patientName: '', changes: [], services: [] });
+  // Snapshot of the appointment as it was when the edit drawer opened — diffed
+  // against the saved state to build the "what changed" success summary.
+  const editOriginalRef = useRef(null);
   // Admin-approval visibility — latest request per appointment.
   const [approvalMap, setApprovalMap] = useState({ byInvoice: {}, byAppointment: {}, rows: [] });
   useEffect(() => {
@@ -193,6 +207,36 @@ export default function AppointmentBoard() {
   // Scenario 04 — cancelling a PAID appointment needs admin sign-off; this modal
   // captures the reason and submits a CANCEL_APPOINTMENT request to Approvals.
   const [cancelApprovalModal, setCancelApprovalModal] = useState({ isOpen: false, appointmentId: null, patientName: '', referredBy: '', reason: '', submitting: false });
+  // Service edit that removed a service whose referral commission was already PAID
+  // — blocked inline, routed here for admin sign-off. `body` is the exact edit
+  // payload replayed on approval; `refundMode` returns any patient overpayment.
+  const [editApprovalModal, setEditApprovalModal] = useState({ isOpen: false, appointmentId: null, patientName: '', message: '', body: null, refundMode: 'WALLET', reason: '', submitting: false });
+
+  const submitEditServicesApproval = async () => {
+    const m = editApprovalModal;
+    if (!m.reason.trim() || !m.appointmentId || !m.body) return;
+    setEditApprovalModal(s => ({ ...s, submitting: true }));
+    try {
+      await apiClient.post('/approvals', {
+        type: 'EDIT_SERVICES',
+        title: `${m.patientName || 'Patient'} — service change after payment`,
+        appointmentId: m.appointmentId,
+        // Replay the full edit on approval; carry the chosen overpayment refund mode.
+        payload: JSON.stringify({ ...m.body, refundMode: m.refundMode }),
+        reason: m.reason.trim(),
+      });
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // refresh the nav badge
+      setEditApprovalModal({ isOpen: false, appointmentId: null, patientName: '', message: '', body: null, refundMode: 'WALLET', reason: '', submitting: false });
+      // The change is now PENDING, not applied — close the edit dialog.
+      setIsEditingOpen(false);
+      setEditingAppointment(null);
+      setEditServices([]);
+      setErrorModal({ isOpen: true, title: '✅ Sent for approval', message: 'An admin will review this service change in Admin Approval. The bill stays as-is until then.' });
+    } catch (e) {
+      setEditApprovalModal(s => ({ ...s, submitting: false }));
+      showNotif('error', 'COULD NOT SEND', e.response?.data?.error || e.response?.data?.message || 'Please try again.');
+    }
+  };
 
   const submitCancelApproval = async () => {
     const { appointmentId, patientName, reason } = cancelApprovalModal;
@@ -747,6 +791,19 @@ export default function AppointmentBoard() {
     archiveFilterMode, pastDateRange.start, pastDateRange.end,
   ]);
 
+  // Historical usage feed — EVERY cached appointment (the sync engine pulls all
+  // of them, no date filter), independent of the active tab/date. Feeds the
+  // "most used services per modality" quick-picks so they reflect real history
+  // for this hospital, not just the day on screen. Re-keyed on centre so it
+  // refreshes when the user switches facilities.
+  useEffect(() => {
+    const sub = watchAppointments({ mode: 'all', status: 'ALL' }).subscribe({
+      next: (rows) => setStatsAppointments(rows || []),
+      error: (err) => console.warn('[AppointmentBoard] stats liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [activeCenterId]);
+
   // Patient drawer search — subscribes to the local cache. Below 3 chars we
   // intentionally render an empty list (the legacy behaviour), so the
   // drawer doesn't dump every cached patient on a single-letter typo.
@@ -910,7 +967,11 @@ export default function AppointmentBoard() {
   // operator can tap the common studies instead of typing every time.
   const mostUsedByModality = useMemo(() => {
     const counts = {}; // MODALITY -> { serviceName -> count }
-    for (const app of appointments || []) {
+    // Count across ALL historical appointments for this hospital (not just the
+    // active-tab slice) so the top picks reflect real usage. Fall back to the
+    // on-screen slice until the full-cache feed has emitted.
+    const source = (statsAppointments && statsAppointments.length) ? statsAppointments : (appointments || []);
+    for (const app of source) {
       const lines = getServiceLines(app);
       const entries = (lines && lines.length)
         ? lines
@@ -933,7 +994,7 @@ export default function AppointmentBoard() {
         .map(([name]) => name);
     }
     return result;
-  }, [appointments]);
+  }, [statsAppointments, appointments]);
 
   // Top 3 most-frequent referring persons (by how many appointments name them),
   // for one-tap quick-add under the Referred By field.
@@ -1043,6 +1104,18 @@ export default function AppointmentBoard() {
           setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id)
             ? { ...a, status: newStatus, tokenNo: tok, dailyTokenNumber: tok }
             : a));
+        }
+        // Arrived → celebrate with a success popup showing the token, patient and
+        // services so the front desk gets clear, immediate confirmation.
+        if (actionOrStatus === 'CONFIRM') {
+          const lines = getServiceLines(app);
+          setArrivedModal({
+            open: true,
+            tokenNo: tok ?? app.tokenNo ?? null,
+            patientName: app.patientName || 'Patient',
+            services: lines.map(l => ({ modality: l.modality, serviceName: l.serviceName })),
+          });
+          celebrate();
         }
         refreshAppointments();
       }
@@ -1541,8 +1614,9 @@ export default function AppointmentBoard() {
     }
 
     setIsSavingEdit(true);
-    try {
-      const editResp = await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
+    // Build the edit body up-front so it can be replayed verbatim as the approval
+    // payload when the server blocks the edit (a paid-commission service removal).
+    const editBody = {
         appointmentId: editingAppointment.appointmentId,
         patientId: editingAppointment.patientId,
         // Reschedule-to-future refund choice (WALLET | CASH); null when not moving
@@ -1576,7 +1650,9 @@ export default function AppointmentBoard() {
         mobile: editMobile,
         patientAge: editingAppointment.patientAge,
         patientGender: editingAppointment.patientGender,
-      });
+    };
+    try {
+      const editResp = await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, editBody);
 
       // The server may PAUSE the edit instead of applying it:
       //   • requiresRefundChoice — removing a paid service left the bill overpaid;
@@ -1590,9 +1666,20 @@ export default function AppointmentBoard() {
         return; // dialog stays open; the modal re-submits with a refund mode
       }
       if (editData.requiresApproval) {
-        showNotif('warning', 'NEEDS ADMIN APPROVAL',
-          editData.message || 'A removed service already has a referral commission paid to the referrer — removing it needs admin approval.');
-        return; // not applied
+        // Removing a service whose referral commission was already PAID → route to
+        // the Approvals queue. Stash the exact edit body so the admin's approval
+        // replays it server-side (paid cut clawed back, patient overpay returned).
+        setEditApprovalModal({
+          isOpen: true,
+          appointmentId: editingAppointment.appointmentId,
+          patientName: editingAppointment.patientName || '',
+          message: editData.message || '',
+          body: editBody,
+          refundMode: 'WALLET',
+          reason: '',
+          submitting: false,
+        });
+        return; // not applied — pending approval
       }
 
       // Pull the CANONICAL row (reconciled services + amounts) into the cache so
@@ -1604,6 +1691,45 @@ export default function AppointmentBoard() {
       apiClient.get(`/appointments/${editedApptId}`)
         .then(full => { if (full?.data?.appointmentId) return applyServerDeltas([full.data]); })
         .catch(() => { /* the next sync still reconciles */ });
+
+      // Same for THIS visit's invoice — pull the canonical bill (all reconciled
+      // line items, not just the watermark delta) straight into the invoice cache
+      // so the Revenue Hub's "modality : service" column shows the full set of
+      // services immediately after an add/remove, instead of lagging a sync.
+      apiClient.get('/finance/invoices', { params: { appointmentId: editedApptId } })
+        .then(r => { if (Array.isArray(r?.data) && r.data.length) return applyInvoiceDeltas(r.data); })
+        .catch(() => { /* the next sync still reconciles */ });
+
+      // Build a precise "what changed" summary (pre-edit snapshot vs saved state)
+      // for the success popup.
+      const orig = editOriginalRef.current || {};
+      const origServices = orig.services || [];
+      const keyOf = s => `${String(s.modality || '').toUpperCase()}|${String(s.serviceName || '').trim().toLowerCase()}`;
+      const origKeys = new Set(origServices.map(keyOf));
+      const newKeys = new Set(serviceLines.map(keyOf));
+      const changes = [];
+      for (const s of serviceLines) if (!origKeys.has(keyOf(s))) changes.push({ type: 'added', text: `Added ${s.modality}: ${s.serviceName}` });
+      for (const s of origServices) if (!newKeys.has(keyOf(s))) changes.push({ type: 'removed', text: `Removed ${s.modality}: ${s.serviceName}` });
+      for (const s of serviceLines) {
+        const o = origServices.find(x => keyOf(x) === keyOf(s));
+        if (o && (Number(o.amount) || 0) !== (Number(s.amount) || 0)) changes.push({ type: 'changed', text: `${s.modality}: ${s.serviceName} ₹${(Number(o.amount) || 0).toLocaleString()} → ₹${(Number(s.amount) || 0).toLocaleString()}` });
+      }
+      if ((orig.doctor || '') !== (editingAppointment.doctor || '')) changes.push({ type: 'changed', text: `Doctor → ${editingAppointment.doctor || '—'}` });
+      if ((orig.referredBy || '') !== (editingAppointment.referredBy || '')) changes.push({ type: 'changed', text: `Referred by → ${editingAppointment.referredBy || '—'}` });
+      if (orig.dateTime && editingAppointment.dateTime && new Date(orig.dateTime).toDateString() !== new Date(editingAppointment.dateTime).toDateString())
+        changes.push({ type: 'changed', text: `Date → ${new Date(editingAppointment.dateTime).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` });
+      if ((orig.patientName || '') !== (editingAppointment.patientName || '')) changes.push({ type: 'changed', text: `Patient name → ${editingAppointment.patientName}` });
+      if ((orig.mobile || '') !== (editMobile || '')) changes.push({ type: 'changed', text: `Mobile → ${editMobile}` });
+      if (changes.length === 0) changes.push({ type: 'changed', text: 'Details refreshed' });
+
+      // Distinct "edit saved" flourish (cooler shimmer, not the booking confetti).
+      celebrate('sparkle');
+      setEditSuccessModal({
+        open: true,
+        patientName: editingAppointment.patientName || 'Patient',
+        changes,
+        services: serviceLines.map(s => ({ modality: s.modality, serviceName: s.serviceName })),
+      });
 
       setIsEditingOpen(false);
       setEditingAppointment(null);
@@ -2521,6 +2647,16 @@ export default function AppointmentBoard() {
                     referralCutValue: l.referralCutValue,
                     status:           l.status,
                   })));
+                  // Snapshot the pre-edit state so the success popup can show a
+                  // precise "what changed" summary on save.
+                  editOriginalRef.current = {
+                    services: lines.map(l => ({ serviceName: l.serviceName, modality: l.modality, amount: l.amount })),
+                    doctor: app.doctor || '',
+                    referredBy: app.referredBy || '',
+                    dateTime: app.dateTime || null,
+                    patientName: app.patientName || '',
+                    mobile: app.mobile || '',
+                  };
                   setIsEditingOpen(true);
                 }}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
@@ -5212,6 +5348,39 @@ export default function AppointmentBoard() {
             </div>
           )}
 
+          {/* Overpayment refund choice — a removed/shrunk PAID service left the
+              bill overpaid. Operator picks how to return the excess; the edit then
+              re-submits with that mode and the server moves it to the credit ledger. */}
+          {overpayRefundModal.open && (
+            <div onClick={() => setOverpayRefundModal({ open: false, amount: 0 })} style={{ position:'fixed', inset:0, background:'rgba(8,12,30,0.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100001, padding:'20px' }}>
+              <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:'420px', background:'white', borderRadius:'18px', overflow:'hidden', boxShadow:'0 30px 70px -15px rgba(0,0,0,0.45)' }}>
+                <div style={{ padding:'18px 22px', background:'linear-gradient(135deg,#0a1628,#1e3a5f)', color:'white' }}>
+                  <div style={{ fontSize:'10px', fontWeight:950, letterSpacing:'1.5px', opacity:0.75 }}>SERVICE REMOVED · BILL OVERPAID</div>
+                  <div style={{ fontSize:'16px', fontWeight:950, marginTop:'4px' }}>Return ₹{(overpayRefundModal.amount || 0).toLocaleString()} to the patient</div>
+                </div>
+                <div style={{ padding:'20px 22px' }}>
+                  <div style={{ fontSize:'12.5px', fontWeight:600, color:'#475569', lineHeight:1.55, marginBottom:'16px' }}>
+                    Removing this service drops the bill below what the patient has already paid, leaving <b>₹{(overpayRefundModal.amount || 0).toLocaleString()}</b> overpaid. How should the excess be returned?
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+                    <button type="button" onClick={() => { setOverpayRefundModal({ open: false, amount: 0 }); handleEditAppointment('WALLET'); }}
+                      style={{ padding:'13px', borderRadius:'12px', border:'1px solid #bfdbfe', background:'#eff6ff', color:'#1d4ed8', fontSize:'12.5px', fontWeight:950, cursor:'pointer', textAlign:'left' }}>
+                      💳 Hold as credit (carry forward / refundable later)
+                    </button>
+                    <button type="button" onClick={() => { setOverpayRefundModal({ open: false, amount: 0 }); handleEditAppointment('CASH'); }}
+                      style={{ padding:'13px', borderRadius:'12px', border:'1px solid #bbf7d0', background:'#f0fdf4', color:'#166534', fontSize:'12.5px', fontWeight:950, cursor:'pointer', textAlign:'left' }}>
+                      💵 Refund as cash now
+                    </button>
+                    <button type="button" onClick={() => setOverpayRefundModal({ open: false, amount: 0 })}
+                      style={{ padding:'11px', borderRadius:'12px', border:'1px solid #e2e8f0', background:'white', color:'#64748b', fontSize:'12px', fontWeight:900, cursor:'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     );
@@ -6339,6 +6508,122 @@ export default function AppointmentBoard() {
                 disabled={!cancelApprovalModal.reason.trim() || cancelApprovalModal.submitting}
                 style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: (!cancelApprovalModal.reason.trim() || cancelApprovalModal.submitting) ? '#cbd5e1' : 'linear-gradient(135deg, #0f52ba, #061a40)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: (!cancelApprovalModal.reason.trim() || cancelApprovalModal.submitting) ? 'not-allowed' : 'pointer' }}
               >{cancelApprovalModal.submitting ? 'Sending…' : 'Send for Approval'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editApprovalModal.isOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '16px',
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{ background: '#ffffff', borderRadius: '24px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ fontSize: '38px', textAlign: 'center', marginBottom: '8px' }}>🔒</div>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0f172a', textAlign: 'center' }}>Admin approval needed</h3>
+            <p style={{ fontSize: '13px', color: '#475569', textAlign: 'center', marginTop: '8px', lineHeight: 1.55 }}>
+              You removed a service for <strong style={{ color: '#0f172a' }}>{(editApprovalModal.patientName || 'this patient').toUpperCase()}</strong> whose <strong>referral commission was already paid</strong>. Sending this for approval lets an admin apply the change — the paid cut is clawed back from the referrer and any overpaid amount is returned to the patient.
+            </p>
+
+            {/* How to return the patient's overpayment once approved (Q1 — wallet vs cash). */}
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '18px', marginBottom: '6px' }}>RETURN ANY OVERPAID AMOUNT AS</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[['WALLET', '💳 Wallet credit'], ['CASH', '💵 Cash refund']].map(([val, label]) => (
+                <button key={val} type="button" onClick={() => setEditApprovalModal(m => ({ ...m, refundMode: val }))}
+                  style={{ flex: 1, padding: '11px', borderRadius: '12px', border: editApprovalModal.refundMode === val ? '2px solid #0f52ba' : '1px solid #e2e8f0', background: editApprovalModal.refundMode === val ? '#eff6ff' : 'white', color: editApprovalModal.refundMode === val ? '#1d4ed8' : '#64748b', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '16px', marginBottom: '6px' }}>REASON FOR THE CHANGE</label>
+            <textarea
+              autoFocus
+              value={editApprovalModal.reason}
+              onChange={e => setEditApprovalModal(m => ({ ...m, reason: e.target.value }))}
+              placeholder="e.g. service not performed, billed in error, patient declined…"
+              rows={3}
+              style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+              <button
+                onClick={() => setEditApprovalModal({ isOpen: false, appointmentId: null, patientName: '', message: '', body: null, refundMode: 'WALLET', reason: '', submitting: false })}
+                style={{ flex: 1, padding: '14px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}
+              >Keep As-Is</button>
+              <button
+                onClick={submitEditServicesApproval}
+                disabled={!editApprovalModal.reason.trim() || editApprovalModal.submitting}
+                style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: (!editApprovalModal.reason.trim() || editApprovalModal.submitting) ? '#cbd5e1' : 'linear-gradient(135deg, #0f52ba, #061a40)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: (!editApprovalModal.reason.trim() || editApprovalModal.submitting) ? 'not-allowed' : 'pointer' }}
+              >{editApprovalModal.submitting ? 'Sending…' : 'Send for Approval'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Patient-arrived success popup — token + patient + services. */}
+      {arrivedModal.open && (
+        <div onClick={() => setArrivedModal({ open: false, tokenNo: null, patientName: '', services: [] })}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(8,12,30,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100002, padding: '20px', animation: 'fadeIn 0.25s ease-out' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '420px', background: '#ffffff', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.45)' }}>
+            <div style={{ padding: '22px 24px', background: 'linear-gradient(135deg,#059669,#047857)', color: 'white', textAlign: 'center' }}>
+              <div style={{ fontSize: '34px', lineHeight: 1 }}>✅</div>
+              <div style={{ fontSize: '16px', fontWeight: 950, marginTop: '8px', letterSpacing: '-0.3px' }}>Patient Arrived</div>
+              <div style={{ fontSize: '12.5px', fontWeight: 700, opacity: 0.9, marginTop: '2px' }}>{(arrivedModal.patientName || 'Patient').toUpperCase()}</div>
+            </div>
+            <div style={{ padding: '22px 24px' }}>
+              {arrivedModal.tokenNo != null ? (
+                <div style={{ textAlign: 'center', marginBottom: '18px' }}>
+                  <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>TODAY&apos;S TOKEN</div>
+                  <div style={{ fontSize: '52px', fontWeight: 950, color: '#0f52ba', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>#{arrivedModal.tokenNo}</div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', marginBottom: '14px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>Token will appear once assigned.</div>
+              )}
+              {arrivedModal.services && arrivedModal.services.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '18px' }}>
+                  <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICES</div>
+                  {arrivedModal.services.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '7px', fontSize: '12.5px' }}>
+                      <span style={{ flexShrink: 0, padding: '2px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc' }}>{(s.modality || '—').toUpperCase()}</span>
+                      <span style={{ fontWeight: 700, color: '#1e293b' }}>{s.serviceName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setArrivedModal({ open: false, tokenNo: null, patientName: '', services: [] })}
+                style={{ width: '100%', padding: '13px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg,#059669,#047857)', color: 'white', fontWeight: 900, fontSize: '13px', cursor: 'pointer' }}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Appointment-updated success popup — what changed + the new service set. */}
+      {editSuccessModal.open && (
+        <div onClick={() => setEditSuccessModal({ open: false, patientName: '', changes: [], services: [] })}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(8,12,30,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100002, padding: '20px', animation: 'fadeIn 0.25s ease-out' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '440px', background: '#ffffff', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.45)' }}>
+            <div style={{ padding: '22px 24px', background: 'linear-gradient(135deg,#0f52ba,#1e3a5f)', color: 'white', textAlign: 'center' }}>
+              <div style={{ fontSize: '34px', lineHeight: 1 }}>✏️</div>
+              <div style={{ fontSize: '16px', fontWeight: 950, marginTop: '8px', letterSpacing: '-0.3px' }}>Appointment Updated</div>
+              <div style={{ fontSize: '12.5px', fontWeight: 700, opacity: 0.9, marginTop: '2px' }}>{(editSuccessModal.patientName || 'Patient').toUpperCase()}</div>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>WHAT CHANGED</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '18px' }}>
+                {editSuccessModal.changes.map((c, i) => {
+                  const tint = c.type === 'added' ? { color: '#047857', icon: '＋' } : c.type === 'removed' ? { color: '#dc2626', icon: '－' } : { color: '#1d4ed8', icon: '↻' };
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#1e293b' }}>
+                      <span style={{ flexShrink: 0, color: tint.color, fontWeight: 950 }}>{tint.icon}</span>
+                      <span>{c.text}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={() => setEditSuccessModal({ open: false, patientName: '', changes: [], services: [] })}
+                style={{ width: '100%', padding: '13px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg,#0f52ba,#1e3a5f)', color: 'white', fontWeight: 900, fontSize: '13px', cursor: 'pointer' }}>Done</button>
             </div>
           </div>
         </div>

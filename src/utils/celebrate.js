@@ -5,6 +5,7 @@
 // (Electron) build too. Call it imperatively on a happy moment:
 //   celebrate();          // festive burst — booking, payment, approval
 //   celebrate('calm');    // softer, reassuring burst — rejection (stay positive)
+//   celebrate('sparkle'); // cool wide shimmer — an edit/update saved
 
 const PRESETS = {
   confetti: {
@@ -18,6 +19,14 @@ const PRESETS = {
     count: 55,
     spread: 55,
     power: 10,
+  },
+  // A distinct, cooler shimmer for "saved an edit" — wider fan + blues/violets/
+  // gold, so an update reads differently from a fresh booking's confetti.
+  sparkle: {
+    colors: ['#0f52ba', '#38bdf8', '#a78bfa', '#22d3ee', '#fcd34d'],
+    count: 95,
+    spread: 120,
+    power: 13,
   },
 };
 
