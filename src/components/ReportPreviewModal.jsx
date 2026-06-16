@@ -57,6 +57,66 @@ function _paginateChunkByMeasurement(chunkHtml, { widthMm, capacityPx, firstCapa
   return pages.length ? pages : [chunkHtml];
 }
 
+// ── SINGLE SOURCE OF TRUTH for `.report-content` typography ──────────────────
+// Preview, the hidden pagination measurer, Download-PDF (it inherits the modal's
+// stylesheet) and Print MUST render with identical fonts/sizes/line-height, or
+// the printed sheets won't match the preview (and the measurer would break pages
+// in the wrong place). This used to be two hand-maintained CSS blocks that
+// drifted apart — the preview was stuck at a hardcoded 12pt / line-height 1.6
+// while print used the configured font size / line-height 1.5, so print never
+// matched preview and a non-default font size could clip text off the page.
+// Both the modal <style> and buildPrintContent() now interpolate THIS, so they
+// can never diverge again. Canonical = font size in POINTS, line-height 1.5
+// (unified with the NarrativeEditor + Word export).
+const reportContentCss = (baseFontSize = 12) => `
+  .report-content {
+    font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
+    font-size: ${baseFontSize}pt;
+    line-height: 1.5;
+    color: #000000;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  .report-content h1 { font-size: 26pt; font-weight: 700; line-height: 1.2; margin: 0 0 12px 0; color: #1f3864; border-bottom: 1px solid #4472c4; padding-bottom: 4px; }
+  .report-content h2 { font-size: 20pt; font-weight: 700; line-height: 1.3; margin: 18px 0 8px 0; color: #2e4d7b; }
+  .report-content h3 { font-size: 16pt; font-weight: 600; line-height: 1.4; margin: 14px 0 6px 0; color: #2e4d7b; }
+  .report-content h4 { font-size: 14pt; font-weight: 600; line-height: 1.4; margin: 12px 0 4px 0; color: #374151; }
+  .report-content p { margin: 0 0 8px 0; }
+  .report-content ul, .report-content ol { padding-left: 28px; margin: 6px 0 10px; }
+  .report-content li { margin: 3px 0; line-height: 1.5; }
+  .report-content li p { margin: 0; }
+  .report-content table { border-collapse: collapse; width: 100%; margin: 14px 0; border: 1px solid #c8c8c8; }
+  .report-content th { background: #d6e4f7; font-weight: 700; text-align: left; padding: 8px 12px; border: 1px solid #c8c8c8; font-size: 11pt; color: #1f3864; }
+  .report-content td { padding: 7px 12px; border: 1px solid #c8c8c8; vertical-align: top; font-size: 11pt; }
+  .report-content img { max-width: 100%; height: auto; display: block; margin: 14px 0; }
+  .report-content hr { border: none; border-top: 1px solid #c8c8c8; margin: 20px 0; }
+  .report-content code { background: #f3f2f1; padding: 1px 5px; border-radius: 3px; font-family: "Cascadia Code", "Consolas", "Courier New", monospace; font-size: 10.5pt; color: #c7254e; }
+  .report-content pre { background: #1e1e1e; color: #d4d4d4; padding: 16px 20px; border-radius: 4px; overflow-x: auto; margin: 14px 0; font-size: 10pt; }
+  .report-content pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+  .report-content blockquote { border-left: 3px solid #4472c4; padding-left: 16px; margin: 12px 0; color: #555; font-style: italic; }
+  .report-content a { color: #0078d4; text-decoration: underline; }
+  .report-content [style*="text-align: right"]   { text-align: right !important; }
+  .report-content [style*="text-align: center"]  { text-align: center !important; }
+  .report-content [style*="text-align: justify"] { text-align: justify !important; text-align-last: justify; }
+  .report-content [style*="text-align: left"]    { text-align: left !important; }
+  .report-content ul[data-list-style="checkmark"] > li::marker  { content: "✓  "; color: #16a34a; font-weight: 700; }
+  .report-content ul[data-list-style="arrow"]     > li::marker  { content: "▸  "; color: #0f52ba; }
+  .report-content ul[data-list-style="diamond"]   > li::marker  { content: "◆  "; color: #475569; }
+  .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
+  .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
+  .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
+  .report-content ul[data-list-style="triangle"]  > li::marker  { content: "‣  "; color: #475569; }
+  .report-content ul[data-list-style="circ-fill"] > li::marker  { content: "●  "; color: #1f2937; font-size: 0.8em; }
+  .report-content ul[data-list-style="arrowhead"] { list-style: none; }
+  .report-content ul[data-list-style="arrowhead"] > li { position: relative; }
+  .report-content ul[data-list-style="arrowhead"] > li::before { content: "➤"; position: absolute; left: -1.15em; top: 0; font-size: 0.95em; background: linear-gradient(135deg, #000000 0%, #000000 50%, #9ca3af 50%, #e5e7eb 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+  .report-content ol[data-list-style="decimal-paren"], .report-content ol[data-list-style="alpha-paren"], .report-content ol[data-list-style="upper-paren"] { counter-reset: li-paren; }
+  .report-content ol[data-list-style="decimal-paren"] > li, .report-content ol[data-list-style="alpha-paren"] > li, .report-content ol[data-list-style="upper-paren"] > li { counter-increment: li-paren; }
+  .report-content ol[data-list-style="decimal-paren"] > li::marker { content: counter(li-paren, decimal) ")  "; }
+  .report-content ol[data-list-style="alpha-paren"]   > li::marker { content: counter(li-paren, lower-alpha) ")  "; }
+  .report-content ol[data-list-style="upper-paren"]   > li::marker { content: counter(li-paren, upper-alpha) ")  "; }
+`;
+
 // Patient info header — renders on page 1 of the preview and inside the
 // hidden measurer so pagination can subtract its height from page-1 capacity.
 // Premium patient-header card. Mirrored in `generatePageHtml` below so the
@@ -830,54 +890,15 @@ const ReportPreviewModal = ({
              the preview — same fonts, same heading sizes, same colours, same
              list/table styling. Without this, the popup would fall back to the
              browser's defaults and the report would look completely different. */
-          .report-content,
+          /* Base font for the print wrapper (stray text outside .report-content). */
           .print-container {
             font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
             font-size: ${baseFontSize}pt;
             line-height: 1.5;
             color: #000000;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
           }
-          .report-content h1 { font-size: 26pt; font-weight: 700; line-height: 1.2; margin: 0 0 12px 0; color: #1f3864; border-bottom: 1px solid #4472c4; padding-bottom: 4px; }
-          .report-content h2 { font-size: 20pt; font-weight: 700; line-height: 1.3; margin: 18px 0 8px 0; color: #2e4d7b; }
-          .report-content h3 { font-size: 16pt; font-weight: 600; line-height: 1.4; margin: 14px 0 6px 0; color: #2e4d7b; }
-          .report-content h4 { font-size: 14pt; font-weight: 600; line-height: 1.4; margin: 12px 0 4px 0; color: #374151; }
-          .report-content p { margin: 0 0 8px 0; }
-          .report-content ul, .report-content ol { padding-left: 28px; margin: 6px 0 10px; }
-          .report-content li { margin: 3px 0; line-height: 1.5; }
-          .report-content li p { margin: 0; }
-          .report-content table { border-collapse: collapse; width: 100%; margin: 14px 0; border: 1px solid #c8c8c8; }
-          .report-content th { background: #d6e4f7; font-weight: 700; text-align: left; padding: 8px 12px; border: 1px solid #c8c8c8; font-size: 11pt; color: #1f3864; }
-          .report-content td { padding: 7px 12px; border: 1px solid #c8c8c8; vertical-align: top; font-size: 11pt; }
-          .report-content img { max-width: 100%; height: auto; display: block; margin: 14px 0; }
-          .report-content hr { border: none; border-top: 1px solid #c8c8c8; margin: 20px 0; }
-          .report-content blockquote { border-left: 3px solid #4472c4; padding-left: 16px; margin: 12px 0; color: #555; font-style: italic; }
-          .report-content a { color: #0078d4; text-decoration: underline; }
-          /* Alignment — see preview CSS above for rationale. */
-          .report-content [style*="text-align: right"]   { text-align: right !important; }
-          .report-content [style*="text-align: center"]  { text-align: center !important; }
-          .report-content [style*="text-align: justify"] { text-align: justify !important; text-align-last: justify; }
-          .report-content [style*="text-align: left"]    { text-align: left !important; }
-          /* Extended bullet markers */
-          .report-content ul[data-list-style="checkmark"] > li::marker  { content: "✓  "; color: #16a34a; font-weight: 700; }
-          .report-content ul[data-list-style="arrow"]     > li::marker  { content: "▸  "; color: #0f52ba; }
-          .report-content ul[data-list-style="diamond"]   > li::marker  { content: "◆  "; color: #475569; }
-          .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
-          .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
-          .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
-          .report-content ul[data-list-style="triangle"]  > li::marker  { content: "‣  "; color: #475569; }
-          .report-content ul[data-list-style="circ-fill"] > li::marker  { content: "●  "; color: #1f2937; font-size: 0.8em; }
-          /* Multi-colour arrowhead — rendered as a ::before glyph (matches the editor). */
-          .report-content ul[data-list-style="arrowhead"] { list-style: none; }
-          .report-content ul[data-list-style="arrowhead"] > li { position: relative; }
-          .report-content ul[data-list-style="arrowhead"] > li::before { content: "➤"; position: absolute; left: -1.15em; top: 0; font-size: 0.95em; background: linear-gradient(135deg, #000000 0%, #000000 50%, #9ca3af 50%, #e5e7eb 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
-          /* Parenthesised numbering ( 1)  a)  A) ) — CSS counter + ::marker. */
-          .report-content ol[data-list-style="decimal-paren"], .report-content ol[data-list-style="alpha-paren"], .report-content ol[data-list-style="upper-paren"] { counter-reset: li-paren; }
-          .report-content ol[data-list-style="decimal-paren"] > li, .report-content ol[data-list-style="alpha-paren"] > li, .report-content ol[data-list-style="upper-paren"] > li { counter-increment: li-paren; }
-          .report-content ol[data-list-style="decimal-paren"] > li::marker { content: counter(li-paren, decimal) ")  "; }
-          .report-content ol[data-list-style="alpha-paren"]   > li::marker { content: counter(li-paren, lower-alpha) ")  "; }
-          .report-content ol[data-list-style="upper-paren"]   > li::marker { content: counter(li-paren, upper-alpha) ")  "; }
+          /* Report typography — SINGLE SOURCE OF TRUTH (shared with the preview). */
+          ${reportContentCss(baseFontSize)}
           /* word-page wrappers from the editor's pagination model — strip
              their margins/padding so they don't add extra vertical space
              inside our own per-page containers. */
@@ -1193,110 +1214,11 @@ const ReportPreviewModal = ({
         </div>
     </div>
       <style>{`
-        /* ───────────────────────────────────────────────────────────────
-           .report-content — mirrors the NarrativeEditor's typography
-           rules so the preview and print render with the same fonts,
-           heading sizes, list/table styling, blockquotes, etc. that the
-           doctor saw while authoring. Replaces the previous hard-coded
-           overrides that made preview look completely different from
-           the editor.
-           ─────────────────────────────────────────────────────────────── */
-        .report-content {
-          font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
-          font-size: 12pt;
-          line-height: 1.6;
-          color: #000000;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-        }
-        .report-content h1 {
-          font-size: 26pt; font-weight: 700; line-height: 1.2;
-          margin: 0 0 12px 0; color: #1f3864;
-          border-bottom: 1px solid #4472c4; padding-bottom: 4px;
-        }
-        .report-content h2 {
-          font-size: 20pt; font-weight: 700; line-height: 1.3;
-          margin: 18px 0 8px 0; color: #2e4d7b;
-        }
-        .report-content h3 {
-          font-size: 16pt; font-weight: 600; line-height: 1.4;
-          margin: 14px 0 6px 0; color: #2e4d7b;
-        }
-        .report-content h4 {
-          font-size: 14pt; font-weight: 600; line-height: 1.4;
-          margin: 12px 0 4px 0; color: #374151;
-        }
-        .report-content p { margin: 0 0 8px 0; }
-        .report-content ul, .report-content ol {
-          padding-left: 28px; margin: 6px 0 10px;
-        }
-        .report-content li { margin: 3px 0; line-height: 1.6; }
-        .report-content li p { margin: 0; }
-        .report-content table {
-          border-collapse: collapse; width: 100%;
-          margin: 14px 0; border: 1px solid #c8c8c8;
-        }
-        .report-content th {
-          background: #d6e4f7; font-weight: 700; text-align: left;
-          padding: 8px 12px; border: 1px solid #c8c8c8;
-          font-size: 11pt; color: #1f3864;
-        }
-        .report-content td {
-          padding: 7px 12px; border: 1px solid #c8c8c8;
-          vertical-align: top; font-size: 11pt;
-        }
-        .report-content img {
-          max-width: 100%; height: auto;
-          display: block; margin: 14px 0;
-        }
-        .report-content hr {
-          border: none; border-top: 1px solid #c8c8c8; margin: 20px 0;
-        }
-        .report-content code {
-          background: #f3f2f1; padding: 1px 5px; border-radius: 3px;
-          font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
-          font-size: 10.5pt; color: #c7254e;
-        }
-        .report-content pre {
-          background: #1e1e1e; color: #d4d4d4;
-          padding: 16px 20px; border-radius: 4px;
-          overflow-x: auto; margin: 14px 0; font-size: 10pt;
-        }
-        .report-content pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
-        .report-content blockquote {
-          border-left: 3px solid #4472c4; padding-left: 16px;
-          margin: 12px 0; color: #555; font-style: italic;
-        }
-        .report-content a { color: #0078d4; text-decoration: underline; }
-
-        /* Text alignment — defensively respect inline text-align even when
-           the parent has a stricter alignment, and make justify visually
-           distinct (the default only justifies when text wraps; we also
-           justify the LAST line so single-line paragraphs look aligned). */
-        .report-content [style*="text-align: right"]   { text-align: right !important; }
-        .report-content [style*="text-align: center"]  { text-align: center !important; }
-        .report-content [style*="text-align: justify"] { text-align: justify !important; text-align-last: justify; }
-        .report-content [style*="text-align: left"]    { text-align: left !important; }
-
-        /* ── Extended bullet markers (selected via the Bullet List split button).
-              These work on top of CSS list-style-type by overriding the marker
-              content for selected data-list-style values. */
-        .report-content ul[data-list-style="checkmark"] > li::marker  { content: "✓  "; color: #16a34a; font-weight: 700; }
-        .report-content ul[data-list-style="arrow"]     > li::marker  { content: "▸  "; color: #0f52ba; }
-        .report-content ul[data-list-style="diamond"]   > li::marker  { content: "◆  "; color: #475569; }
-        .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
-        .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
-        .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
-        .report-content ul[data-list-style="triangle"]  > li::marker  { content: "‣  "; color: #475569; }
-        .report-content ul[data-list-style="circ-fill"] > li::marker  { content: "●  "; color: #1f2937; font-size: 0.8em; }
-        .report-content ul[data-list-style="arrowhead"] { list-style: none; }
-        .report-content ul[data-list-style="arrowhead"] > li { position: relative; }
-        .report-content ul[data-list-style="arrowhead"] > li::before { content: "➤"; position: absolute; left: -1.15em; top: 0; font-size: 0.95em; background: linear-gradient(135deg, #000000 0%, #000000 50%, #9ca3af 50%, #e5e7eb 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
-        .report-content ol[data-list-style="decimal-paren"], .report-content ol[data-list-style="alpha-paren"], .report-content ol[data-list-style="upper-paren"] { counter-reset: li-paren; }
-        .report-content ol[data-list-style="decimal-paren"] > li, .report-content ol[data-list-style="alpha-paren"] > li, .report-content ol[data-list-style="upper-paren"] > li { counter-increment: li-paren; }
-        .report-content ol[data-list-style="decimal-paren"] > li::marker { content: counter(li-paren, decimal) ")  "; }
-        .report-content ol[data-list-style="alpha-paren"]   > li::marker { content: counter(li-paren, lower-alpha) ")  "; }
-        .report-content ol[data-list-style="upper-paren"]   > li::marker { content: counter(li-paren, upper-alpha) ")  "; }
+        /* Report typography — SINGLE SOURCE OF TRUTH (shared with Print +
+           inherited by the pagination measurer and Download-PDF). Driven by
+           the configured font size at line-height 1.5, identical to the print
+           document, so what you preview is exactly what prints/exports. */
+        ${reportContentCss(baseFontSize)}
 
         @media print {
           /* Each .a4-page is already 297mm tall with its own safe-zone padding,

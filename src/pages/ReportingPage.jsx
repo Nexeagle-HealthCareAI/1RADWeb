@@ -2319,15 +2319,37 @@ const ReportingPage = () => {
     try { localStorage.setItem(`ne:header-editable:${appointmentId}`, '1'); } catch { /* storage blocked */ }
   };
 
-  // Re-show the locked auto-filled banner. The in-content header (if untouched)
-  // is left for the user to delete — clean removal travels with report metadata
-  // (a follow-up); this keeps v1 simple + non-destructive.
+  // Re-show the locked auto-filled banner. Best-effort: strip the injected
+  // editable header (the name paragraph + the "ID: … Age/Sex: … Ref: …" line +
+  // its <hr>) from the top of the report so the premium banner can take over
+  // again without a duplicate. If the user edited it so heavily that the shape
+  // no longer matches, we leave it for them to delete — the banner stays
+  // suppressed (via inlineHeaderPresent) while the header is still detected, so
+  // there's never a double header either way.
   const restoreLockedHeader = () => {
+    const current = editorText || '';
+    const stripped = current.replace(
+      /^\s*<p[^>]*>\s*<strong>[\s\S]*?<\/strong>\s*<\/p>\s*<p[^>]*>[\s\S]*?ID:[\s\S]*?<\/p>\s*<hr[^>]*>/i,
+      '',
+    );
+    if (stripped !== current) applyEditorContent(stripped);
     setHeaderEditable(false);
     try { localStorage.removeItem(`ne:header-editable:${appointmentId}`); } catch { /* storage blocked */ }
   };
 
-  const renderNarrativeEditor = (placeholder) => (
+  const renderNarrativeEditor = (placeholder) => {
+    // The editable patient header (buildPatientHeaderHtml) is injected into the
+    // report CONTENT, while the locked premium banner (PatientInfoBlock) renders
+    // as firstPageBanner chrome. They must NEVER show together. The headerEditable
+    // flag lives in localStorage keyed by appointmentId — which is null when the
+    // page is opened by studyId — so it can desync from the saved content and
+    // leave both showing. Defensive fix: also detect the injected header in the
+    // content and suppress the banner whenever it's present, regardless of the
+    // flag. (Removing the in-content header to return to the locked banner is a
+    // deferred follow-up — for now we just keep editing to a single header.)
+    const inlineHeaderPresent = /Age\/Sex:[\s\S]{0,80}Ref:/i.test(editorText || '');
+    const headerInEditMode = headerEditable || inlineHeaderPresent;
+    return (
     <NarrativeEditor
       ref={editorRef}
       content={editorText}
@@ -2357,7 +2379,7 @@ const ReportingPage = () => {
       bodyFontPt={protocol?.fontSize || 12}
       firstPageBanner={
         !activeAppointment ? null
-        : headerEditable ? (
+        : headerInEditMode ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
             padding: '6px 12px', fontSize: 11, color: '#475569', background: '#f1f5f9',
             border: '1px dashed #cbd5e1', borderRadius: 8, marginBottom: 8 }}>
@@ -2387,7 +2409,8 @@ const ReportingPage = () => {
         )
       }
     />
-  );
+    );
+  };
 
   return (
     <>

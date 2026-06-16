@@ -104,11 +104,18 @@ export default function TermAutocomplete({ editor }) {
       setState({ open: true, anchor, from, to, query: word });
     };
 
-    editor.on('selectionUpdate', recompute);
-    editor.on('transaction', recompute);
+    // Debounce so the coordsAtPos() forced-layout read + lookup runs once per
+    // brief typing pause instead of on every keystroke/transaction — this keeps
+    // the typing hot path free of synchronous layout reads on long reports.
+    const schedule = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(recompute, 120);
+    };
+    editor.on('selectionUpdate', schedule);
+    editor.on('transaction', schedule);
     return () => {
-      editor.off('selectionUpdate', recompute);
-      editor.off('transaction', recompute);
+      editor.off('selectionUpdate', schedule);
+      editor.off('transaction', schedule);
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [editor, close]);
