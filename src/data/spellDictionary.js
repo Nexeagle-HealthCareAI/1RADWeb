@@ -20,10 +20,22 @@
 // Lenient by design: both 'tumour' and 'tumor' pass; only genuine typos flag.
 // en-GB house-style enforcement stays the RadAI formatter's job.
 
-import { warmRadiologyData, getMedicalWords } from './radiologyData';
+import { warmRadiologyData, getMedicalWords, getWordFrequency } from './radiologyData';
 
 const EN_URL = '/data/spell_en.json';
 const CUSTOM_KEY = 'narrative-editor:custom-dict';
+
+// Common English contractions — whitelisted so the apostrophe-free dictionary
+// doesn't have to validate them. (Possessives like "patient's" are validated by
+// stem instead — see isWordValid — so a misspelled stem like "recieve's" still
+// flags.)
+const CONTRACTIONS = new Set([
+  "don't", "doesn't", "didn't", "isn't", "wasn't", "aren't", "weren't",
+  "can't", "cannot", "couldn't", "won't", "wouldn't", "shouldn't", "mustn't",
+  "hasn't", "haven't", "hadn't", "it's", "that's", "there's", "here's",
+  "they're", "we're", "you're", "i'm", "i've", "we've", "they've", "you've",
+  "i'll", "we'll", "they'll", "you'll", "let's", "who's", "what's",
+]);
 
 let _english = null;     // Set<string> — general English (lowercased)
 let _medical = null;     // Set<string> — RadLex words (lowercased)
@@ -97,19 +109,27 @@ function normalize(token) {
 // Is this (original-cased) token correctly spelled / not worth flagging?
 export function isWordValid(token) {
   if (isProtected(token)) return true;
-  // Apostrophe forms (possessives "patient's", contractions "don't") are never
-  // flagged — the apostrophe-free dictionary can't validate them and they're
-  // virtually never the misspelling worth catching in formal report prose.
-  if (/['’]/.test(token)) return true;
+  // Apostrophe forms: validate possessive stems ("patient's" → check "patient")
+  // and whitelist common contractions; any other apostrophe usage stays lenient.
+  // This catches a misspelled possessive stem ("recieve's") that the old
+  // blanket-skip let through, without flagging legitimate contractions.
+  if (/['’]/.test(token)) {
+    const low = token.toLowerCase().replace(/^[^a-z'’]+/, '').replace(/[^a-z'’]+$/, '');
+    if (CONTRACTIONS.has(low.replace('’', "'"))) return true;
+    const poss = low.match(/^([a-z][a-z-]*)['’]s$/);
+    if (poss) return isWordValid(poss[1]);       // validate the stem
+    return true;                                  // other apostrophe usage
+  }
   const w = normalize(token);
   if (w.length < 3) return true;
   if (!_english) return true;                    // not loaded yet → never flag
   if (_english.has(w) || _medical.has(w) || _custom.has(w) || _ignored.has(w)) return true;
-  // Hyphenated compound: valid if every part is itself valid ("well-defined",
-  // "post-contrast"). Avoids having to enumerate compounds.
+  // Hyphenated compound: valid only if every part ≥2 chars is itself valid
+  // ("well-defined", "post-contrast"). Single-char parts are accepted; a
+  // 2+-char part that isn't a real word ("liver-lesoin") now flags.
   if (w.includes('-')) {
     const parts = w.split('-').filter(Boolean);
-    if (parts.length > 1 && parts.every((p) => p.length < 3 || _english.has(p) || _medical.has(p) || _custom.has(p))) {
+    if (parts.length > 1 && parts.every((p) => p.length < 2 || _english.has(p) || _medical.has(p) || _custom.has(p))) {
       return true;
     }
   }
@@ -211,10 +231,12 @@ export function getSuggestions(token, limit = 5) {
     for (const cand of arr) {
       if (Math.abs(cand.length - w.length) > max) continue;
       const d = boundedDistance(w, cand, max);
-      if (d <= max) candidates.push({ cand, d });
+      if (d <= max) candidates.push({ cand, d, f: getWordFrequency(cand) });
     }
   }
-  candidates.sort((a, b) => a.d - b.d || a.cand.length - b.cand.length);
+  // Nearest edit distance first; among equally-near words prefer the clinically
+  // more frequent term (RadLex freq), then the shorter word.
+  candidates.sort((a, b) => a.d - b.d || b.f - a.f || a.cand.length - b.cand.length);
   const seen = new Set();
   const out = [];
   for (const { cand } of candidates) {

@@ -78,6 +78,7 @@ function RowActionsMenu({ children, isMobile }) {
 
 const RevenueHub = ({
   filteredInvoices,
+  advanceByPatient = {},
   approvalMap = { byInvoice: {}, byAppointment: {} },
   approvalFilter = 'ALL',
   setApprovalFilter = () => {},
@@ -436,8 +437,11 @@ const RevenueHub = ({
               overflowX: 'auto',
               width: isMobile ? '100%' : 'auto'
             }}>
-               {['TODAY', 'PAST', 'ALL', 'CUSTOM', 'FUTURE'].map(t => (
-                 <button 
+               {/* No FUTURE tab — future appointments never carry invoices (a paid
+                   visit moved to a future date is refunded + its bill voided), so
+                   there's nothing pre-billed to show here. */}
+               {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
+                 <button
                   key={t}
                   onClick={() => setTimeFilter(t)}
                   style={{ 
@@ -669,8 +673,7 @@ const RevenueHub = ({
                       <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY {getSortIcon('patientName')}</th>
                       <th onClick={() => handleSort('referrerName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY {getSortIcon('referrerName')}</th>
                       <th onClick={() => handleSort('serviceDate')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_DATE {getSortIcon('serviceDate')}</th>
-                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
-                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICES</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY : SERVICE</th>
                       <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS {getSortIcon('grossAmount')}</th>
                       <th onClick={() => handleSort('discountAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT {getSortIcon('discountAmount')}</th>
                       <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE {getSortIcon('totalAmount')}</th>
@@ -755,11 +758,12 @@ const RevenueHub = ({
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv?.referrerName || 'SELF').toUpperCase()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{formatDate(inv?.serviceDate || inv?.createdAt, true)}</td>
-                     <td style={{ padding: '20px 10px' }}>
+                     {/* Modality : Service — one combined column. Each service is
+                         grouped under its modality (modality first), one group per
+                         line, e.g. "USG: Whole Abdomen, KUB" / "X-RAY: Chest PA".
+                         A second modality added post-payment now shows correctly. */}
+                     <td style={{ padding: '14px 10px', verticalAlign: 'top' }}>
                        {(() => {
-                         // Walk every item on the invoice and pull unique
-                         // modalities so a multi-service visit shows all
-                         // its chips, not just the legacy primary scalar.
                          const tintFor = (m) => {
                            const k = String(m || '').toUpperCase();
                            return ({
@@ -774,88 +778,35 @@ const RevenueHub = ({
                              PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
                            }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
                          };
+                         // Group every service line under its modality, first-seen
+                         // order preserved, so multi-modality visits read cleanly.
                          const items = inv.items || [];
-                         const seen = new Set();
-                         const mods = [];
+                         const order = [];
+                         const byMod = {};
                          for (const it of items) {
-                           const m = String(it.modality || it.Modality || '').toUpperCase();
-                           if (!m || seen.has(m)) continue;
-                           seen.add(m);
-                           mods.push(m);
+                           const m = (String(it.modality || it.Modality || inv.modality || '').toUpperCase()) || 'OTHER';
+                           const name = it.description || it.serviceName || 'Service';
+                           const qty = Number(it.quantity) || 1;
+                           const label = name + (qty > 1 ? ` ×${qty}` : '');
+                           if (!(m in byMod)) { byMod[m] = []; order.push(m); }
+                           byMod[m].push(label);
                          }
-                         // Fallback to legacy scalar if items[] didn't
-                         // carry modality (old invoices pre-multi-service).
-                         if (mods.length === 0 && inv.modality) mods.push(String(inv.modality).toUpperCase());
-                         if (mods.length === 0) mods.push('—');
-                         // Cap visible chips so a 5-modality visit
-                         // doesn't blow the row height. "+N" badge
-                         // shows the overflow on hover.
-                         const VISIBLE = 3;
-                         const visible = mods.slice(0, VISIBLE);
-                         const extra   = mods.length - visible.length;
+                         if (order.length === 0) {
+                           const m = inv.modality ? String(inv.modality).toUpperCase() : '—';
+                           return <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>{m}</span>;
+                         }
                          return (
-                           <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', maxWidth: '180px' }}
-                                title={`${items.length} ${items.length === 1 ? 'service' : 'services'}: ${mods.join(', ')}`}>
-                             {visible.map(m => {
+                           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxWidth: '300px' }}
+                                title={order.map(m => `${m}: ${byMod[m].join(', ')}`).join('  •  ')}>
+                             {order.map((m, i) => {
                                const t = tintFor(m);
                                return (
-                                 <span key={m} style={{
-                                   padding: '3px 8px', borderRadius: '6px',
-                                   fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
-                                   color: t.text, background: t.bg,
-                                   border: `1px solid ${t.border}`,
-                                 }}>{m}</span>
+                                 <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', lineHeight: 1.3 }}>
+                                   <span style={{ flexShrink: 0, padding: '2px 7px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
+                                   <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e293b' }}>{byMod[m].join(', ')}</span>
+                                 </div>
                                );
                              })}
-                             {extra > 0 && (
-                               <span style={{
-                                 padding: '3px 8px', borderRadius: '6px',
-                                 fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
-                                 color: '#475569', background: '#f1f5f9',
-                                 border: '1px solid #e2e8f0',
-                               }}>+{extra}</span>
-                             )}
-                           </div>
-                         );
-                       })()}
-                     </td>
-                     {/* Services column — itemised list of every
-                         service availed on this visit. One row per
-                         item; multi-service visits stack vertically
-                         so the operator sees the full bundle at a
-                         glance without opening the drawer. */}
-                     <td style={{ padding: '14px 10px', verticalAlign: 'top' }}>
-                       {(() => {
-                         const items = inv.items || [];
-                         if (items.length === 0) {
-                           return <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>;
-                         }
-                         const VISIBLE = 3;
-                         const visible = items.slice(0, VISIBLE);
-                         const extra   = items.length - visible.length;
-                         return (
-                           <div
-                             style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxWidth: '220px' }}
-                             title={items.map(it => `${it.description}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`).join(' • ')}
-                           >
-                             {visible.map((it, i) => (
-                               <span key={i} style={{
-                                 fontSize: '10.5px', fontWeight: 700, color: '#1e293b',
-                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                                 lineHeight: 1.25,
-                               }}>
-                                 {it.description}
-                                 {it.quantity > 1 && (
-                                   <span style={{ color: '#94a3b8', fontWeight: 600, marginLeft: '4px' }}>×{it.quantity}</span>
-                                 )}
-                               </span>
-                             ))}
-                             {extra > 0 && (
-                               <span style={{
-                                 fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                                 color: '#475569', textTransform: 'uppercase',
-                               }}>+ {extra} more</span>
-                             )}
                            </div>
                          );
                        })()}
@@ -893,6 +844,13 @@ const RevenueHub = ({
                           )}
                           {inv?.isFree && (
                             <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 950, letterSpacing: '0.5px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4' }}>🎁 FREE</span>
+                          )}
+                          {/* Patient holds an advance (overpayment). Shown bold next to the
+                              status; refund it from the view drawer's left panel. */}
+                          {(Number(advanceByPatient[String(inv?.patientId)]) || 0) > 0 && (
+                            <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe' }}>
+                              💳 Advance <b style={{ fontWeight: 950 }}>₹{(Number(advanceByPatient[String(inv?.patientId)]) || 0).toLocaleString()}</b>
+                            </span>
                           )}
                         </div>
                      </td>

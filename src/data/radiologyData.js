@@ -132,3 +132,21 @@ export function getMedicalWords() {
   }
   return set;
 }
+
+// Per-word relevance score: the highest term frequency among all RadLex terms
+// that contain this word. Used to rank spell-correction suggestions so the
+// clinically common term surfaces first (e.g. "effusion" over "effuse"). Built
+// lazily off the word index; returns 0 for unknown words / before load.
+let _wordFreq = null;
+export function getWordFrequency(word) {
+  if (!_wordIndex || !_freq) return 0;
+  if (!_wordFreq) {
+    _wordFreq = new Map();
+    for (const e of _wordIndex) {
+      const f = _freq[e.i] || 0;
+      const prev = _wordFreq.get(e.w);
+      if (prev === undefined || f > prev) _wordFreq.set(e.w, f);
+    }
+  }
+  return _wordFreq.get(word) || 0;
+}

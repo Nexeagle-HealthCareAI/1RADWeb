@@ -25,7 +25,6 @@ import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
-import AdvancesHub from '../components/Billing/AdvancesHub';
 import FinanceManager from '../components/FinanceManager';
 import Pagination from '../components/Pagination';
 
@@ -48,6 +47,9 @@ export default function BillingPage() {
   const [paymentSuccess, setPaymentSuccess] = useState(null); // { amount, method, patientName, invoiceId }
 
   const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
+  // Patient advances (overpayment credits). Surfaced inline on each invoice
+  // (status badge + the view drawer's refund button) instead of a separate tab.
+  const [outstandingCredits, setOutstandingCredits] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [referrers, setReferrers] = useState([]);
   const [expenseFilter, setExpenseFilter] = useState('ALL'); // 'ALL' | 'OPERATIONAL' | 'REFERRAL'
@@ -289,6 +291,23 @@ export default function BillingPage() {
     }
   }, []);
 
+  // Patients holding a credit balance → { patientId: balance }. Used to flag
+  // "Paid · Advance ₹X" on the invoice status and to drive the drawer refund.
+  const fetchOutstandingCredits = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/finance/credits/outstanding');
+      setOutstandingCredits(Array.isArray(data) ? data : []);
+    } catch { /* offline / no credits — keep last known */ }
+  }, []);
+
+  const advanceByPatient = useMemo(() => {
+    const m = {};
+    for (const c of (outstandingCredits || [])) {
+      if (c && c.patientId != null) m[String(c.patientId)] = Number(c.balance) || 0;
+    }
+    return m;
+  }, [outstandingCredits]);
+
   const refreshAllFinancialData = useCallback(() => {
     fetchInvoices();
     fetchStats();
@@ -300,8 +319,9 @@ export default function BillingPage() {
     fetchAppointments();
     fetchPersonnel();
     fetchPersonnel();
+    fetchOutstandingCredits();
     loadApprovalMap();
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchPersonnel, loadApprovalMap]);
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -318,9 +338,10 @@ export default function BillingPage() {
     fetchReferrers();
     fetchCommissions();
     fetchAppointments();
+    fetchOutstandingCredits();
 
     return () => window.removeEventListener('resize', handleResize);
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments]);
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchOutstandingCredits]);
 
   // B3 Slice 1 — invoices come from the local Dexie cache via liveQuery.
   // The sync engine keeps the cache fresh in the background; this just
@@ -1385,27 +1406,50 @@ export default function BillingPage() {
       });
   }, [futureAppointments]);
 
+  // Canonical definitions (agreed 2026-06-14):
+  //   Revenue       = NET billed (totalAmount = gross - discount), CANCELLED excluded.
+  //   Realization % = collected / net billed * 100 (amount-based, capped 100).
+  //   Net profit    = collected - operational expenses - commissions (cash basis).
+  // `totalGross` is kept separately as the pre-discount list value.
   const liveStats = useMemo(() => {
     const safeInvoices = filteredInvoices || [];
-    const paidInvoices = safeInvoices.filter(inv => inv?.status === 'PAID');
-    const pendingInvoices = safeInvoices.filter(inv => inv?.status === 'PENDING' || inv?.status === 'PARTIAL');
-    
-    const totalRevenue = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.grossAmount) || 0), 0);
-    const pendingRevenue = safeInvoices.reduce((sum, inv) => sum + Math.max(0, (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0)), 0);
+    const active = safeInvoices.filter(inv => (inv?.status || '').toUpperCase() !== 'CANCELLED');
+    const paidInvoices = active.filter(inv => inv?.status === 'PAID');
+    const pendingInvoices = active.filter(inv => inv?.status === 'PENDING' || inv?.status === 'PARTIAL');
+
+    const totalGross     = active.reduce((sum, inv) => sum + (Number(inv?.grossAmount) || 0), 0); // list / pre-discount
+    const totalRevenue   = active.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0), 0); // NET billed
+    const totalCollected = active.reduce((sum, inv) => sum + (Number(inv?.paidAmount) || 0), 0);
+    const pendingRevenue = active.reduce((sum, inv) => sum + Math.max(0, (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0)), 0);
     const pendingCount = pendingInvoices.length;
-    
-    const totalBilled = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0), 0);
-    const totalPaid = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.paidAmount) || 0), 0);
-    const realizationRate = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 0;
-    const averageTicket = paidInvoices.length > 0 ? Math.round(totalPaid / paidInvoices.length) : 0;
 
-    const totalGross = totalRevenue;
-    const totalDiscount = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.discountAmount) || 0), 0);
-    const totalCommission = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.commissionAmount) || 0), 0);
-    const netProfit = totalBilled - totalCommission;
+    const realizationRate = totalRevenue > 0 ? Math.min(100, Math.round((totalCollected / totalRevenue) * 100)) : 0;
+    const averageTicket = paidInvoices.length > 0 ? Math.round(totalCollected / paidInvoices.length) : 0;
 
-    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit, totalBilled };
-  }, [filteredInvoices]);
+    const totalDiscount = active.reduce((sum, inv) => sum + (Number(inv?.discountAmount) || 0), 0);
+    // Referral cuts accrued on the period's billed invoices.
+    const totalCommission = active.reduce((sum, inv) => sum + (Number(inv?.commissionAmount) || 0), 0);
+    // Operating spend (non-referral) + referral actually paid out — surfaced for a
+    // separate "net profit" view, but DELIBERATELY NOT part of "net revenue".
+    const operationalExpenses = (expenses || [])
+      .filter(e => e && e.category !== 'Referral' && !((e.description || '').toLowerCase().includes('referral')))
+      .reduce((sum, e) => sum + (Number(e?.amount) || 0) + (Number(e?.taxAmount) || 0), 0);
+    const commissionPaidOut = (referralCommissions || [])
+      .filter(c => (c?.commissionStatus || c?.status || '').toUpperCase() === 'PAID')
+      .reduce((sum, c) => sum + (Number(c?.payoutAmount !== undefined ? c.payoutAmount : c?.amount) || 0), 0);
+
+    // NET REVENUE = what the centre keeps from the period's BILLING: net billed
+    // (gross − discounts) minus referral cuts. Operating expenses are NOT part of
+    // "net revenue" (they belong to net PROFIT), so they can never drag it
+    // negative; and referral cuts can't exceed the revenue they're a cut of, so
+    // this stays ≥ 0. Consistent with the gross / discounts / cuts tiles, all of
+    // which are billing-based over the same (date-filtered) invoice set.
+    const netRevenue = Math.max(0, totalRevenue - totalCommission);
+    // Net profit (incl. operating spend + commissions paid) — for a future tile.
+    const netProfit = netRevenue;
+
+    return { totalRevenue, totalGross, totalCollected, pendingRevenue, pendingCount, realizationRate, averageTicket, totalDiscount, totalCommission, commissionPaidOut, operationalExpenses, netRevenue, netProfit, totalBilled: totalRevenue };
+  }, [filteredInvoices, expenses, referralCommissions]);
 
   const combinedReferralCuts = useMemo(() => {
     const legacyCuts = expenses.filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => {
@@ -1510,6 +1554,7 @@ export default function BillingPage() {
         description: e.description,
         category: e.category,
         amount: e.amount,
+        taxAmount: e.taxAmount,
         type: 'OPERATIONAL',
         status: e.status?.toUpperCase() || 'PAID'
     }));
@@ -1563,20 +1608,22 @@ export default function BillingPage() {
 
   const outflowStats = useMemo(() => {
     const safeOutflow = filteredOutflow || [];
-    const totalOutflow = safeOutflow.reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
-    const referralTotal = safeOutflow.filter(e => e?.category === 'Referral').reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
-    const operationalTotal = safeOutflow.filter(e => e?.category !== 'Referral').reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
-    
+    // Expense cost = amount + tax (the real cash outflow).
+    const cost = (exp) => (Number(exp?.amount) || 0) + (Number(exp?.taxAmount) || 0);
+    const totalOutflow = safeOutflow.reduce((sum, exp) => sum + cost(exp), 0);
+    const referralTotal = safeOutflow.filter(e => e?.category === 'Referral').reduce((sum, exp) => sum + cost(exp), 0);
+    const operationalTotal = safeOutflow.filter(e => e?.category !== 'Referral').reduce((sum, exp) => sum + cost(exp), 0);
+
     const today = new Date().toLocaleDateString('en-CA');
     const todayOutflow = safeOutflow
       .filter(e => e?.date && new Date(e.date).toLocaleDateString('en-CA') === today)
-      .reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
+      .reduce((sum, exp) => sum + cost(exp), 0);
 
     const referralPercentage = totalOutflow > 0 ? Math.round((referralTotal / totalOutflow) * 100) : 0;
 
     const categories = Array.from(new Set(safeOutflow.map(e => e?.category || 'General')));
     const categoryBreakdown = categories.map(cat => {
-        const amount = safeOutflow.filter(e => e?.category === cat).reduce((sum, e) => sum + (Number(e?.amount) || 0), 0);
+        const amount = safeOutflow.filter(e => e?.category === cat).reduce((sum, e) => sum + cost(e), 0);
         const percentage = totalOutflow > 0 ? Math.round((amount / totalOutflow) * 100) : 0;
         return { category: cat, amount, percentage };
     });
@@ -2379,7 +2426,6 @@ export default function BillingPage() {
               { id: 'INVOICES',      label: 'Revenue' },
               { id: 'EXPENSES',      label: 'Expenses' },
               { id: 'REFERRAL_CUTS', label: 'Referrals' },
-              { id: 'ADVANCES',      label: 'Advances' },
               { id: 'ANALYTICS',     label: 'Analytics' },
               { id: 'FINANCE',       label: 'Control' },
             ].map(tab => (
@@ -2504,6 +2550,7 @@ export default function BillingPage() {
       {billingViewMode === 'INVOICES' && (
         <RevenueHub
           filteredInvoices={filteredInvoices}
+          advanceByPatient={advanceByPatient}
           approvalMap={approvalMap}
           approvalFilter={approvalFilter}
           setApprovalFilter={setApprovalFilter}
@@ -2577,10 +2624,6 @@ export default function BillingPage() {
 
       )}
 
-      {billingViewMode === 'ADVANCES' && (
-        <AdvancesHub isMobile={isMobile} />
-      )}
-
       {billingViewMode === 'ANALYTICS' && matrix && (
         <AnalyticsHub 
           isMobile={isMobile}
@@ -2651,6 +2694,7 @@ export default function BillingPage() {
           handleSaveInvoice={handleSaveInvoice}
           handleCollectPayment={handleCollectPayment}
           handleApplyCredit={handleApplyCredit}
+          onAdvanceRefunded={refreshAllFinancialData}
           handlePrintA4={handlePrintA4}
           handlePrintThermal={handlePrintThermal}
           onApplyAdjustment={handleApplyAdjustment}

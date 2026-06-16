@@ -46,10 +46,10 @@ function isoWeekKey(input) {
   return `${target.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-// Pull the most useful "revenue date" off an invoice. Prefer createdAt
-// (matches how the server stats group); fall back to serviceDate.
+// Canonical date basis (agreed 2026-06-14): bucket by ServiceDate (when the scan
+// happened), matching the server. Fall back to createdAt only if absent.
 function invoiceDate(inv) {
-  return inv?.createdAt || inv?.serviceDate || null;
+  return inv?.serviceDate || inv?.createdAt || null;
 }
 
 function num(v) { return Number(v) || 0; }

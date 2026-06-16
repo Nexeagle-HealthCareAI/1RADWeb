@@ -145,3 +145,30 @@ export function buildSpellDecorations(doc, isWordValid, headPos) {
   });
   return DecorationSet.create(doc, decos);
 }
+
+/**
+ * Dirty-range variant: scan only the text nodes within [rangeFrom, rangeTo] and
+ * return the spell decorations for that slice (not a DecorationSet). The caller
+ * removes the stale decorations covering the same range and adds these, so a
+ * keystroke only re-checks the edited block instead of the whole document.
+ * `rangeFrom`/`rangeTo` should be block boundaries so no word is split.
+ */
+export function buildSpellDecorationsForRange(doc, isWordValid, headPos, rangeFrom, rangeTo) {
+  const decos = [];
+  doc.nodesBetween(rangeFrom, rangeTo, (node, pos) => {
+    if (!node.isText || !node.text) return;
+    const text = node.text;
+    TOKEN_RE.lastIndex = 0;
+    let m;
+    while ((m = TOKEN_RE.exec(text)) !== null) {
+      const word = m[0];
+      const from = pos + m.index;
+      const to = from + word.length;
+      if (from < rangeFrom || to > rangeTo) continue;          // keep within range
+      if (headPos != null && headPos >= from && headPos <= to) continue; // being typed
+      if (isWordValid(word)) continue;
+      decos.push(Decoration.inline(from, to, { class: 'ne-spell-error', 'data-spell-word': word }));
+    }
+  });
+  return decos;
+}

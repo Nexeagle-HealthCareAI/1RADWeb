@@ -139,16 +139,9 @@ const ReferralHub = ({
   // Split cuts by their service (appointment) date. A future-dated appointment
   // hasn't happened yet, so its commission is "upcoming/optimistic" — shown in a
   // separate gamified view rather than mixed into earned payouts. (item 4)
-  const { presentCuts, futureCuts } = useMemo(() => {
-    const todayStr = new Date().toLocaleDateString('en-CA');
-    const present = [], future = [];
-    (filteredReferralCuts || []).forEach(c => {
-      let dayStr = null;
-      if (c?.serviceDate) { const d = new Date(c.serviceDate); if (!isNaN(d.getTime())) dayStr = d.toLocaleDateString('en-CA'); }
-      if (dayStr && dayStr > todayStr) future.push(c); else present.push(c);
-    });
-    return { presentCuts: present, futureCuts: future };
-  }, [filteredReferralCuts]);
+  // No future/upcoming cuts — billing happens on arrival, so every cut here is
+  // already earned. Use the filtered list directly.
+  const presentCuts = useMemo(() => filteredReferralCuts || [], [filteredReferralCuts]);
 
   const referralStats = useMemo(() => {
     const cuts = presentCuts || [];
@@ -172,19 +165,6 @@ const ReferralHub = ({
     });
     return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
   }, [presentCuts]);
-
-  // Aggregates for the gamified "upcoming" view (projected, not yet earned).
-  const futureStats = useMemo(() => {
-    const cuts = futureCuts || [];
-    const projected = cuts.reduce((s, c) => s + (Number(c?.amount) || 0), 0);
-    const patients = new Set(cuts.map(c => c?.patientName).filter(Boolean)).size;
-    const partners = new Set(cuts.map(c => c?.referrerId || c?.name).filter(Boolean)).size;
-    let nextDate = null;
-    cuts.forEach(c => { if (c?.serviceDate) { const d = new Date(c.serviceDate); if (!isNaN(d.getTime()) && (!nextDate || d < nextDate)) nextDate = d; } });
-    return { projected, count: cuts.length, patients, partners, nextDate };
-  }, [futureCuts]);
-
-  const [viewMode, setViewMode] = useState('earned'); // 'earned' | 'upcoming'
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [confirmModal, setConfirmModal] = useState({
@@ -252,7 +232,6 @@ const ReferralHub = ({
   const partnerGroups = useMemo(() => groupCutsByPartner(presentCuts), [presentCuts]);
 
   // Upcoming/optimistic payouts grouped by partner (future service dates).
-  const futureGroups = useMemo(() => groupCutsByPartner(futureCuts), [futureCuts]);
 
   const activePartner = useMemo(
     () => partnerGroups.find(g => g.id === activePartnerId) || null,
@@ -503,123 +482,6 @@ const ReferralHub = ({
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
   };
 
-  // ── Earned / Upcoming segmented toggle (item 4) ──────────────────────────
-  const renderViewToggle = () => {
-    const tabs = [
-      { key: 'earned', icon: '💰', label: 'Earned', sub: `₹${referralStats.total.toLocaleString()}`, foot: 'SETTLED + OUTSTANDING', count: referralStats.count },
-      { key: 'upcoming', icon: '🚀', label: 'Upcoming', sub: `₹${futureStats.projected.toLocaleString()}`, foot: 'OPTIMISTIC · NOT YET EARNED', count: futureStats.count },
-    ];
-    return (
-      <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', marginBottom: isMobile ? '20px' : '28px' }}>
-        {tabs.map(t => {
-          const active = viewMode === t.key;
-          const isUp = t.key === 'upcoming';
-          return (
-            <button key={t.key} type="button" onClick={() => setViewMode(t.key)}
-              style={{
-                flex: 1, textAlign: 'left', cursor: 'pointer', position: 'relative', overflow: 'hidden',
-                padding: isMobile ? '12px 14px' : '16px 20px', borderRadius: '16px',
-                border: active ? '1.5px solid transparent' : '1px solid #e2e8f0',
-                background: active
-                  ? (isUp ? 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)' : 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)')
-                  : 'white',
-                color: active ? 'white' : '#475569',
-                boxShadow: active ? (isUp ? '0 10px 30px -8px rgba(124,58,237,0.5)' : '0 10px 30px -8px rgba(15,23,42,0.4)') : '0 1px 4px rgba(0,0,0,0.03)',
-                transition: 'all 0.2s',
-              }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                <span style={{ fontSize: isMobile ? '10px' : '11px', fontWeight: 950, letterSpacing: '0.5px', textTransform: 'uppercase', opacity: active ? 0.85 : 0.6 }}>{t.icon} {t.label}</span>
-                {t.count > 0 && (
-                  <span style={{ fontSize: '8.5px', fontWeight: 950, padding: '2px 7px', borderRadius: '999px', background: active ? 'rgba(255,255,255,0.18)' : (isUp ? '#ede9fe' : '#f1f5f9'), color: active ? 'white' : (isUp ? '#6d28d9' : '#475569') }}>{t.count}</span>
-                )}
-              </div>
-              <div style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 950, marginTop: '6px', letterSpacing: '-0.5px' }}>{t.sub}</div>
-              <div style={{ fontSize: '8.5px', fontWeight: 800, marginTop: '2px', opacity: active ? 0.8 : 0.55, letterSpacing: '0.3px' }}>{t.foot}</div>
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // ── Gamified "upcoming / optimistic cuts" view (item 4) ──────────────────
-  const renderUpcoming = () => {
-    const shortDate = (v) => {
-      if (!v) return '—';
-      const d = new Date(v);
-      return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    };
-    if (!futureCuts || futureCuts.length === 0) {
-      return (
-        <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)', borderRadius: '24px', padding: isMobile ? '40px 24px' : '64px 40px', textAlign: 'center', color: 'white', boxShadow: '0 20px 50px -12px rgba(49,46,129,0.5)' }}>
-          <div style={{ fontSize: '44px', marginBottom: '12px' }}>🔮</div>
-          <div style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: 950, letterSpacing: '-0.3px' }}>No upcoming cuts — yet</div>
-          <div style={{ fontSize: isMobile ? '11px' : '12.5px', fontWeight: 600, opacity: 0.7, marginTop: '8px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
-            Book appointments ahead and every future referral lands here as an optimistic cut — your projected earnings, unlocking the day each patient is served.
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '18px' : '24px' }}>
-        {/* Hero — projected earnings */}
-        <div style={{ position: 'relative', overflow: 'hidden', background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 55%, #7c3aed 100%)', borderRadius: '24px', padding: isMobile ? '24px' : '32px 36px', color: 'white', boxShadow: '0 20px 50px -12px rgba(76,29,149,0.55)' }}>
-          <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(167,139,250,0.45), transparent 70%)', pointerEvents: 'none' }} />
-          <div style={{ position: 'relative' }}>
-            <div style={{ fontSize: isMobile ? '9px' : '10px', fontWeight: 950, letterSpacing: '2px', opacity: 0.75 }}>🚀 OPTIMISTIC EARNINGS INCOMING</div>
-            <div style={{ fontSize: isMobile ? '34px' : '46px', fontWeight: 950, letterSpacing: '-1.5px', marginTop: '8px', lineHeight: 1 }}>₹{futureStats.projected.toLocaleString()}</div>
-            <div style={{ fontSize: isMobile ? '10px' : '11px', fontWeight: 700, opacity: 0.7, marginTop: '6px' }}>projected across {futureStats.count} upcoming cut{futureStats.count !== 1 ? 's' : ''}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? '8px' : '12px', marginTop: '20px' }}>
-              {[
-                ['👥', `${futureStats.patients}`, 'patients booked'],
-                ['🤝', `${futureStats.partners}`, 'partners'],
-                ['📅', shortDate(futureStats.nextDate), 'next arrival'],
-              ].map(([icon, val, lbl], i) => (
-                <div key={i} style={{ flex: isMobile ? '1 1 40%' : 'none', background: 'rgba(255,255,255,0.1)', borderRadius: '14px', padding: isMobile ? '10px 12px' : '12px 18px', border: '1px solid rgba(255,255,255,0.12)' }}>
-                  <div style={{ fontSize: isMobile ? '14px' : '17px', fontWeight: 950 }}>{icon} {val}</div>
-                  <div style={{ fontSize: '8.5px', fontWeight: 800, opacity: 0.7, letterSpacing: '0.5px', textTransform: 'uppercase', marginTop: '2px' }}>{lbl}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Upcoming cuts, grouped by partner */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: isMobile ? '14px' : '18px' }}>
-          {futureGroups.map(group => (
-            <div key={group.id} style={{ background: 'white', borderRadius: '20px', border: '1px solid #ede9fe', overflow: 'hidden', boxShadow: '0 4px 20px rgba(124,58,237,0.06)' }}>
-              <div style={{ padding: isMobile ? '14px 16px' : '16px 20px', background: 'linear-gradient(135deg, #faf5ff 0%, white 80%)', borderBottom: '1px solid #f3e8ff', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.3px', wordBreak: 'break-word' }}>{group.name}</div>
-                  {group.onBehalfOf && <div style={{ fontSize: '9px', fontWeight: 700, color: '#7c3aed', marginTop: '2px' }}>on behalf of {group.onBehalfOf}</div>}
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: '8px', fontWeight: 950, color: '#a78bfa', letterSpacing: '0.5px' }}>PROJECTED</div>
-                  <div style={{ fontSize: '16px', fontWeight: 950, color: '#6d28d9' }}>₹{group.total.toLocaleString()}</div>
-                </div>
-              </div>
-              <div style={{ padding: isMobile ? '10px 12px' : '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {group.cuts.slice().sort((a, b) => new Date(a.serviceDate) - new Date(b.serviceDate)).map(cut => (
-                  <div key={cut.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', borderRadius: '12px', background: '#faf5ff', border: '1px dashed #ddd6fe' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(cut.patientName || 'Patient').toUpperCase()}</div>
-                      <div style={{ fontSize: '8.5px', fontWeight: 700, color: '#94a3b8', marginTop: '1px' }}>{(cut.modality || '').toUpperCase()}{cut.modality ? ' · ' : ''}🔒 unlocks {shortDate(cut.serviceDate)}</div>
-                    </div>
-                    <div style={{ fontSize: '12px', fontWeight: 950, color: (Number(cut.amount) || 0) < 0 ? '#ea580c' : '#6d28d9', flexShrink: 0 }}>₹{(Number(cut.amount) || 0).toLocaleString()}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ textAlign: 'center', fontSize: '9.5px', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.5px' }}>
-          ✨ These cuts unlock automatically once each patient is served &amp; their payment is collected.
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="referral-cuts-main" style={{ animation: 'fadeIn 0.3s' }}>
        <div style={{ 
@@ -713,10 +575,10 @@ const ReferralHub = ({
                overflowX: 'auto',
                width: isMobile ? '100%' : 'auto'
              }}>
-                {['TODAY', 'PAST', 'FUTURE', 'ALL', 'CUSTOM'].map(t => (
+                {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                   <button
                     key={t}
-                    onClick={() => { setTimeFilter(t); setViewMode(t === 'FUTURE' ? 'upcoming' : 'earned'); }}
+                    onClick={() => setTimeFilter(t)}
                     style={{
                       padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
                       background: timeFilter === t ? '#e11d48' : 'transparent',
@@ -744,11 +606,6 @@ const ReferralHub = ({
           </div>
        </div>
 
-       {/* Earned / Upcoming toggle (item 4) */}
-       {renderViewToggle()}
-
-       {viewMode === 'earned' ? (
-        <>
        <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '18px', marginBottom: '40px' }}>
           <div style={{ background: 'white', padding: '18px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
              <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL PAYOUTS</div>
@@ -976,8 +833,6 @@ const ReferralHub = ({
             )}
           </div>
       </div>
-        </>
-       ) : renderUpcoming()}
 
       {/* ── Drill-down Drawer: per-partner payout list with bulk select ── */}
       {activePartner && (

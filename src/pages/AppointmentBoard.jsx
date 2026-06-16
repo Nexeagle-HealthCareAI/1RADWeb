@@ -145,6 +145,9 @@ export default function AppointmentBoard() {
   // concurrent PUT /appointments/{id} — the second races the first's RowVersion
   // and the server rejects it as an OCC conflict ("modified by someone else").
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  // Shown when a paid/arrived visit is being moved to a future date — the
+  // operator picks how the collected money is returned (wallet credit / cash).
+  const [futureRefundModal, setFutureRefundModal] = useState(false);
   // Admin-approval visibility — latest request per appointment.
   const [approvalMap, setApprovalMap] = useState({ byInvoice: {}, byAppointment: {}, rows: [] });
   useEffect(() => {
@@ -715,6 +718,9 @@ export default function AppointmentBoard() {
             id: a.displayId,
             appointmentId: a.appointmentId,
             ptid: a.patientIdentifier,
+            // The worklist renders app.tokenNo; cached rows may carry it as
+            // dailyTokenNumber — normalise so the arrival token always shows.
+            tokenNo: a.tokenNo ?? a.dailyTokenNumber ?? null,
             status: isFuture ? 'future' : (current === 'future' ? 'scheduled' : current),
           };
         });
@@ -1029,6 +1035,15 @@ export default function AppointmentBoard() {
           });
         }
       } else {
+        // Surface the server-assigned arrival token immediately so it's visible
+        // the instant the patient is marked arrived — no waiting for the delta
+        // sync to land. The sync below then reconciles the canonical row.
+        const tok = result?.dailyTokenNumber;
+        if (tok != null) {
+          setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id)
+            ? { ...a, status: newStatus, tokenNo: tok, dailyTokenNumber: tok }
+            : a));
+        }
         refreshAppointments();
       }
     } catch (error) {
@@ -1435,7 +1450,7 @@ export default function AppointmentBoard() {
     }
   };
 
-  const handleEditAppointment = async () => {
+  const handleEditAppointment = async (refundMode) => {
     if (!editingAppointment) return;
     if (isSavingEdit) return;   // double-submit guard — see isSavingEdit
 
@@ -1514,11 +1529,25 @@ export default function AppointmentBoard() {
       serviceName: '', modality: '', amount: 0, referralCutValue: 0,
     };
 
+    // Moving an ARRIVED (possibly paid) visit to a FUTURE date voids its bill and
+    // returns any money collected. Ask the operator how to refund the first time
+    // through; the chosen mode is sent to the server (which voids + refunds).
+    const newDay = new Date(editingAppointment.dateTime); newDay.setHours(0, 0, 0, 0);
+    const todayDay = new Date(); todayDay.setHours(0, 0, 0, 0);
+    const movingToFuture = newDay.getTime() > todayDay.getTime();
+    if (movingToFuture && isPatientArrived(editingAppointment) && refundMode === undefined) {
+      setFutureRefundModal(true);
+      return;
+    }
+
     setIsSavingEdit(true);
     try {
-      await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
+      const editResp = await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
         appointmentId: editingAppointment.appointmentId,
         patientId: editingAppointment.patientId,
+        // Reschedule-to-future refund choice (WALLET | CASH); null when not moving
+        // a paid visit to the future.
+        refundMode: refundMode || null,
         // Scalar fields kept for v1-server backward compat (mirror the
         // first line). The server prefers `services` when present.
         service:  primary.serviceName,
@@ -1548,6 +1577,23 @@ export default function AppointmentBoard() {
         patientAge: editingAppointment.patientAge,
         patientGender: editingAppointment.patientGender,
       });
+
+      // The server may PAUSE the edit instead of applying it:
+      //   • requiresRefundChoice — removing a paid service left the bill overpaid;
+      //     ask the operator wallet vs cash, then re-submit with that refundMode.
+      //   • requiresApproval — a removed service still has a referral commission
+      //     that's already been PAID OUT; this is routed to admin approval and is
+      //     NOT applied here. Keep the dialog open so they can adjust or escalate.
+      const editData = editResp?.data || {};
+      if (editData.requiresRefundChoice) {
+        setOverpayRefundModal({ open: true, amount: Number(editData.overpayAmount) || 0 });
+        return; // dialog stays open; the modal re-submits with a refund mode
+      }
+      if (editData.requiresApproval) {
+        showNotif('warning', 'NEEDS ADMIN APPROVAL',
+          editData.message || 'A removed service already has a referral commission paid to the referrer — removing it needs admin approval.');
+        return; // not applied
+      }
 
       // Pull the CANONICAL row (reconciled services + amounts) into the cache so
       // the board reflects the add/remove immediately. The edit path has no
@@ -5127,13 +5173,44 @@ export default function AppointmentBoard() {
             </button>
             <button
               type="button"
-              onClick={handleEditAppointment}
+              onClick={() => handleEditAppointment()}
               disabled={isSavingEdit}
               style={{ flex:2, padding:'11px', borderRadius:'10px', border:'none', background:`linear-gradient(135deg,#0a1628,#1e3a5f)`, color:'white', fontWeight:800, fontSize:'13px', cursor:isSavingEdit?'wait':'pointer', opacity:isSavingEdit?0.6:1, boxShadow:'0 4px 14px rgba(10,22,40,0.25)' }}
             >
               {isSavingEdit ? 'Saving…' : 'Save Modifications'}
             </button>
           </div>
+
+          {/* Reschedule-to-future refund choice (paid/arrived visit). */}
+          {futureRefundModal && (
+            <div onClick={() => setFutureRefundModal(false)} style={{ position:'fixed', inset:0, background:'rgba(8,12,30,0.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100001, padding:'20px' }}>
+              <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:'420px', background:'white', borderRadius:'18px', overflow:'hidden', boxShadow:'0 30px 70px -15px rgba(0,0,0,0.45)' }}>
+                <div style={{ padding:'18px 22px', background:'linear-gradient(135deg,#0a1628,#1e3a5f)', color:'white' }}>
+                  <div style={{ fontSize:'10px', fontWeight:950, letterSpacing:'1.5px', opacity:0.75 }}>MOVING TO A FUTURE DATE</div>
+                  <div style={{ fontSize:'16px', fontWeight:950, marginTop:'4px' }}>Return the collected payment</div>
+                </div>
+                <div style={{ padding:'20px 22px' }}>
+                  <div style={{ fontSize:'12.5px', fontWeight:600, color:'#475569', lineHeight:1.55, marginBottom:'16px' }}>
+                    This visit is moving to a future date, so its bill is voided and it will re-bill on the new arrival. How should any money already collected be returned?
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+                    <button type="button" onClick={() => { setFutureRefundModal(false); handleEditAppointment('WALLET'); }}
+                      style={{ padding:'13px', borderRadius:'12px', border:'1px solid #bfdbfe', background:'#eff6ff', color:'#1d4ed8', fontSize:'12.5px', fontWeight:950, cursor:'pointer', textAlign:'left' }}>
+                      💳 Hold as credit (carry forward / refundable later)
+                    </button>
+                    <button type="button" onClick={() => { setFutureRefundModal(false); handleEditAppointment('CASH'); }}
+                      style={{ padding:'13px', borderRadius:'12px', border:'1px solid #bbf7d0', background:'#f0fdf4', color:'#166534', fontSize:'12.5px', fontWeight:950, cursor:'pointer', textAlign:'left' }}>
+                      💵 Refund as cash now
+                    </button>
+                    <button type="button" onClick={() => setFutureRefundModal(false)}
+                      style={{ padding:'11px', borderRadius:'12px', border:'1px solid #e2e8f0', background:'white', color:'#64748b', fontSize:'12px', fontWeight:900, cursor:'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       </div>

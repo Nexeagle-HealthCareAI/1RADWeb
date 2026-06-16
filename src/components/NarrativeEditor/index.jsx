@@ -48,7 +48,8 @@ import { PageNumber } from './extensions/PageNumberNode';
 import { AutoCorrect } from './extensions/AutoCorrect';
 import Footnote from './extensions/Footnote';
 import { GrammarCheck, buildOffsetMap, buildGrammarDecorations } from './extensions/GrammarCheck';
-import { SpellCheck, buildSpellDecorations } from './extensions/SpellCheck';
+import { SpellCheck, buildSpellDecorations, buildSpellDecorationsForRange, spellCheckKey } from './extensions/SpellCheck';
+import { DecorationSet } from '@tiptap/pm/view';
 import SpellSuggestionPopup from './SpellSuggestionPopup';
 import { warmSpellDictionary, isWordValid } from '../../data/spellDictionary';
 import apiClient from '../../api/apiClient';
@@ -981,22 +982,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     showToast(qMsg, qType);
   };
 
-  // ── Grammar Check (LanguageTool free API) ─────────────────────────────────
+  // ── Grammar Check (self-hosted LanguageTool via our backend) ───────────────
+  // Report text is sent to OUR API, which proxies a self-hosted LanguageTool
+  // server — PHI never leaves the network, so no third-party privacy prompt is
+  // needed. If the server hasn't configured LanguageTool, the API returns 503
+  // and we tell the user the feature isn't enabled yet.
   const handleGrammarCheck = async () => {
     if (!editor || grammarLoading) return;
-
-    // One-time privacy acknowledgement stored in localStorage
-    const ackKey = 'ne:lt-privacy-ack';
-    if (!localStorage.getItem(ackKey)) {
-      const ok = window.confirm(
-        'Grammar Check sends the document text to api.languagetool.org for analysis.\n\n' +
-        'Do not use this feature with documents that contain identifiable patient data, ' +
-        'or ensure your organisation permits use of external grammar-check services.\n\n' +
-        'Continue?'
-      );
-      if (!ok) return;
-      localStorage.setItem(ackKey, '1');
-    }
 
     setGrammarLoading(true);
     setGrammarMatches([]);
@@ -1009,14 +1001,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         return;
       }
 
-      const resp = await fetch('https://api.languagetool.org/v2/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ text, language: 'en-US', enabledOnly: 'false' }),
-      });
-
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const res = await apiClient.post('/reporting/grammar-check', { text, language: 'en-US' });
+      const data = res?.data || {};
 
       const offsetMap = buildOffsetMap(editor.state.doc);
       const { decoSet, validMatches } = buildGrammarDecorations(
@@ -1035,7 +1021,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         n === 0 ? 'success' : 'warning',
       );
     } catch (err) {
-      showToast('Grammar check failed — check your connection', 'error');
+      if (err?.response?.status === 503) {
+        showToast('Grammar check isn’t enabled on this server yet.', 'info');
+      } else {
+        showToast('Grammar check failed — please try again.', 'error');
+      }
     } finally {
       setGrammarLoading(false);
     }
@@ -2130,15 +2120,47 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     if (!editor) return undefined;
     let cancelled = false;
     let timer = null;
+    // Dirty-range tracker: accumulates the edited region (in current-doc coords)
+    // between debounced scans so we only re-check the changed block(s). `.full`
+    // forces a whole-document rescan (first run, undo/redo, paste, multi-step).
+    const dirty = { from: null, to: null, full: true };
+
+    // Expand a position range out to the enclosing text-block boundaries so a
+    // word is never split across the scanned slice.
+    const blockRange = (doc, from, to) => {
+      const size = doc.content.size;
+      const f = Math.max(0, Math.min(from, size));
+      const t = Math.max(0, Math.min(to, size));
+      let bFrom = 0, bTo = size;
+      try { const $f = doc.resolve(f); bFrom = $f.start($f.depth); } catch { bFrom = 0; }
+      try { const $t = doc.resolve(t); bTo = $t.end($t.depth); } catch { bTo = size; }
+      if (bFrom > bTo) { bFrom = 0; bTo = size; }
+      return { from: bFrom, to: bTo };
+    };
 
     const run = () => {
       if (cancelled || editor.isDestroyed) return;
-      const { selection } = editor.state;
+      const { selection, doc } = editor.state;
       const head = selection.empty ? selection.head : null;
-      const decoSet = buildSpellDecorations(editor.state.doc, isWordValid, head);
-      editor.commands.setSpellDecorations(decoSet);
+      const useIncremental = !dirty.full && dirty.from != null && dirty.to != null;
+      if (useIncremental) {
+        try {
+          const { from, to } = blockRange(doc, dirty.from, dirty.to);
+          let set = spellCheckKey.getState(editor.state) || DecorationSet.empty;
+          const stale = set.find(from, to);
+          if (stale.length) set = set.remove(stale);
+          const fresh = buildSpellDecorationsForRange(doc, isWordValid, head, from, to);
+          if (fresh.length) set = set.add(doc, fresh);
+          editor.commands.setSpellDecorations(set);
+        } catch {
+          editor.commands.setSpellDecorations(buildSpellDecorations(doc, isWordValid, head));
+        }
+      } else {
+        editor.commands.setSpellDecorations(buildSpellDecorations(doc, isWordValid, head));
+      }
+      dirty.from = null; dirty.to = null; dirty.full = false;
     };
-    recheckSpellRef.current = run;
+    recheckSpellRef.current = () => { dirty.full = true; run(); };
 
     if (!spellcheckOn) {
       editor.commands.clearSpellDecorations();
@@ -2146,13 +2168,40 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     }
 
     const schedule = () => { if (timer) clearTimeout(timer); timer = setTimeout(run, 400); };
-    // First scan once the dictionaries are warm, then on every edit.
-    warmSpellDictionary().then(() => { if (!cancelled) run(); });
-    editor.on('update', schedule);
+    // Track the edited region from each transaction. A single-step edit (typing)
+    // gets the fast incremental path; anything else falls back to a full rescan.
+    const onUpdate = ({ transaction }) => {
+      if (transaction?.docChanged) {
+        if (transaction.mapping.maps.length === 1) {
+          // Re-map the accumulated range into the new doc, then union the change.
+          if (dirty.from != null) {
+            dirty.from = transaction.mapping.map(dirty.from, -1);
+            dirty.to = transaction.mapping.map(dirty.to, 1);
+          }
+          let cf = Infinity, ct = -1;
+          transaction.mapping.maps[0].forEach((_os, _oe, ns, ne) => {
+            if (ns < cf) cf = ns;
+            if (ne > ct) ct = ne;
+          });
+          if (cf <= ct) {
+            dirty.from = dirty.from == null ? cf : Math.min(dirty.from, cf);
+            dirty.to = dirty.to == null ? ct : Math.max(dirty.to, ct);
+          } else {
+            dirty.full = true;
+          }
+        } else {
+          dirty.full = true; // multi-step (paste/undo/replace) → rescan all
+        }
+      }
+      schedule();
+    };
+    // First scan once the dictionaries are warm (full), then incrementally on edit.
+    warmSpellDictionary().then(() => { if (!cancelled) { dirty.full = true; run(); } });
+    editor.on('update', onUpdate);
     return () => {
       cancelled = true;
       recheckSpellRef.current = () => {};
-      editor.off('update', schedule);
+      editor.off('update', onUpdate);
       if (timer) clearTimeout(timer);
     };
   }, [editor, spellcheckOn]);

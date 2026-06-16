@@ -113,14 +113,8 @@ export default function DoctorReferralPortal() {
   // an "upcoming / optimistic" cut shown in its own gamified panel; everything
   // today-or-earlier is an earned referral driving the table + stats.
   const today = todayStr();
-  const presentPatients = useMemo(
-    () => (data?.patients || []).filter(p => !p.date || p.date <= today),
-    [data, today]
-  );
-  const futurePatients = useMemo(
-    () => (data?.patients || []).filter(p => p.date && p.date > today),
-    [data, today]
-  );
+  // No future/upcoming cuts — every referral the doctor sees is already earned.
+  const presentPatients = useMemo(() => data?.patients || [], [data]);
 
   const filtered = useMemo(() => {
     const list = presentPatients;
@@ -239,13 +233,6 @@ export default function DoctorReferralPortal() {
     [presentPatients, today]
   );
 
-  // Upcoming / optimistic aggregates (projected, not yet earned).
-  const upcoming = useMemo(() => {
-    const list = [...futurePatients].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-    const projected = list.reduce((s, p) => s + (Number(p.eligible) || 0), 0);
-    return { list, count: list.length, projected, next: list[0]?.date || null };
-  }, [futurePatients]);
-
   if (intro) return <Splash />;
 
   if (loading) {
@@ -304,8 +291,6 @@ export default function DoctorReferralPortal() {
       {/* Advanced performance KPIs (lifetime) */}
       <Performance perf={perf} />
 
-      {/* Gamified upcoming / optimistic cuts */}
-      {upcoming.count > 0 && <Upcoming upcoming={upcoming} />}
 
       {/* Patient pipeline — booked vs arrived-unpaid vs paid, + patients served */}
       <Pipeline pipeline={pipeline} />
@@ -684,43 +669,6 @@ function ProfileButton({ id, token, data, setData }) {
         </div>
       )}
     </>
-  );
-}
-
-// Gamified future cuts — "optimistic earnings" the doctor will unlock as the
-// booked patients arrive. Deliberately playful, like a rewards tracker.
-function Upcoming({ upcoming }) {
-  return (
-    <div style={{ marginBottom: '18px' }}>
-      <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '20px', padding: '22px 24px', background: 'linear-gradient(135deg,#1e1b4b 0%,#4c1d95 55%,#7c3aed 100%)', color: 'white', boxShadow: '0 16px 40px -12px rgba(76,29,149,0.5)' }}>
-        <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '170px', height: '170px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(167,139,250,0.45), transparent 70%)', pointerEvents: 'none' }} />
-        <div style={{ position: 'relative' }}>
-          <div style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '2px', opacity: 0.78 }}>🚀 UPCOMING · OPTIMISTIC CUTS</div>
-          <div style={{ fontSize: '38px', fontWeight: 950, letterSpacing: '-1.2px', marginTop: '6px', lineHeight: 1 }}>{inr(upcoming.projected)}</div>
-          <div style={{ fontSize: '11.5px', fontWeight: 700, opacity: 0.72, marginTop: '5px' }}>
-            incoming across {upcoming.count} booked patient{upcoming.count === 1 ? '' : 's'} · next on {prettyDate(upcoming.next)}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px', marginTop: '12px' }}>
-        {upcoming.list.map((p, i) => (
-          <div key={i} style={{ background: 'white', border: '1px dashed #ddd6fe', borderRadius: '14px', padding: '14px 16px', boxShadow: '0 4px 16px rgba(124,58,237,0.06)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.patient}</div>
-                <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>{p.modality || '—'} · 🔒 unlocks {prettyDate(p.date)}</div>
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 950, color: '#6d28d9', flexShrink: 0 }}>{inr(p.eligible)}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ textAlign: 'center', fontSize: '10.5px', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.4px', marginTop: '12px' }}>
-        ✨ These unlock automatically once each patient is served — keep referring to grow them.
-      </div>
-    </div>
   );
 }
 

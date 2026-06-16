@@ -34,7 +34,8 @@ const AnalyticsHub = ({
   // Real-time dynamic invoices parser
   const processedInvoices = useMemo(() => {
     return invoices.map(inv => {
-      const dateStr = inv.createdAt || inv.date || TODAY;
+      // Canonical date basis: ServiceDate (when the scan happened), with fallbacks.
+      const dateStr = inv.serviceDate || inv.createdAt || inv.date || TODAY;
       const amtBilled = inv.grossAmount || 0;
       const amtDiscount = inv.discountAmount || 0;
       const amtPaid = inv.paidAmount || 0;
@@ -95,14 +96,7 @@ const AnalyticsHub = ({
         else if (mode.includes('INSUR') || mode.includes('MEDIC')) paymentBreakdown.INSURANCE += collectedAmt;
         else paymentBreakdown.CASH += collectedAmt;
       });
-      const hasPaymentBreakdown = Object.values(paymentBreakdown).some(v => v > 0);
-      const finalPaymentModes = hasPaymentBreakdown ? paymentBreakdown : {
-        CASH: 75000,
-        UPI: 165000,
-        CARD: 45000,
-        INSURANCE: 80000,
-        TPA: 35000
-      };
+      const finalPaymentModes = paymentBreakdown;
       const totalPaymentVolume = Object.values(finalPaymentModes).reduce((a, b) => a + b, 0);
 
       return { chartTrend, paymentModes: finalPaymentModes, totalPaymentVolume, agingBuckets };
@@ -122,16 +116,8 @@ const AnalyticsHub = ({
       return { label: monthLabels[idx], billed, collected, key };
     });
 
-    // If zero actual historical data, overlay highly professional fallback visual curves
-    const hasData = aggregated.some(item => item.billed > 0 || item.collected > 0);
-    const chartTrend = hasData ? aggregated : [
-      { label: monthLabels[0], billed: 120000, collected: 95000 },
-      { label: monthLabels[1], billed: 155000, collected: 130000 },
-      { label: monthLabels[2], billed: 140000, collected: 115000 },
-      { label: monthLabels[3], billed: 190000, collected: 165000 },
-      { label: monthLabels[4], billed: 210000, collected: 185000 },
-      { label: monthLabels[5], billed: 245000, collected: 220000 }
-    ];
+    // Real data only — no synthetic fallback curve. Empty practice => flat zeros.
+    const chartTrend = aggregated;
 
     // Payment Mode realization rates
     const paymentBreakdown = { CASH: 0, UPI: 0, CARD: 0, INSURANCE: 0, TPA: 0 };
@@ -144,15 +130,7 @@ const AnalyticsHub = ({
       else paymentBreakdown.CASH += collectedAmt;
     });
 
-    const hasPaymentBreakdown = Object.values(paymentBreakdown).some(v => v > 0);
-    const finalPaymentModes = hasPaymentBreakdown ? paymentBreakdown : {
-      CASH: 75000,
-      UPI: 165000,
-      CARD: 45000,
-      INSURANCE: 80000,
-      TPA: 35000
-    };
-
+    const finalPaymentModes = paymentBreakdown;
     const totalPaymentVolume = Object.values(finalPaymentModes).reduce((a, b) => a + b, 0);
 
     // Dues Aging Analysis Buckets
@@ -166,15 +144,7 @@ const AnalyticsHub = ({
       }
     });
 
-    const hasAgingData = Object.values(agingBuckets).some(v => v > 0);
-    const finalAgingBuckets = hasAgingData ? agingBuckets : {
-      bucket30: 38000,
-      bucket60: 22500,
-      bucket90: 14000,
-      bucketPlus: 9800
-    };
-
-    return { chartTrend, paymentModes: finalPaymentModes, totalPaymentVolume, agingBuckets: finalAgingBuckets };
+    return { chartTrend, paymentModes: finalPaymentModes, totalPaymentVolume, agingBuckets };
   }, [processedInvoices, matrix]);
 
   // Dynamic Heuristic AI Recovery Insight generator
@@ -205,129 +175,77 @@ const AnalyticsHub = ({
   // TAB 2: DISCOUNT & REFERRAL CALCULATIONS
   // ==========================================
   const discountReferralData = useMemo(() => {
-    // Check backend matrix discounts allocations
-    if (matrix && matrix.discountAllocations) {
-      const finalDiscounts = {
-        SENIOR: matrix.discountAllocations.seniorCitizen || 12000,
-        CORPORATE: matrix.discountAllocations.corporate || 24500,
-        REFERRAL: matrix.discountAllocations.referral || 36000,
-        PROMOTIONAL: matrix.discountAllocations.promotional || 8500
-      };
-      const totalDiscounts = Object.values(finalDiscounts).reduce((a, b) => a + b, 0);
+    // Discounts are split by the REAL deduction vectors recorded on the invoice
+    // (Centre / Referrer / Institutional / Other) — no guessing from patient name,
+    // and no hardcoded demo values. Empty practice => zeros (true empty state).
+    const buildLeakage = (rows) => rows
+      .map(r => {
+        const avgRate = r.totalBilled > 0 ? (r.totalDisc / r.totalBilled) * 100 : 0;
+        let badge = '🟢 NORMAL', color = '#059669';
+        if (avgRate > 20) { badge = '🔴 HIGH RISK'; color = '#dc2626'; }
+        else if (avgRate > 10) { badge = '🟡 REVIEW'; color = '#d97706'; }
+        return { name: r.name, avgRate, totalDisc: r.totalDisc, totalBilled: r.totalBilled, badge, color };
+      })
+      .sort((a, b) => b.avgRate - a.avgRate);
 
-      const sortedRecipients = (matrix.physicianRoiLedger || [])
+    // Backend matrix path (authoritative when online).
+    if (matrix && matrix.discountAllocations) {
+      const da = matrix.discountAllocations;
+      const discounts = {
+        CENTRE: da.centre || 0,
+        REFERRER: da.referrer || 0,
+        INSTITUTIONAL: da.institutional || 0,
+        OTHER: da.other || 0
+      };
+      const totalDiscounts = Object.values(discounts).reduce((a, b) => a + b, 0);
+      const topRecipients = (matrix.physicianRoiLedger || [])
         .map(p => ({ name: p.doctorName, amount: p.commissionPaid }))
         .filter(p => p.amount > 0)
         .slice(0, 5);
-
-      const finalRecipients = sortedRecipients.length > 0 ? sortedRecipients : [
-        { name: 'DR. ARVIND MEHTA (CARDIOLOGY)', amount: 48500 },
-        { name: 'DR. SUNITA SHARMA (PEDIATRIC)', amount: 32000 },
-        { name: 'DR. RAJESH GUPTA (NEUROLOGY)', amount: 28500 },
-        { name: 'DR. PRIYA VERMA (GYNAECOLOGY)', amount: 19000 },
-        { name: 'DR. AMIT PATEL (ORTHOPEDIC)', amount: 15500 }
-      ];
-
-      const leakageTable = (matrix.leakageAudits || []).map(a => {
-        let badge = '🟢 NORMAL';
-        let color = '#059669';
-        if (a.averageDiscountPercentage > 20) { badge = '🔴 HIGH RISK'; color = '#dc2626'; }
-        else if (a.averageDiscountPercentage > 10) { badge = '🟡 REVIEW'; color = '#d97706'; }
-        return {
-          name: a.doctorName,
-          avgRate: a.averageDiscountPercentage,
-          totalDisc: a.totalDiscountApproved,
-          totalBilled: a.totalBilledRevenue,
-          badge,
-          color
-        };
-      });
-
-      const finalLeakage = leakageTable.length > 0 ? leakageTable : [
-        { name: 'DR. ARVIND MEHTA', avgRate: 24.5, totalDisc: 18500, totalBilled: 75500, badge: '🔴 HIGH RISK', color: '#dc2626' },
-        { name: 'DR. AMIT PATEL', avgRate: 15.2, totalDisc: 9200, totalBilled: 60500, badge: '🟡 REVIEW', color: '#d97706' },
-        { name: 'DR. SUNITA SHARMA', avgRate: 8.4, totalDisc: 4100, totalBilled: 48800, badge: '🟢 NORMAL', color: '#059669' },
-        { name: 'DR. PRIYA VERMA', avgRate: 4.8, totalDisc: 1500, totalBilled: 31200, badge: '🟢 NORMAL', color: '#059669' }
-      ];
-
-      return { discounts: finalDiscounts, totalDiscounts, topRecipients: finalRecipients, leakageTable: finalLeakage };
+      const leakageTable = buildLeakage((matrix.leakageAudits || []).map(a => ({
+        name: a.doctorName, totalDisc: a.totalDiscountApproved, totalBilled: a.totalBilledRevenue
+      })));
+      return { discounts, totalDiscounts, topRecipients, leakageTable };
     }
 
-    // Discount distribution breakdown
-    const discountBreakdown = { SENIOR: 0, CORPORATE: 0, REFERRAL: 0, PROMOTIONAL: 0 };
+    // Offline / fallback path computed from cached invoices using the real vectors.
+    const discounts = { CENTRE: 0, REFERRER: 0, INSTITUTIONAL: 0, OTHER: 0 };
     processedInvoices.forEach(inv => {
-      const disc = inv.amtDiscount || 0;
-      if (disc > 0) {
-        if (inv.referrerId || inv.referrerDiscount > 0) discountBreakdown.REFERRAL += disc;
-        else if (inv.patientName?.toLowerCase().includes('senior') || inv.patientName?.toLowerCase().includes('sr')) discountBreakdown.SENIOR += disc;
-        else if (inv.centreDiscount > 0) {
-          if (inv.centreDiscount > (inv.grossAmount * 0.15)) discountBreakdown.PROMOTIONAL += disc;
-          else discountBreakdown.CORPORATE += disc;
-        } else {
-          discountBreakdown.CORPORATE += disc;
-        }
-      }
+      const centre = Number(inv.centreDiscount) || 0;
+      const referrer = Number(inv.referrerDiscount) || 0;
+      const institutional = Number(inv.institutionalDeduction) || 0;
+      const total = Number(inv.amtDiscount) || 0;
+      discounts.CENTRE += centre;
+      discounts.REFERRER += referrer;
+      discounts.INSTITUTIONAL += institutional;
+      discounts.OTHER += Math.max(0, total - (centre + referrer + institutional));
     });
+    const totalDiscounts = Object.values(discounts).reduce((a, b) => a + b, 0);
 
-    const hasDiscountData = Object.values(discountBreakdown).some(v => v > 0);
-    const finalDiscounts = hasDiscountData ? discountBreakdown : {
-      SENIOR: 12000,
-      CORPORATE: 24500,
-      REFERRAL: 36000,
-      PROMOTIONAL: 8500
-    };
-    const totalDiscounts = Object.values(finalDiscounts).reduce((a, b) => a + b, 0);
-
-    // Top Referral recipients horizontal bars
     const refEarnings = {};
     referralCommissions.forEach(comm => {
       const ref = comm.referrerName || 'UNKNOWN REFERRER';
       refEarnings[ref] = (refEarnings[ref] || 0) + (comm.commissionAmount || 0);
     });
-
-    // Populate with referrers registry fallbacks if API data is empty
-    const sortedRecipients = Object.entries(refEarnings)
+    const topRecipients = Object.entries(refEarnings)
       .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount);
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
 
-    const hasRecipients = sortedRecipients.length > 0;
-    const finalRecipients = hasRecipients ? sortedRecipients.slice(0, 5) : [
-      { name: 'DR. ARVIND MEHTA (CARDIOLOGY)', amount: 48500 },
-      { name: 'DR. SUNITA SHARMA (PEDIATRIC)', amount: 32000 },
-      { name: 'DR. RAJESH GUPTA (NEUROLOGY)', amount: 28500 },
-      { name: 'DR. PRIYA VERMA (GYNAECOLOGY)', amount: 19000 },
-      { name: 'DR. AMIT PATEL (ORTHOPEDIC)', amount: 15500 }
-    ];
-
-    // Leakage Table audit (approvals of above-average discounts)
     const docDiscounts = {};
     processedInvoices.forEach(inv => {
       if (inv.referrerId) {
-        const refName = inv.referrerName || referrers.find(r => r.referrerId === inv.referrerId)?.name || 'Dr. Guest';
-        if (!docDiscounts[refName]) docDiscounts[refName] = { totalBilled: 0, totalDisc: 0, count: 0 };
+        const refName = inv.referrerName || referrers.find(r => r.referrerId === inv.referrerId)?.name || 'Referrer';
+        if (!docDiscounts[refName]) docDiscounts[refName] = { totalBilled: 0, totalDisc: 0 };
         docDiscounts[refName].totalBilled += inv.amtBilled;
         docDiscounts[refName].totalDisc += inv.amtDiscount;
-        docDiscounts[refName].count += 1;
       }
     });
+    const leakageTable = buildLeakage(
+      Object.entries(docDiscounts).map(([name, s]) => ({ name, totalDisc: s.totalDisc, totalBilled: s.totalBilled }))
+    );
 
-    const hasLeakage = Object.keys(docDiscounts).length > 0;
-    const leakageTable = hasLeakage ? Object.entries(docDiscounts).map(([name, stats]) => {
-      const avgRate = stats.totalBilled > 0 ? (stats.totalDisc / stats.totalBilled) * 100 : 0;
-      let badge = '🟢 NORMAL';
-      let color = '#059669';
-      if (avgRate > 20) { badge = '🔴 HIGH RISK'; color = '#dc2626'; }
-      else if (avgRate > 10) { badge = '🟡 REVIEW'; color = '#d97706'; }
-
-      return { name, avgRate, totalDisc: stats.totalDisc, totalBilled: stats.totalBilled, badge, color };
-    }).sort((a, b) => b.avgRate - a.avgRate) : [
-      { name: 'DR. ARVIND MEHTA', avgRate: 24.5, totalDisc: 18500, totalBilled: 75500, badge: '🔴 HIGH RISK', color: '#dc2626' },
-      { name: 'DR. AMIT PATEL', avgRate: 15.2, totalDisc: 9200, totalBilled: 60500, badge: '🟡 REVIEW', color: '#d97706' },
-      { name: 'DR. SUNITA SHARMA', avgRate: 8.4, totalDisc: 4100, totalBilled: 48800, badge: '🟢 NORMAL', color: '#059669' },
-      { name: 'DR. PRIYA VERMA', avgRate: 4.8, totalDisc: 1500, totalBilled: 31200, badge: '🟢 NORMAL', color: '#059669' }
-    ];
-
-    return { discounts: finalDiscounts, totalDiscounts, topRecipients: finalRecipients, leakageTable };
+    return { discounts, totalDiscounts, topRecipients, leakageTable };
   }, [processedInvoices, referralCommissions, referrers, matrix]);
 
   // ==========================================
@@ -385,15 +303,7 @@ const AnalyticsHub = ({
       count: stats.count,
       avgRevenue: stats.count > 0 ? stats.gross / stats.count : 0,
       efficiency: stats.gross > 0 ? (stats.net / stats.gross) * 100 : 0
-    })) : [
-      { modality: 'MRI', gross: 280000, net: 235000, payout: 45000, count: 56, avgRevenue: 5000, efficiency: 83.9 },
-      { modality: 'CT', gross: 195000, net: 165000, payout: 30000, count: 65, avgRevenue: 3000, efficiency: 84.6 },
-      { modality: 'X-RAY', gross: 85000, net: 78000, payout: 7000, count: 120, avgRevenue: 708, efficiency: 91.7 },
-      { modality: 'ULTRASOUND', gross: 110000, net: 92000, payout: 18000, count: 73, avgRevenue: 1500, efficiency: 83.6 },
-      { modality: 'PET', gross: 160000, net: 138000, payout: 22000, count: 16, avgRevenue: 10000, efficiency: 86.2 },
-      { modality: 'MAMMOGRAPHY', gross: 45000, net: 41000, payout: 4000, count: 30, avgRevenue: 1500, efficiency: 91.1 },
-      { modality: 'FLUOROSCOPY', gross: 32000, net: 28500, payout: 3500, count: 14, avgRevenue: 2285, efficiency: 89.0 }
-    ];
+    })) : [];
 
     return finalPerformance;
   }, [processedInvoices, matrix]);
@@ -416,15 +326,7 @@ const AnalyticsHub = ({
         ratio: p.roiMultiplier
       }));
 
-      const finalRoi = roiLedger.length > 0 ? roiLedger : [
-        { name: 'DR. ARVIND MEHTA', revenue: 245000, commission: 24500, ratio: 10.0 },
-        { name: 'DR. SUNITA SHARMA', revenue: 180000, commission: 18000, ratio: 10.0 },
-        { name: 'DR. RAJESH GUPTA', revenue: 155000, commission: 12000, ratio: 12.9 },
-        { name: 'DR. PRIYA VERMA', revenue: 110000, commission: 8500, ratio: 12.9 },
-        { name: 'DR. AMIT PATEL', revenue: 95000, commission: 9500, ratio: 10.0 }
-      ];
-
-      return { patientBreakdown, roiLedger: finalRoi };
+      return { patientBreakdown, roiLedger };
     }
 
     // 1. Stacked new vs returning patient density
@@ -440,13 +342,30 @@ const AnalyticsHub = ({
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     });
 
+    // Exact new-vs-returning (no 65/35 estimate): a patient is "new" in the month
+    // of their first-ever service and "returning" in any later month. Distinct
+    // patients per month, keyed by serviceDate (via dateStr).
+    const firstMonthByPatient = {};
+    processedInvoices.forEach(inv => {
+      const month = (inv.dateStr || '').slice(0, 7); // YYYY-MM
+      if (!month) return;
+      const pid = inv.patientId || inv.patientName || inv.id;
+      if (!pid) return;
+      if (!firstMonthByPatient[pid] || month < firstMonthByPatient[pid]) firstMonthByPatient[pid] = month;
+    });
+
     const patientBreakdown = monthKeys.map((key, idx) => {
-      let count = 0;
+      const seen = new Set();
+      let newPatients = 0;
+      let returnPatients = 0;
       processedInvoices.forEach(inv => {
-        if (inv.dateStr.startsWith(key)) count++;
+        if ((inv.dateStr || '').slice(0, 7) !== key) return;
+        const pid = inv.patientId || inv.patientName || inv.id;
+        if (!pid || seen.has(pid)) return;
+        seen.add(pid);
+        if (firstMonthByPatient[pid] === key) newPatients++;
+        else returnPatients++;
       });
-      const newPatients = count > 0 ? Math.round(count * 0.65) : 0;
-      const returnPatients = count > 0 ? Math.max(0, count - newPatients) : 0;
       return { month: monthLabels[idx], newPatients, returnPatients };
     });
 
@@ -470,13 +389,7 @@ const AnalyticsHub = ({
       const comm = doctorCommissions[name] || 0;
       const ratio = comm > 0 ? rev / comm : rev > 0 ? Infinity : 0;
       return { name, revenue: rev, commission: comm, ratio };
-    }).sort((a, b) => b.revenue - a.revenue) : [
-      { name: 'DR. ARVIND MEHTA', revenue: 245000, commission: 24500, ratio: 10.0 },
-      { name: 'DR. SUNITA SHARMA', revenue: 180000, commission: 18000, ratio: 10.0 },
-      { name: 'DR. RAJESH GUPTA', revenue: 155000, commission: 12000, ratio: 12.9 },
-      { name: 'DR. PRIYA VERMA', revenue: 110000, commission: 8500, ratio: 12.9 },
-      { name: 'DR. AMIT PATEL', revenue: 95000, commission: 9500, ratio: 10.0 }
-    ];
+    }).sort((a, b) => b.revenue - a.revenue) : [];
 
     return { patientBreakdown, roiLedger };
   }, [processedInvoices, referralCommissions, referrers, matrix]);
@@ -810,7 +723,7 @@ const AnalyticsHub = ({
 
   // Curated color pallets
   const paymentColors = { CASH: '#64748b', UPI: '#06b6d4', CARD: '#4f46e5', INSURANCE: '#d97706', TPA: '#e11d48' };
-  const discountColors = { SENIOR: '#10b981', CORPORATE: '#0f52ba', REFERRAL: '#d97706', PROMOTIONAL: '#8b5cf6' };
+  const discountColors = { CENTRE: '#0f52ba', REFERRER: '#d97706', INSTITUTIONAL: '#8b5cf6', OTHER: '#64748b' };
 
   return (
     <div className="analytics-main" style={{ animation: 'fadeIn 0.3s' }}>
@@ -1108,6 +1021,18 @@ const AnalyticsHub = ({
                         </div>
                       ))}
                     </div>
+                    {/* Advances reconcile the screen: money settled from a patient's
+                        earlier advance is NOT fresh cash, so it's shown separately
+                        and excluded from the cash channels above. */}
+                    {Number(matrix?.collectionChannels?.advanceAmount) > 0 && (
+                      <div style={{ marginTop: '12px', width: '100%' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '9px 12px' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 900, color: '#1e3a8a' }}>💳 SETTLED FROM ADVANCES</span>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#1d4ed8' }}>₹{Number(matrix.collectionChannels.advanceAmount).toLocaleString()}</span>
+                        </div>
+                        <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8', marginTop: '5px', textAlign: 'center' }}>Paid from a patient&apos;s earlier advance — excluded from cash collected.</div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

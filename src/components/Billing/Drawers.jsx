@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import apiClient from '../../api/apiClient';
+import { notifyToast } from '../../utils/toast';
 
 export const InvoiceDrawer = ({
   isMobile,
@@ -16,6 +17,7 @@ export const InvoiceDrawer = ({
   handleSaveInvoice,
   handleCollectPayment,
   handleApplyCredit,
+  onAdvanceRefunded,
   handlePrintA4,
   handlePrintThermal,
   onApplyAdjustment,
@@ -64,6 +66,33 @@ export const InvoiceDrawer = ({
       .catch(() => { /* no credit / offline — just hide the offer */ });
     return () => { active = false; };
   }, [selectedInvoice?.patientId]);
+
+  // Refund the patient's whole advance (cash). Two-step confirm so a stray click
+  // can't disburse money. Lives in the drawer's left panel (see below).
+  const [confirmRefund, setConfirmRefund] = React.useState(false);
+  const [refunding, setRefunding] = React.useState(false);
+  const refundAdvance = async () => {
+    const pid = selectedInvoice?.patientId;
+    if (!pid || !(walletBalance > 0) || refunding) return;
+    setRefunding(true);
+    try {
+      const { data } = await apiClient.post('/finance/credit/refund', {
+        patientId: pid, amount: walletBalance, paymentMethod: 'CASH', remarks: 'Advance refunded from invoice',
+      });
+      if (data?.success === false) {
+        notifyToast(data?.error || 'Could not process the refund.', 'error');
+      } else {
+        notifyToast(`Refunded ₹${Number(walletBalance).toLocaleString()} advance ✓`, 'success');
+        setWalletBalance(0);
+        setConfirmRefund(false);
+        if (onAdvanceRefunded) onAdvanceRefunded();
+      }
+    } catch (e) {
+      notifyToast(e?.response?.data?.error || 'Could not process the refund.', 'error');
+    } finally {
+      setRefunding(false);
+    }
+  };
 
   const openEditRequest = () => {
     setEditCentre(Number(selectedInvoice.centreDiscount) || 0);
@@ -278,6 +307,35 @@ export const InvoiceDrawer = ({
 
            {/* Left Column: Items and Adjustments */}
            <div>
+              {/* Patient advance (overpayment held). Shown bold; refund button lives
+                  here in the first/left panel only. */}
+              {walletBalance > 0 && (
+                <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '14px', background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)', border: '1px solid #c7d2fe' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                      <div>
+                         <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#4338ca', letterSpacing: '1px' }}>💳 PATIENT ADVANCE</div>
+                         <div style={{ fontSize: '22px', fontWeight: 950, color: '#312e81', lineHeight: 1.1, marginTop: '2px' }}>₹{Number(walletBalance).toLocaleString()}</div>
+                      </div>
+                      {!confirmRefund && (
+                        <button onClick={() => setConfirmRefund(true)}
+                          style={{ padding: '9px 15px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg,#4f46e5,#4338ca)', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px -3px rgba(67,56,202,0.5)' }}>↩ Refund</button>
+                      )}
+                   </div>
+                   {confirmRefund && (
+                     <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#3730a3', lineHeight: 1.4 }}>
+                           Refund <b>₹{Number(walletBalance).toLocaleString()}</b> to the patient as cash? This empties their advance.
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                           <button onClick={refundAdvance} disabled={refunding}
+                             style={{ flex: 1, padding: '9px 0', borderRadius: '9px', border: 'none', background: refunding ? '#cbd5e1' : '#16a34a', color: 'white', fontSize: '11px', fontWeight: 950, cursor: refunding ? 'not-allowed' : 'pointer' }}>{refunding ? 'Refunding…' : 'Confirm refund'}</button>
+                           <button onClick={() => setConfirmRefund(false)} disabled={refunding}
+                             style={{ padding: '9px 14px', borderRadius: '9px', border: '1px solid #c7d2fe', background: 'white', color: '#4338ca', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>Cancel</button>
+                        </div>
+                     </div>
+                   )}
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE ITEMS</span>
                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
@@ -495,6 +553,13 @@ export const InvoiceDrawer = ({
 
               {/* Post-payment concession lives inside the Edit window now
                   (Request Payment Edit) — a single place for all corrections. */}
+
+              {/* Print actions — invoice + thermal slip side by side at the foot
+                  of the left column (moved out of the actions panel). */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                 <button onClick={() => handlePrintA4(selectedInvoice)} style={{ flex: 1, padding: '11px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '10px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
+                 <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ flex: 1, padding: '11px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>🧾 THERMAL SLIP</button>
+              </div>
            </div>
 
            {/* Right Column: Financial Summary & Actions */}
@@ -661,23 +726,19 @@ export const InvoiceDrawer = ({
                        ⚠ Centre discount can&apos;t exceed ₹{maxCentreDiscount.toLocaleString()} — more would eat into the ₹{centreCommission.toLocaleString()} referral commission. Lower it to continue.
                      </div>
                    )}
-                   <button onClick={() => {
-                     if (overCentreDiscount || deficitNeedsReason) return;
-                     const excess = Math.max(0, referrerDisc - (selectedInvoice.commissionAmount || 0));
-                     const meta = excess > 0
-                       ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
-                       : {};
-                     handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived });
-                   }} disabled={overCentreDiscount || deficitNeedsReason} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
-                   <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction })} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
-                   {/* Print the invoice/estimate before collecting payment. */}
-                   <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '9px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
-                   {/* Part-payment receipt: a partially-paid invoice (paid > 0,
-                       balance still due) can print a thermal slip showing PAID +
-                       BALANCE DUE as proof of the part-payment. */}
-                   {paidSoFar > 0 && (
-                     <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 900, fontSize: '9px', cursor: 'pointer' }}>🧾 THERMAL SLIP · PART-PAYMENT</button>
-                   )}
+                   {/* Settlement + draft in one row. Print actions now live at the
+                       foot of the left column. */}
+                   <div style={{ display: 'flex', gap: '8px' }}>
+                     <button onClick={() => {
+                       if (overCentreDiscount || deficitNeedsReason) return;
+                       const excess = Math.max(0, referrerDisc - (selectedInvoice.commissionAmount || 0));
+                       const meta = excess > 0
+                         ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
+                         : {};
+                       handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived });
+                     }} disabled={overCentreDiscount || deficitNeedsReason} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
+                     <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction })} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+                   </div>
 
                 </div>
 
@@ -686,8 +747,6 @@ export const InvoiceDrawer = ({
                    <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '12px', textAlign: 'center', border: '1px solid #d1fae5' }}>
                       <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', textTransform: 'uppercase' }}>SETTLED</div>
                    </div>
-                   <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1.5px solid #0f52ba', background: 'white', color: '#0f52ba', fontWeight: 950, fontSize: '10px', cursor: 'pointer' }}>PRINT A4 INVOICE</button>
-                   <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer' }}>THERMAL SLIP</button>
 
                    {/* Scenario 03 — edit a settled invoice's concessions,
                        admin-approved. (Referrer changes live on the appointment.) */}
@@ -950,17 +1009,90 @@ export const NewInvoiceDrawer = ({
   serviceRegistry,
   referrers
 }) => {
+  // Group the service catalogue by modality (same UX as the appointment board):
+  // the biller picks a modality, then its services — instead of one flat list.
+  const [selectedModality, setSelectedModality] = React.useState('ALL');
+  const modalities = React.useMemo(
+    () => [...new Set((serviceRegistry || []).map(s => (s.modality || '').toUpperCase().trim()).filter(Boolean))].sort(),
+    [serviceRegistry]
+  );
+  const registryForModality = (serviceRegistry || []).filter(
+    s => selectedModality === 'ALL' || (s.modality || '').toUpperCase().trim() === selectedModality
+  );
+
+  // ── Add-a-new-patient on the fly (name/age/sex mandatory, contact optional) ──
+  const [showAddPatient, setShowAddPatient] = React.useState(false);
+  const [npForm, setNpForm] = React.useState({ name: '', age: '', gender: 'Female', mobile: '' });
+  const [creatingPatient, setCreatingPatient] = React.useState(false);
+  const createPatient = async () => {
+    const name = (npForm.name || '').trim();
+    const age = (npForm.age || '').trim();
+    const gender = (npForm.gender || '').trim();
+    if (!name || !age || !gender) { notifyToast('Name, age and sex are required.', 'error'); return; }
+    setCreatingPatient(true);
+    try {
+      const { data } = await apiClient.post('/patients', {
+        fullName: name, mobile: (npForm.mobile || '').replace(/\D/g, ''), age, gender,
+        village: '', district: '', address: '', sourceOfInfo: '',
+      });
+      const pid = data?.patientId;
+      if (!pid) throw new Error('No patient id returned.');
+      setSelectedPatient({ patientId: pid, fullName: name, patientIdentifier: 'NEW', age, gender });
+      setPendingServices([]);
+      setShowAddPatient(false);
+      setNpForm({ name: '', age: '', gender: 'Female', mobile: '' });
+      notifyToast('Patient added ✓', 'success');
+    } catch (e) {
+      notifyToast(e?.response?.data?.error || e?.message || 'Could not add the patient.', 'error');
+    } finally { setCreatingPatient(false); }
+  };
+
+  // ── Add-a-new-service on the fly (modality + name + price + referral cut). ──
+  // Same quick-add the appointment board uses: creates the service AND the
+  // modality's report template, then drops it onto the invoice.
+  const [showAddService, setShowAddService] = React.useState(false);
+  const [nsForm, setNsForm] = React.useState({ modality: '', serviceName: '', amount: '', referralCutValue: '' });
+  const [creatingService, setCreatingService] = React.useState(false);
+  const createService = async () => {
+    const modality = (nsForm.modality || '').trim().toUpperCase();
+    const serviceName = (nsForm.serviceName || '').trim();
+    const amount = Math.max(0, Number(nsForm.amount) || 0);
+    if (!modality || !serviceName || amount <= 0) { notifyToast('Modality, service name and a price are required.', 'error'); return; }
+    setCreatingService(true);
+    try {
+      const { data } = await apiClient.post('/finance/registry/quick-add', {
+        modality, serviceName, amount, referralCutValue: Math.max(0, Number(nsForm.referralCutValue) || 0),
+      });
+      const svc = data?.data || data;
+      const newItems = [...newInvoiceData.items];
+      const line = { description: svc?.serviceName || serviceName, amount: svc?.amount ?? amount, quantity: 1, referralCutValue: svc?.referralCutValue ?? (Number(nsForm.referralCutValue) || 0) };
+      if (newItems.length === 1 && !newItems[0].description) newItems[0] = line; else newItems.push(line);
+      setNewInvoiceData({ ...newInvoiceData, items: newItems });
+      setShowAddService(false);
+      setNsForm({ modality: '', serviceName: '', amount: '', referralCutValue: '' });
+      notifyToast('Service added to the catalogue ✓', 'success');
+    } catch (e) {
+      notifyToast(e?.response?.data?.error || e?.message || 'Could not add the service.', 'error');
+    } finally { setCreatingService(false); }
+  };
+
   return (
-    <div className="drawer-overlay" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
-      <div className="drawer-content" style={{ 
-        padding: 0, 
-        width: isMobile ? '100%' : '560px', 
-        height: '100%',
+    // Right-docked side drawer (overrides the shared .drawer-overlay centering).
+    <div className="drawer-overlay" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000, justifyContent: 'flex-end', alignItems: 'stretch', padding: 0 }}>
+      <style>{`@keyframes nxDrawerIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }`}</style>
+      <div className="drawer-content" style={{
+        padding: 0,
+        width: isMobile ? '100%' : '560px',
+        height: '100vh',
+        maxHeight: '100vh',
+        maxWidth: 'none',
+        borderRadius: 0,
         background: 'white',
         boxShadow: '-12px 0 40px rgba(10,22,40,0.18)',
         overflowY: 'auto',
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        animation: 'nxDrawerIn 0.28s cubic-bezier(0.16,1,0.3,1)'
       }} onClick={e => e.stopPropagation()}>
         
         {/* Tactical Header */}
@@ -1021,6 +1153,35 @@ export const NewInvoiceDrawer = ({
                              </div>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {/* Not in the registry? Add a basic patient on the fly. */}
+                    {!showAddPatient ? (
+                      <button type="button" onClick={() => setShowAddPatient(true)}
+                        style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '10px', border: '1px dashed #bfdbfe', background: '#f0f7ff', color: '#0f52ba', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}>
+                        + Patient not found? Add new
+                      </button>
+                    ) : (
+                      <div style={{ marginTop: '12px', padding: '14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '10px' }}>NEW PATIENT</div>
+                        <input type="text" value={npForm.name} placeholder="Full name *" onChange={e => setNpForm(f => ({ ...f, name: e.target.value }))}
+                          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, marginBottom: '8px' }} />
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                          <input type="number" min="0" value={npForm.age} placeholder="Age *" onChange={e => setNpForm(f => ({ ...f, age: e.target.value }))}
+                            style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700 }} />
+                          <select value={npForm.gender} onChange={e => setNpForm(f => ({ ...f, gender: e.target.value }))}
+                            style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, background: 'white' }}>
+                            <option>Female</option><option>Male</option><option>Other</option>
+                          </select>
+                        </div>
+                        <input type="tel" value={npForm.mobile} placeholder="Contact (optional)" onChange={e => setNpForm(f => ({ ...f, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, marginBottom: '10px' }} />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button type="button" onClick={createPatient} disabled={creatingPatient}
+                            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: creatingPatient ? '#cbd5e1' : '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: creatingPatient ? 'not-allowed' : 'pointer' }}>{creatingPatient ? 'Adding…' : 'Add & select'}</button>
+                          <button type="button" onClick={() => setShowAddPatient(false)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>Cancel</button>
+                        </div>
                       </div>
                     )}
                    </>
@@ -1115,37 +1276,64 @@ export const NewInvoiceDrawer = ({
                   )}
 
                   <div style={{ marginBottom: '20px' }}>
-                    <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', marginBottom: '10px' }}>REGISTRY SERVICES</p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: isMobile ? '150px' : '120px', overflowY: 'auto', padding: '4px' }}>
-                       {serviceRegistry.map((s) => (
-                         <button 
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', margin: 0 }}>SERVICES BY MODALITY</p>
+                      <button type="button" onClick={() => setShowAddService(v => !v)} style={{ border: 'none', background: 'none', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>{showAddService ? '× CLOSE' : '+ NEW SERVICE'}</button>
+                    </div>
+                    {showAddService && (
+                      <div style={{ marginBottom: '14px', padding: '14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '10px' }}>NEW SERVICE · adds to the catalogue + creates a {`${(nsForm.modality || 'modality').toUpperCase()}`} template</div>
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                          <input type="text" value={nsForm.modality} placeholder="Modality * (e.g. USG)" onChange={e => setNsForm(f => ({ ...f, modality: e.target.value }))}
+                            style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700 }} />
+                          <input type="text" value={nsForm.serviceName} placeholder="Service name *" onChange={e => setNsForm(f => ({ ...f, serviceName: e.target.value }))}
+                            style={{ flex: 2, minWidth: 0, boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700 }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                          <input type="number" min="0" value={nsForm.amount} placeholder="Price ₹ *" onChange={e => setNsForm(f => ({ ...f, amount: e.target.value }))}
+                            style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, textAlign: 'right' }} />
+                          <input type="number" min="0" value={nsForm.referralCutValue} placeholder="Referral incentive ₹" onChange={e => setNsForm(f => ({ ...f, referralCutValue: e.target.value }))}
+                            style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, textAlign: 'right' }} />
+                        </div>
+                        <button type="button" onClick={createService} disabled={creatingService}
+                          style={{ width: '100%', padding: '10px', borderRadius: '10px', border: 'none', background: creatingService ? '#cbd5e1' : '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: creatingService ? 'not-allowed' : 'pointer' }}>{creatingService ? 'Adding…' : 'Add service & put on invoice'}</button>
+                      </div>
+                    )}
+                    {modalities.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                        {['ALL', ...modalities].map(m => {
+                          const active = selectedModality === m;
+                          return (
+                            <button key={m} type="button" onClick={() => setSelectedModality(m)}
+                              style={{ padding: '6px 12px', borderRadius: '999px', border: active ? '1.5px solid #0f52ba' : '1px solid #e2e8f0', background: active ? '#0f52ba' : 'white', color: active ? 'white' : '#64748b', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: isMobile ? '150px' : '140px', overflowY: 'auto', padding: '4px' }}>
+                       {registryForModality.length === 0 ? (
+                         <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', padding: '6px' }}>No services for this modality.</span>
+                       ) : registryForModality.map((s) => (
+                         <button
                            key={s.id}
                            type="button"
                            onClick={() => {
                              const newItems = [...newInvoiceData.items];
                               if (newItems.length === 1 && !newItems[0].description) {
-                                newItems[0] = { 
-                                  description: s.serviceName, 
-                                  amount: s.amount, 
-                                  quantity: 1,
-                                  referralCutValue: s.referralCutValue || 0
-                                };
+                                newItems[0] = { description: s.serviceName, amount: s.amount, quantity: 1, referralCutValue: s.referralCutValue || 0 };
                               } else {
-                                newItems.push({ 
-                                  description: s.serviceName, 
-                                  amount: s.amount, 
-                                  quantity: 1,
-                                  referralCutValue: s.referralCutValue || 0
-                                });
+                                newItems.push({ description: s.serviceName, amount: s.amount, quantity: 1, referralCutValue: s.referralCutValue || 0 });
                               }
                               setNewInvoiceData({ ...newInvoiceData, items: newItems });
                            }}
-                           style={{ 
-                             padding: '6px 10px', border: '1px solid #e2e8f0', background: 'white', color: '#1e293b', 
-                             borderRadius: '8px', fontSize: '9px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' 
-                           }}
+                           title={`${s.modality || ''} · ${s.serviceName}`}
+                           style={{ padding: '7px 11px', border: '1px solid #e2e8f0', background: 'white', color: '#1e293b', borderRadius: '9px', fontSize: '9.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                          >
-                           {s.serviceName}
+                           {s.modality && <span style={{ fontSize: '8px', fontWeight: 900, background: '#f0f4ff', color: '#0f52ba', padding: '1px 5px', borderRadius: '4px', border: '1px solid #dbeafe' }}>{s.modality}</span>}
+                           <span>{s.serviceName}</span>
+                           {s.amount > 0 && <span style={{ opacity: 0.6, fontWeight: 900 }}>₹{Number(s.amount).toLocaleString()}</span>}
                          </button>
                        ))}
                     </div>
@@ -1171,26 +1359,6 @@ export const NewInvoiceDrawer = ({
                                  }}
                                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 700 }}
                                />
-                               
-                               {item.description.length > 0 && serviceRegistry.some(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase()) && s.serviceName !== item.description) && (
-                                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', zIndex: 100, maxHeight: '150px', overflowY: 'auto' }}>
-                                    {serviceRegistry.filter(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase())).map(s => (
-                                      <div 
-                                        key={s.id}
-                                        onClick={() => {
-                                           const items = [...newInvoiceData.items];
-                                           items[idx].description = s.serviceName;
-                                           items[idx].amount = s.amount;
-                                           items[idx].referralCutValue = s.referralCutValue || 0;
-                                           setNewInvoiceData({ ...newInvoiceData, items });
-                                        }}
-                                        style={{ padding: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
-                                      >
-                                        {s.serviceName} (₹{s.amount})
-                                      </div>
-                                    ))}
-                                 </div>
-                                )}
                             </div>
 
                             <div style={{ flex: 1 }}>
@@ -1312,10 +1480,6 @@ export const NewInvoiceDrawer = ({
                   </div>
                </div>
 
-               <button type="submit" disabled={!selectedPatient} style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: selectedPatient ? '#0f52ba' : '#cbd5e1', color: 'white', fontWeight: 950, cursor: selectedPatient ? 'pointer' : 'not-allowed', marginTop: '10px' }}>
-                  AUTHORIZE INVOICE
-               </button>
-            
            </form>
         </div>
 
