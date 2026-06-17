@@ -758,6 +758,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const handleSave = useCallback(() => {
     flushPendingChange();
     onSave?.();
+    // Return focus to the editor after a manual save so the doctor can
+    // immediately Ctrl+Z to undo what they just typed/saved. Clicking the
+    // ribbon Save button (or Ctrl+S landing focus on it) blurs the ProseMirror
+    // surface, and the global shortcut handler ignores Ctrl+Z unless the event
+    // originates INSIDE the editor (the `inEditor` guard) — so without this,
+    // "undo right after saving" silently does nothing. Saving never wipes the
+    // undo history, so refocusing is all that's needed. Deferred a tick so it
+    // runs after the click's own focus settles on the button. (Autosave never
+    // calls this, so background saves never steal focus.)
+    setTimeout(() => { try { latestEditorRef.current?.commands.focus(); } catch { /* editor not ready */ } }, 0);
   }, [flushPendingChange, onSave]);
 
   // Flush any pending HTML on unmount so we don't lose the last edit.
