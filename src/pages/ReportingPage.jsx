@@ -2357,6 +2357,11 @@ const ReportingPage = () => {
       placeholder={placeholder}
       editable={!isFinalized}
       onSave={() => handleSaveReport(false)}
+      // Ctrl+P opens the report Preview (which owns the correct A4 print path)
+      // instead of the browser's native print, which would dump the whole app
+      // chrome with broken layout. The editor's shortcut handler calls this and
+      // suppresses the native dialog.
+      onPrint={handlePreviewPrint}
       // ── Electronic sign-off (21 CFR Part 11) ──
       onFinalize={handleFinalizeReport}
       onAddendum={handleAddAddendum}

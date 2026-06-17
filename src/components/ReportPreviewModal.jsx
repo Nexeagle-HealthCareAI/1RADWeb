@@ -644,6 +644,25 @@ const ReportPreviewModal = ({
     setPages(paged);
   }, [isOpen, reportContent, protocol, savedMetadata, fullAppointment]);
 
+  // Ctrl/Cmd+P while the preview is open → run OUR A4 iframe print (handlePrint),
+  // not the browser's native print, which would render the modal/app chrome with
+  // broken pagination. handlePrint is defined after the early-return below (it's
+  // only needed when open), so we reach it through a ref that's set on each open
+  // render — keeping this hook unconditional and above the return.
+  const handlePrintRef = useRef(null);
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        try { handlePrintRef.current?.(); } catch { /* print not ready */ }
+      }
+    };
+    document.addEventListener('keydown', onKey, true /* capture, beats the browser */);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   // Extract content
@@ -834,6 +853,8 @@ const ReportPreviewModal = ({
       setTimeout(() => { try { window.print(); } catch (__) {} }, 60);
     }
   };
+  // Expose to the Ctrl/Cmd+P interceptor declared above the early return.
+  handlePrintRef.current = handlePrint;
 
   // Legacy fallback — opens a separate window with rebuilt HTML. Kept for
   // reference; no longer wired to the Print button (it drifted out of sync
