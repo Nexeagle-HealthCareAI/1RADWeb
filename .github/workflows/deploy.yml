@@ -34,6 +34,26 @@
 #       root /var/www/easyrad;
 #       index index.html;
 #
+#       # ---- API reverse proxy (same-origin) ----
+#       # Browser calls /api/v1/* on THIS host:port; nginx forwards to the API
+#       # container (host network, port 5000 — must match ASPNETCORE_URLS in
+#       # /opt/myapp/dev.env). Keeps SPA + API same-origin → no CORS needed.
+#       location /api/ {
+#           proxy_pass         http://127.0.0.1:5000;
+#           proxy_http_version 1.1;
+#           proxy_set_header   Host              $host;
+#           proxy_set_header   X-Real-IP         $remote_addr;
+#           proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+#           proxy_set_header   X-Forwarded-Proto $scheme;
+#           proxy_set_header   X-Forwarded-Host  $host;
+#           # DICOM ZIP uploads can reach the 500 MB Kestrel limit: allow large
+#           # bodies and stream them through without buffering.
+#           client_max_body_size    0;
+#           proxy_request_buffering off;
+#           proxy_read_timeout      600s;
+#           proxy_send_timeout      600s;
+#       }
+#
 #       # SPA — all routes fall back to index.html
 #       location / {
 #           try_files $uri $uri/ /index.html;
@@ -98,6 +118,11 @@ jobs:
         run: npm run build
         env:
           VITE_TARGET: web
+          # Same-origin VM deploy: nginx proxies /api/* to the API container, so a
+          # relative base URL works on any VM running the proxy (no CORS needed).
+          # Pipeline env wins over .env.production, so the Azure Static Web App
+          # build (driven by azure-pipelines.yml) is unaffected.
+          VITE_API_URL: /api/v1
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
@@ -169,7 +194,7 @@ jobs:
       - name: Health check
         run: |
           sleep 3
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.DEV_SSH_HOST }}:3000/ 2>/dev/null || echo "000")
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.DEV_SSH_HOST }}/ 2>/dev/null || echo "000")
           echo "Health check: HTTP $STATUS"
           [ "$STATUS" = "200" ] && echo "✅ EasyRad is up" || echo "⚠️  Got HTTP $STATUS — check nginx on the VM"
 
