@@ -161,35 +161,28 @@ jobs:
           name: easyrad-dist
           path: dist/
 
-      - name: Prepare SSH key
-        run: |
-          echo "${{ secrets.DEV_SSH_KEY_B64 }}" | base64 -d > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-
-      - name: Ensure web root exists on VM
-        run: |
-          ssh -i /tmp/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=30 \
-              ${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }} \
-              'mkdir -p /var/www/easyrad'
-
       - name: Copy dist to VM
-        run: |
-          scp -i /tmp/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -r dist/* \
-              ${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}:/var/www/easyrad/
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEV_SSH_HOST }}
+          username: ${{ secrets.DEV_SSH_USER }}
+          password: ${{ secrets.DEV_SSH_PASSWORD }}
+          port: 22
+          source: "dist/*"
+          target: "/var/www/easyrad/"
+          strip_components: 1
+          overwrite: true
 
       - name: Reload nginx
-        run: |
-          ssh -i /tmp/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              ${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }} \
-              'nginx -s reload 2>/dev/null || systemctl reload nginx 2>/dev/null || true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEV_SSH_HOST }}
+          username: ${{ secrets.DEV_SSH_USER }}
+          password: ${{ secrets.DEV_SSH_PASSWORD }}
+          port: 22
+          script: |
+            mkdir -p /var/www/easyrad
+            nginx -s reload 2>/dev/null || systemctl reload nginx 2>/dev/null || true
 
       - name: Health check
         run: |
