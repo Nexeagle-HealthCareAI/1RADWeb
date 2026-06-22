@@ -20,11 +20,14 @@ import apiClient from '../api/apiClient';
  * Single-shot PUT to Azure with progress tracking via XHR. Used for small/medium
  * files or as a fallback if block upload isn't worth it.
  */
-function singlePutToAzure(sasUrl, file, contentType, onProgress) {
+function singlePut(sasUrl, file, contentType, onProgress, isAzure = false) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', sasUrl, true);
-    xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
+    // Azure block blobs require this header. S3-compatible (MinIO / E2E) presigned
+    // PUTs must NOT get it — and must be a single PUT, never chunked with comp=block,
+    // or the request signature won't match (SignatureDoesNotMatch).
+    if (isAzure) xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
     xhr.setRequestHeader('Content-Type', contentType || 'application/octet-stream');
 
     if (onProgress) {
@@ -41,17 +44,16 @@ function singlePutToAzure(sasUrl, file, contentType, onProgress) {
     }
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`Azure PUT failed: ${xhr.status} ${xhr.statusText} — ${xhr.responseText?.slice(0, 200)}`));
+      else reject(new Error(`Upload PUT failed: ${xhr.status} ${xhr.statusText} — ${xhr.responseText?.slice(0, 200)}`));
     };
     // A CORS failure shows up as a generic network error with status=0. Flag it
-    // explicitly so the caller knows to configure the storage account.
+    // explicitly so the caller knows to configure the bucket's CORS.
     xhr.onerror = () => reject(new Error(
-      'AZURE_CORS_OR_NETWORK: PUT to Azure failed without a status code. ' +
-      'Almost always this means CORS is not configured on the storage account. ' +
-      'In Azure Portal → Storage Account → Resource sharing (CORS) → Blob service, ' +
-      'add an entry for this origin with PUT, GET, HEAD, POST, OPTIONS methods.'
+      'STORAGE_CORS_OR_NETWORK: PUT to storage failed with no status code. ' +
+      'Almost always CORS is not configured on the bucket for this origin — allow ' +
+      'PUT, GET, HEAD from the app origin and retry.'
     ));
-    xhr.ontimeout = () => reject(new Error('Azure PUT timed out'));
+    xhr.ontimeout = () => reject(new Error('Upload PUT timed out'));
     xhr.send(file);
   });
 }
@@ -157,18 +159,21 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress, op
   const t1 = performance.now();
   console.log(`[AZURE_UPLOAD] token issued in ${(t1 - t0).toFixed(0)}ms, asset=${assetId}`);
 
-  // 2. PUT directly to Azure.
-  const useBlocks = file.size > 8 * 1024 * 1024; // anything over 8 MB benefits
+  // 2. PUT directly to storage. Azure SAS supports the parallel block protocol;
+  //    S3-compatible (E2E/MinIO) presigned PUTs do NOT — comp=block would break the
+  //    signature — so for those we always do a single PUT.
+  const isAzure = /\.blob\.core\.windows\.net/i.test(sasUrl);
+  const useBlocks = isAzure && file.size > 8 * 1024 * 1024;
   if (useBlocks) {
-    console.log(`[AZURE_UPLOAD] using parallel block upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
+    console.log(`[UPLOAD] Azure parallel block upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
     await blockedPutToAzure(sasUrl, file, {
       blockSize: 4 * 1024 * 1024,
       concurrency: 4,
       onProgress,
     });
   } else {
-    console.log(`[AZURE_UPLOAD] using single PUT (size=${(file.size / 1048576).toFixed(1)} MB)`);
-    await singlePutToAzure(sasUrl, file, file.type, onProgress);
+    console.log(`[UPLOAD] single PUT (size=${(file.size / 1048576).toFixed(1)} MB, ${isAzure ? 'azure' : 's3'})`);
+    await singlePut(sasUrl, file, file.type, onProgress, isAzure);
   }
   const t2 = performance.now();
   console.log(`[AZURE_UPLOAD] blob PUT done in ${((t2 - t1) / 1000).toFixed(1)}s`);
@@ -244,11 +249,12 @@ export async function uploadStudyAssetToStudy(file, imagingStudyId, onProgress) 
   }
   const { assetId, sasUrl, blobPath, containerName } = tokenRes.data.data;
 
-  const useBlocks = file.size > 8 * 1024 * 1024;
+  const isAzure = /\.blob\.core\.windows\.net/i.test(sasUrl);
+  const useBlocks = isAzure && file.size > 8 * 1024 * 1024;
   if (useBlocks) {
     await blockedPutToAzure(sasUrl, file, { blockSize: 4 * 1024 * 1024, concurrency: 4, onProgress });
   } else {
-    await singlePutToAzure(sasUrl, file, file.type, onProgress);
+    await singlePut(sasUrl, file, file.type, onProgress, isAzure);
   }
 
   if (onProgress) onProgress({ loaded: file.size, total: file.size, pct: 1, stage: 'finalising' });
