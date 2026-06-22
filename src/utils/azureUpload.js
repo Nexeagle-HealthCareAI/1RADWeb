@@ -121,6 +121,135 @@ async function blockedPutToAzure(sasUrl, file, opts = {}) {
 }
 
 /**
+ * S3/MinIO multipart parallel upload — the S3 sibling of {@link blockedPutToAzure}.
+ * Splits the file into ~16 MB parts, PUTs them concurrently to per-part presigned
+ * URLs the backend mints, then commits. A single PUT is throughput-capped by one
+ * TCP stream's bandwidth-delay product on a high-RTT link; parallel parts saturate
+ * the pipe (typically a multi-x speedup for big DICOM ZIPs).
+ *
+ * Reuses the SAME blobPath that /upload-token minted, so the assembled object
+ * lands exactly where the subsequent /upload-complete expects it.
+ *
+ * REQUIRES the bucket CORS to allow PUT and to EXPOSE the ETag response header
+ * (Access-Control-Expose-Headers: ETag) — the commit needs each part's ETag. If
+ * ETag isn't readable we throw MULTIPART_NO_ETAG so the caller can fall back.
+ */
+async function multipartPutToS3(file, { blobPath, containerName, contentType }, onProgress, opts = {}) {
+  const partSize = opts.partSize || 16 * 1024 * 1024; // 16 MB (>= S3's 5 MiB min)
+  const concurrency = opts.concurrency || 4;
+  const totalParts = Math.ceil(file.size / partSize);
+
+  // 1. Initiate — backend opens the multipart upload + signs a PUT URL per part.
+  const initRes = await apiClient.post('/Study/upload-multipart/initiate', {
+    BlobPath: blobPath,
+    ContainerName: containerName,
+    PartCount: totalParts,
+    FileSize: file.size,
+    ContentType: contentType || file.type || 'application/octet-stream',
+  });
+  if (!initRes?.data?.success || !initRes.data.data) {
+    throw new Error('multipart initiate failed: ' + JSON.stringify(initRes?.data));
+  }
+  const { uploadId, parts } = initRes.data.data;
+  const urlByPart = new Map((parts || []).map((p) => [p.partNumber, p.url]));
+
+  const etags = new Array(totalParts); // index i → part (i+1)
+  let bytesUploaded = 0;
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= totalParts) return;
+      const partNumber = i + 1;
+      const url = urlByPart.get(partNumber);
+      if (!url) throw new Error(`No presigned URL for part ${partNumber}`);
+      const start = i * partSize;
+      const end = Math.min(start + partSize, file.size);
+      const blob = file.slice(start, end);
+
+      const res = await fetch(url, { method: 'PUT', body: blob });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Part ${partNumber} failed: ${res.status} ${res.statusText} — ${body.slice(0, 200)}`);
+      }
+      const etag = res.headers.get('ETag') || res.headers.get('etag');
+      if (!etag) {
+        throw new Error(
+          'MULTIPART_NO_ETAG: the part PUT succeeded but its ETag header is not readable — ' +
+          'add "ETag" to the bucket CORS Access-Control-Expose-Headers and retry.',
+        );
+      }
+      etags[i] = etag;
+      bytesUploaded += blob.size;
+      if (onProgress) {
+        onProgress({
+          loaded: bytesUploaded,
+          total: file.size,
+          pct: bytesUploaded / file.size,
+          stage: `uploading-part-${i + 1}/${totalParts}`,
+        });
+      }
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(concurrency, totalParts) }, worker));
+  } catch (err) {
+    // Release staged parts so storage doesn't keep them around.
+    apiClient.post('/Study/upload-multipart/abort', { BlobPath: blobPath, ContainerName: containerName, UploadId: uploadId }).catch(() => {});
+    throw err;
+  }
+
+  // 2. Commit — ordered (partNumber, eTag) list assembles the object.
+  const completeRes = await apiClient.post('/Study/upload-multipart/complete', {
+    BlobPath: blobPath,
+    ContainerName: containerName,
+    UploadId: uploadId,
+    Parts: etags.map((eTag, i) => ({ PartNumber: i + 1, ETag: eTag })),
+  });
+  if (!completeRes?.data?.success) {
+    apiClient.post('/Study/upload-multipart/abort', { BlobPath: blobPath, ContainerName: containerName, UploadId: uploadId }).catch(() => {});
+    throw new Error('multipart complete failed: ' + JSON.stringify(completeRes?.data));
+  }
+}
+
+/** Threshold above which a large file uses parallel (block/multipart) upload. */
+const PARALLEL_UPLOAD_THRESHOLD = 16 * 1024 * 1024; // 16 MB
+
+/**
+ * Picks the fastest available PUT strategy for a token's storage backend:
+ *   • Azure  + large → native staged-block parallel upload
+ *   • S3/MinIO + large → multipart parallel upload (falls back to single PUT
+ *     if the backend can't multipart or CORS hides the part ETags)
+ *   • otherwise → single PUT
+ */
+async function putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress) {
+  const isAzure = /\.blob\.core\.windows\.net/i.test(sasUrl);
+  if (isAzure && file.size > 8 * 1024 * 1024) {
+    console.log(`[UPLOAD] Azure parallel block upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
+    await blockedPutToAzure(sasUrl, file, { blockSize: 4 * 1024 * 1024, concurrency: 4, onProgress });
+    return;
+  }
+  if (!isAzure && file.size > PARALLEL_UPLOAD_THRESHOLD) {
+    console.log(`[UPLOAD] S3 multipart parallel upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
+    try {
+      await multipartPutToS3(file, { blobPath, containerName, contentType: file.type }, onProgress);
+      return;
+    } catch (mpErr) {
+      // Multipart unavailable (Azure mis-route → 409) or ETag hidden by CORS:
+      // a single PUT needs neither, so retry that before bubbling to the
+      // caller's legacy-multipart fallback.
+      console.warn('[UPLOAD] multipart failed, falling back to single PUT:', mpErr?.message);
+      await singlePut(sasUrl, file, file.type, onProgress, isAzure);
+      return;
+    }
+  }
+  console.log(`[UPLOAD] single PUT (size=${(file.size / 1048576).toFixed(1)} MB, ${isAzure ? 'azure' : 's3'})`);
+  await singlePut(sasUrl, file, file.type, onProgress, isAzure);
+}
+
+/**
  * High-level: upload `file` for `appointmentId`. Picks single-PUT or block upload
  * based on file size. On failure, throws — caller can decide whether to fall back
  * to the legacy multipart endpoint.
@@ -159,22 +288,10 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress, op
   const t1 = performance.now();
   console.log(`[AZURE_UPLOAD] token issued in ${(t1 - t0).toFixed(0)}ms, asset=${assetId}`);
 
-  // 2. PUT directly to storage. Azure SAS supports the parallel block protocol;
-  //    S3-compatible (E2E/MinIO) presigned PUTs do NOT — comp=block would break the
-  //    signature — so for those we always do a single PUT.
-  const isAzure = /\.blob\.core\.windows\.net/i.test(sasUrl);
-  const useBlocks = isAzure && file.size > 8 * 1024 * 1024;
-  if (useBlocks) {
-    console.log(`[UPLOAD] Azure parallel block upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
-    await blockedPutToAzure(sasUrl, file, {
-      blockSize: 4 * 1024 * 1024,
-      concurrency: 4,
-      onProgress,
-    });
-  } else {
-    console.log(`[UPLOAD] single PUT (size=${(file.size / 1048576).toFixed(1)} MB, ${isAzure ? 'azure' : 's3'})`);
-    await singlePut(sasUrl, file, file.type, onProgress, isAzure);
-  }
+  // 2. PUT directly to storage with the fastest strategy for the backend:
+  //    Azure → staged blocks, S3/MinIO → multipart parts, both in parallel;
+  //    small files → single PUT.
+  await putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress);
   const t2 = performance.now();
   console.log(`[AZURE_UPLOAD] blob PUT done in ${((t2 - t1) / 1000).toFixed(1)}s`);
 
@@ -249,13 +366,7 @@ export async function uploadStudyAssetToStudy(file, imagingStudyId, onProgress) 
   }
   const { assetId, sasUrl, blobPath, containerName } = tokenRes.data.data;
 
-  const isAzure = /\.blob\.core\.windows\.net/i.test(sasUrl);
-  const useBlocks = isAzure && file.size > 8 * 1024 * 1024;
-  if (useBlocks) {
-    await blockedPutToAzure(sasUrl, file, { blockSize: 4 * 1024 * 1024, concurrency: 4, onProgress });
-  } else {
-    await singlePut(sasUrl, file, file.type, onProgress, isAzure);
-  }
+  await putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress);
 
   if (onProgress) onProgress({ loaded: file.size, total: file.size, pct: 1, stage: 'finalising' });
   const completeRes = await apiClient.post(`/Study/studies/${imagingStudyId}/upload-complete`, {
