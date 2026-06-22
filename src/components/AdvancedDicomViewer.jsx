@@ -974,7 +974,7 @@ const AdvancedDicomViewer = ({
     // of them just starves the slice the user is actually looking at + the cheap
     // previews. Keep ±1 on slow (sharpen-on-dwell does the rest), a moderate
     // window on medium, deep on fast.
-    const ahead = tier === 'slow' ? 1 : tier === 'medium' ? 6 : 12;
+    const ahead = tier === 'slow' ? 1 : tier === 'medium' ? 6 : 20;
     const warm = (idx, priority) => {
       if (idx < 0 || idx >= files.length) return;
       const url = getOrCreateBlobUrl(files[idx]);
@@ -989,6 +989,39 @@ const AdvancedDicomViewer = ({
       warm(currentImageIndex - dir * 2, ahead + 2);
     }
   }, [currentImageIndex, files, mprMode]);
+
+  // BACKGROUND FULL-SERIES WARM: the scroll-prefetch above only covers a small
+  // window around the current slice, so JUMPING (dragging the scrollbar, or
+  // straight to the middle of a 500-slice CT) still hits cold slices. After the
+  // visible slices win the pipe, sweep the WHOLE series at lowest priority so any
+  // jump is instant. Safe: manifest URLs cost nothing to "create" (just returns
+  // the .dicomUrl), cornerstone dedupes already-cached slices, the request pool
+  // bounds prefetch concurrency, and the cache evicts LRU. Fast desktop only — a
+  // full sweep on a thin/mobile link would starve the slice being viewed.
+  const sweptSeriesRef = useRef(null);
+  useEffect(() => {
+    if (mprMode || !Array.isArray(files) || files.length === 0) return;
+    if (getConnectionTier() !== 'fast' || isMobileDevice) return;
+    // One sweep per distinct series (keyed, not per scroll tick).
+    const key = `${files.length}:${files[0]?.dicomUrl || files[0]?.url || ''}`;
+    if (sweptSeriesRef.current === key) return;
+    // Defer so the first visible slices + previews always win the pipe first.
+    const t = setTimeout(() => {
+      sweptSeriesRef.current = key;
+      const start = lastScrollIdxRef.current || 0;
+      // Expand outward from where the user is, lowest priority so interaction +
+      // directional prefetch always preempt this.
+      for (let off = 1; off < files.length; off++) {
+        for (const idx of [start + off, start - off]) {
+          if (idx < 0 || idx >= files.length) continue;
+          const url = getOrCreateBlobUrl(files[idx]);
+          if (!url) continue;
+          try { cornerstone.imageLoader.loadAndCacheImage(`wadouri:${url}`, { priority: 1000 + off }).catch(() => {}); } catch { /* noop */ }
+        }
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [files, mprMode]);
 
   // Fullscreen and tablet support states
   const [isFullscreen, setIsFullscreen] = useState(false);

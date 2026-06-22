@@ -136,7 +136,11 @@ async function blockedPutToAzure(sasUrl, file, opts = {}) {
  */
 async function multipartPutToS3(file, { blobPath, containerName, contentType }, onProgress, opts = {}) {
   const partSize = opts.partSize || 16 * 1024 * 1024; // 16 MB (>= S3's 5 MiB min)
-  const concurrency = opts.concurrency || 4;
+  // 8 parallel parts: on a high-RTT path to the (remote) object store a single
+  // stream is bandwidth-delay-product limited, so more in-flight parts = more
+  // throughput. The browser self-limits (~6 over HTTP/1.1, multiplexed on H2),
+  // so 8 is safe; override via opts for tuning.
+  const concurrency = opts.concurrency || 8;
   const totalParts = Math.ceil(file.size / partSize);
 
   // 1. Initiate — backend opens the multipart upload + signs a PUT URL per part.
