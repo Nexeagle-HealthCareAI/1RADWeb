@@ -1001,7 +1001,9 @@ const AdvancedDicomViewer = ({
   const sweptSeriesRef = useRef(null);
   useEffect(() => {
     if (mprMode || !Array.isArray(files) || files.length === 0) return;
-    if (getConnectionTier() !== 'fast' || isMobileDevice) return;
+    // Recompute locally — the init-scope `isMobileDevice` isn't visible here.
+    const onMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    if (getConnectionTier() !== 'fast' || onMobile) return;
     // One sweep per distinct series (keyed, not per scroll tick).
     const key = `${files.length}:${files[0]?.dicomUrl || files[0]?.url || ''}`;
     if (sweptSeriesRef.current === key) return;
