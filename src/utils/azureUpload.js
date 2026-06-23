@@ -134,7 +134,7 @@ async function blockedPutToAzure(sasUrl, file, opts = {}) {
  * (Access-Control-Expose-Headers: ETag) — the commit needs each part's ETag. If
  * ETag isn't readable we throw MULTIPART_NO_ETAG so the caller can fall back.
  */
-async function multipartPutToS3(file, { blobPath, containerName, contentType }, onProgress, opts = {}) {
+async function multipartPutToS3(file, { blobPath, containerName, contentType, bind }, onProgress, opts = {}) {
   const partSize = opts.partSize || 16 * 1024 * 1024; // 16 MB (>= S3's 5 MiB min)
   // 8 parallel parts: on a high-RTT path to the (remote) object store a single
   // stream is bandwidth-delay-product limited, so more in-flight parts = more
@@ -205,17 +205,32 @@ async function multipartPutToS3(file, { blobPath, containerName, contentType }, 
     throw err;
   }
 
-  // 2. Commit — ordered (partNumber, eTag) list assembles the object.
-  const completeRes = await apiClient.post('/Study/upload-multipart/complete', {
+  // 2. Commit — ordered (partNumber, eTag) list assembles the object. When bind
+  //    context is supplied the server ALSO creates the StudyAsset row in this
+  //    same call (merged finalize), so the caller skips a separate
+  //    /upload-complete round-trip.
+  const completeBody = {
     BlobPath: blobPath,
     ContainerName: containerName,
     UploadId: uploadId,
     Parts: etags.map((eTag, i) => ({ PartNumber: i + 1, ETag: eTag })),
-  });
+  };
+  if (bind) {
+    completeBody.AssetId = bind.assetId;
+    if (bind.appointmentId) completeBody.AppointmentId = bind.appointmentId;
+    if (bind.imagingStudyId) completeBody.ImagingStudyId = bind.imagingStudyId;
+    if (bind.appointmentServiceId) completeBody.AppointmentServiceId = bind.appointmentServiceId;
+    completeBody.FileName = bind.fileName;
+  }
+  const completeRes = await apiClient.post('/Study/upload-multipart/complete', completeBody);
   if (!completeRes?.data?.success) {
     apiClient.post('/Study/upload-multipart/abort', { BlobPath: blobPath, ContainerName: containerName, UploadId: uploadId }).catch(() => {});
     throw new Error('multipart complete failed: ' + JSON.stringify(completeRes?.data));
   }
+  // If we bound in this call the server returns the asset row (has an `id`).
+  const data = completeRes.data.data;
+  const bound = !!(bind && data && data.id);
+  return { bound, asset: bound ? data : null };
 }
 
 /** Threshold above which a large file uses parallel (block/multipart) upload. */
@@ -228,29 +243,32 @@ const PARALLEL_UPLOAD_THRESHOLD = 16 * 1024 * 1024; // 16 MB
  *     if the backend can't multipart or CORS hides the part ETags)
  *   • otherwise → single PUT
  */
-async function putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress) {
+// Returns { bound, asset }: `bound` is true only when the S3 multipart path
+// finalized the StudyAsset row in its commit call (merged finalize). Every other
+// path returns { bound: false } and the caller does the normal /upload-complete.
+async function putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress, bind) {
   const isAzure = /\.blob\.core\.windows\.net/i.test(sasUrl);
   if (isAzure && file.size > 8 * 1024 * 1024) {
     console.log(`[UPLOAD] Azure parallel block upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
     await blockedPutToAzure(sasUrl, file, { blockSize: 4 * 1024 * 1024, concurrency: 4, onProgress });
-    return;
+    return { bound: false };
   }
   if (!isAzure && file.size > PARALLEL_UPLOAD_THRESHOLD) {
     console.log(`[UPLOAD] S3 multipart parallel upload (size=${(file.size / 1048576).toFixed(1)} MB)`);
     try {
-      await multipartPutToS3(file, { blobPath, containerName, contentType: file.type }, onProgress);
-      return;
+      return await multipartPutToS3(file, { blobPath, containerName, contentType: file.type, bind }, onProgress);
     } catch (mpErr) {
       // Multipart unavailable (Azure mis-route → 409) or ETag hidden by CORS:
       // a single PUT needs neither, so retry that before bubbling to the
-      // caller's legacy-multipart fallback.
+      // caller's legacy-multipart fallback. (Not bound → caller finalizes.)
       console.warn('[UPLOAD] multipart failed, falling back to single PUT:', mpErr?.message);
       await singlePut(sasUrl, file, file.type, onProgress, isAzure);
-      return;
+      return { bound: false };
     }
   }
   console.log(`[UPLOAD] single PUT (size=${(file.size / 1048576).toFixed(1)} MB, ${isAzure ? 'azure' : 's3'})`);
   await singlePut(sasUrl, file, file.type, onProgress, isAzure);
+  return { bound: false };
 }
 
 /**
@@ -294,28 +312,37 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress, op
 
   // 2. PUT directly to storage with the fastest strategy for the backend:
   //    Azure → staged blocks, S3/MinIO → multipart parts, both in parallel;
-  //    small files → single PUT.
-  await putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress);
+  //    small files → single PUT. The multipart path can ALSO bind the row in its
+  //    commit call (merged finalize) — pass the binding context so it can.
+  const put = await putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress, {
+    assetId,
+    appointmentId,
+    appointmentServiceId,
+    fileName: file.name,
+  });
   const t2 = performance.now();
   console.log(`[AZURE_UPLOAD] blob PUT done in ${((t2 - t1) / 1000).toFixed(1)}s`);
 
-  // 3. Tell backend to CREATE the StudyAsset row (only after blob is in Azure).
+  // 3. Bind the StudyAsset row — UNLESS the multipart commit already did it
+  //    (merged finalize), which saves this whole extra round-trip.
   if (onProgress) onProgress({ loaded: file.size, total: file.size, pct: 1, stage: 'finalising' });
-  const completeRes = await apiClient.post('/Study/upload-complete', {
-    AssetId: assetId,
-    AppointmentId: appointmentId,
-    AppointmentServiceId: appointmentServiceId,
-    BlobPath: blobPath,
-    ContainerName: containerName,
-    PublicReadUrl: publicReadUrl,
-    FileName: file.name,
-    ActualSize: file.size,
-  });
-  if (!completeRes?.data?.success) {
-    throw new Error('upload-complete failed: ' + JSON.stringify(completeRes?.data));
+  if (!put?.bound) {
+    const completeRes = await apiClient.post('/Study/upload-complete', {
+      AssetId: assetId,
+      AppointmentId: appointmentId,
+      AppointmentServiceId: appointmentServiceId,
+      BlobPath: blobPath,
+      ContainerName: containerName,
+      PublicReadUrl: publicReadUrl,
+      FileName: file.name,
+      ActualSize: file.size,
+    });
+    if (!completeRes?.data?.success) {
+      throw new Error('upload-complete failed: ' + JSON.stringify(completeRes?.data));
+    }
   }
   const t3 = performance.now();
-  console.log(`[AZURE_UPLOAD] complete confirmed in ${(t3 - t2).toFixed(0)}ms — total ${((t3 - t0) / 1000).toFixed(1)}s`);
+  console.log(`[AZURE_UPLOAD] ${put?.bound ? 'bound in commit' : 'complete confirmed'} in ${(t3 - t2).toFixed(0)}ms — total ${((t3 - t0) / 1000).toFixed(1)}s`);
 
   return { assetId, publicReadUrl };
 }
@@ -370,9 +397,17 @@ export async function uploadStudyAssetToStudy(file, imagingStudyId, onProgress) 
   }
   const { assetId, sasUrl, blobPath, containerName } = tokenRes.data.data;
 
-  await putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress);
+  const put = await putWithBestStrategy({ sasUrl, blobPath, containerName }, file, onProgress, {
+    assetId,
+    imagingStudyId,
+    fileName: file.name,
+  });
 
   if (onProgress) onProgress({ loaded: file.size, total: file.size, pct: 1, stage: 'finalising' });
+  // Skip the separate /upload-complete when the multipart commit already bound.
+  if (put?.bound) {
+    return { assetId, publicReadUrl: put.asset?.blobUrl };
+  }
   const completeRes = await apiClient.post(`/Study/studies/${imagingStudyId}/upload-complete`, {
     AssetId: assetId,
     BlobPath: blobPath,
