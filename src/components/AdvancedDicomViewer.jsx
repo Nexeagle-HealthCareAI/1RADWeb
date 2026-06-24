@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useId, useCallback, useMemo } from 'react';
 import { notifyToast } from '../utils/toast';
+import { perfFirstPaint, registerDecodeCounter } from '../utils/dicomPerfTrace';
 import {
   RenderingEngine,
   Enums,
@@ -894,9 +895,21 @@ const AdvancedDicomViewer = ({
     const el = elementRef.current;
     if (!el) return;
     // Any real paint means the sharp image is up → drop the preview.
-    const onRendered = () => setSlicePreview((p) => (p.show ? { ...p, show: false } : p));
+    const onRendered = () => {
+      perfFirstPaint(); // perf trace: study-open → first slice on screen (idempotent)
+      setSlicePreview((p) => (p.show ? { ...p, show: false } : p));
+    };
     try { el.addEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ }
     return () => { try { el.removeEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ } };
+  }, []);
+
+  // perf trace: count slice decodes off Cornerstone's global IMAGE_LOADED to
+  // derive throughput (slices/sec). Attached once across all viewer instances
+  // (they share one eventTarget), so no double-counting; pure measurement.
+  useEffect(() => {
+    try {
+      registerDecodeCounter(cornerstone.eventTarget, cornerstone.Enums.Events.IMAGE_LOADED);
+    } catch { /* noop — instrumentation must never break the viewer */ }
   }, []);
 
   // Cold-start blurry stand-in: prefer the MIDDLE slice's preview (that's the

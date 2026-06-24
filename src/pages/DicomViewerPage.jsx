@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import AdvancedDicomViewer, { warmupCornerstone } from '../components/AdvancedDicomViewer';
 import apiClient from '../api/apiClient';
 import { setManifestSliceMetadata } from '../utils/manifestMetadata';
+import { startPerfSession, perfManifest } from '../utils/dicomPerfTrace';
 
 // Build the lightweight metadata object the viewer needs to flip `isReady`
 // WITHOUT fetching + parsing slice 0. Every field here already rides in the
@@ -102,6 +103,7 @@ const DicomViewerPage = () => {
     let cancelled = false;
     const hydrate = async () => {
       const t0 = performance.now();
+      startPerfSession(urlStudyId || urlAppointmentId || 'study'); // perf trace: study-open reference
       setHydrating(true);
       setHydrationError(null);
       setPendingExtractionAssets([]);
@@ -116,6 +118,20 @@ const DicomViewerPage = () => {
         }
         const manifestData = manifestRes.data.data;
         const assets = manifestData?.assets;
+        // perf trace: manifest round-trip + total slice count (scales the payload).
+        perfManifest(
+          performance.now() - t0,
+          Array.isArray(assets)
+            ? assets.reduce(
+                (n, a) =>
+                  n +
+                  (Array.isArray(a.series)
+                    ? a.series.reduce((m, s) => m + (s.slices?.length || 0), 0)
+                    : 0),
+                0
+              )
+            : 0
+        );
         if (!Array.isArray(assets) || assets.length === 0) {
           throw new Error('No imaging assets are available for this study.');
         }
@@ -774,8 +790,8 @@ const DicomViewerPage = () => {
         justifyContent: 'center'
       }} onClick={() => setShowShortcutsHelp(false)}>
         <div style={{
-          width: '800px',
-          maxHeight: '85vh',
+          width: 'min(800px, 92vw)',
+          maxHeight: '90dvh',
           overflow: 'auto',
           background: 'linear-gradient(135deg, #0f172a, #1e293b)',
           border: '2px solid rgba(59, 130, 246, 0.3)',
@@ -879,7 +895,7 @@ const DicomViewerPage = () => {
       ? Math.min(100, Math.round((hydrationProgress.current / hydrationProgress.total) * 100))
       : 0;
     return (
-      <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+      <div style={{ height: '100dvh', width: '100dvw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
         <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'dvspin 0.8s linear infinite', marginBottom: '20px' }} />
         <div style={{ fontSize: '14px', fontWeight: 800, color: '#3b82f6', letterSpacing: '2px' }}>LOADING STUDY ASSETS</div>
         <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '12px', letterSpacing: '1.5px', fontWeight: 700 }}>{phaseLabel}</div>
@@ -904,7 +920,7 @@ const DicomViewerPage = () => {
   // Show hydration error if appointmentId-mode failed
   if (hydrationError) {
     return (
-      <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+      <div style={{ height: '100dvh', width: '100dvw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
         <div style={{ fontSize: '18px', fontWeight: 800, color: '#ef4444', marginBottom: '8px' }}>COULD NOT LOAD STUDY</div>
         <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '20px', textAlign: 'center', maxWidth: '420px' }}>{hydrationError}</div>
@@ -927,7 +943,7 @@ const DicomViewerPage = () => {
     const primaryPct = primary ? Math.max(0, Math.min(100, primary.percent ?? Math.round(100 * (primary.processed || 0) / primary.total))) : null;
     const primaryPhase = pendingExtractionAssets.find(a => a.phase)?.phase || null;
     return (
-      <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+      <div style={{ height: '100dvh', width: '100dvw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
         <style>{`@keyframes dvindet { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }`}</style>
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>{allFailed ? '⚠️' : '⏳'}</div>
         <div style={{ fontSize: '16px', fontWeight: 800, color: allFailed ? '#ef4444' : '#3b82f6', letterSpacing: '2px', marginBottom: '8px' }}>
@@ -991,7 +1007,7 @@ const DicomViewerPage = () => {
     // the viewer appeared.
     if (isUrlLaunched) {
       return (
-        <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+        <div style={{ height: '100dvh', width: '100dvw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
           <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'dvspin 0.8s linear infinite', marginBottom: '20px' }} />
           <div style={{ fontSize: '14px', fontWeight: 800, color: '#3b82f6', letterSpacing: '2px' }}>LOADING STUDY</div>
           <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '12px', letterSpacing: '1.5px', fontWeight: 700 }}>PREPARING VIEWER</div>
@@ -1001,8 +1017,8 @@ const DicomViewerPage = () => {
     }
     return (
       <div style={{
-        height: '100vh',
-        width: '100vw',
+        height: '100dvh',
+        width: '100dvw',
         background: '#0a0a0f',
         display: 'flex',
         flexDirection: 'column',
@@ -1071,12 +1087,17 @@ const DicomViewerPage = () => {
 
   return (
     <div style={{
-      height: '100vh',
-      width: '100vw',
+      height: '100dvh',
+      width: '100dvw',
       background: '#000',
       display: 'flex',
       flexDirection: (isMobile) && hasMultipleSeries ? 'column' : 'row',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+      paddingTop: 'env(safe-area-inset-top)',
+      paddingBottom: 'env(safe-area-inset-bottom)',
+      paddingLeft: 'env(safe-area-inset-left)',
+      paddingRight: 'env(safe-area-inset-right)'
     }}>
       {/* Left Series List Panel (always show if series data exists) */}
       {(hasMultipleSeries || allSeries?.length > 0) && (
