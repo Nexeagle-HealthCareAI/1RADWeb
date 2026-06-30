@@ -1227,7 +1227,7 @@ export default function BillingPage() {
       };
       const totStyle = {
         fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
-        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11, name: 'Calibri' },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 13, name: 'Calibri' },
         border: { ...borders, top: medium },
         alignment: { vertical: 'center' },
       };
@@ -1262,7 +1262,7 @@ export default function BillingPage() {
             if (!ws[ref]) ws[ref] = { t: 's', v: '' };
             ws[ref].s = totStyle;
           }
-          ws['!rows'][totIdx] = { hpt: 24 };
+          ws['!rows'][totIdx] = { hpt: 30 };
         }
       };
 

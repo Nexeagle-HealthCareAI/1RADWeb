@@ -461,7 +461,7 @@ const ReferralHub = ({
     };
     const totStyle = {
       fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
-      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11, name: 'Calibri' },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 13, name: 'Calibri' },
       border: { ...borders, top: medium },
       alignment: { vertical: 'center' },
     };
@@ -523,7 +523,7 @@ const ReferralHub = ({
       if (!sumWs[ref]) sumWs[ref] = { t: 's', v: '' };
       sumWs[ref].s = totStyle;
     }
-    sumWs['!rows'][sumTotIdx] = { hpt: 24 };
+    sumWs['!rows'][sumTotIdx] = { hpt: 30 };
     XLSX.utils.book_append_sheet(wb, sumWs, 'Summary');
 
     // ── One sheet per partner ──────────────────────────────────────────────
@@ -591,7 +591,7 @@ const ReferralHub = ({
         if (!ws[ref]) ws[ref] = { t: 's', v: '' };
         ws[ref].s = totStyle;
       }
-      ws['!rows'][totIdx] = { hpt: 24 };
+      ws['!rows'][totIdx] = { hpt: 30 };
       const sheetName = group.name.slice(0, 31).replace(/[:\\/?*[\]]/g, '_');
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
