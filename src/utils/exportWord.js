@@ -125,7 +125,8 @@ function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLe
   // Age with its saved unit (Y / M / D) — e.g. "56Y", "6M", "15D".
   const age    = formatPatientAge(appointment?.patientAge ?? appointment?.age, '—');
   const sex    = appointment?.patientGender || appointment?.gender || '—';
-  const refBy  = appointment?.referredBy || 'Self';
+  const refDegSpec = [appointment?.referrerDegree, appointment?.referrerSpecialty].filter(Boolean).join(', ');
+  const refBy  = (appointment?.referredBy || 'Self') + (refDegSpec && appointment?.referredBy ? ` (${refDegSpec})` : '');
   // Reported date as "5 June, 2026" (day-first, month name, comma before year).
   const _d = new Date();
   const repDate = `${_d.getDate()} ${_d.toLocaleString('en-US', { month: 'long' })}, ${_d.getFullYear()}`;

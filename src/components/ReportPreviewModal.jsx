@@ -715,7 +715,8 @@ const ReportPreviewModal = ({
     const _ptSex   = fullAppointment?.patientGender || fullAppointment?.gender || '—';
     const _ptSvc   = _matchedService?.serviceName || fullAppointment?.service || fullAppointment?.modality || '—';
     const _ptMod   = _matchedService?.modality    || fullAppointment?.modality || '—'; // used by thank-you line
-    const _ptRef   = fullAppointment?.referredBy || 'Self';
+    const _refDegSpec = [fullAppointment?.referrerDegree, fullAppointment?.referrerSpecialty].filter(Boolean).join(', ');
+    const _ptRef   = (fullAppointment?.referredBy || 'Self') + (_refDegSpec && fullAppointment?.referredBy ? ` (${_refDegSpec})` : '');
     const _repDate = savedMetadata?.finalizedAt
       ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
       : new Date().toLocaleDateString();

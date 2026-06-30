@@ -235,6 +235,7 @@ jobs:
 
       - name: Build Electron installer
         env:
+          VITE_API_URL: ${{ github.ref == 'refs/heads/main' && vars.PROD_API_URL || vars.DEV_API_URL }}
           STORAGE_ENDPOINT: ${{ github.ref == 'refs/heads/main' && vars.PROD_STORAGE_ENDPOINT || vars.DEV_STORAGE_ENDPOINT }}
           STORAGE_BUCKET: ${{ github.ref == 'refs/heads/main' && vars.PROD_STORAGE_BUCKET || vars.DEV_STORAGE_BUCKET }}
         shell: bash
