@@ -440,212 +440,161 @@ const ReferralHub = ({
     if (!partnerGroups.length) return;
     const wb = XLSX.utils.book_new();
 
-    // ── Summary sheet ────────────────────────────────────────────────────
-    let sumPayouts = 0, sumTotal = 0, sumPaid = 0, sumUnpaid = 0, sumEligible = 0, sumAwaiting = 0;
+    // ── Premium design tokens — minimal, consistent ───────────────────────
+    const HDR_BG = 'FF1E293B'; // Dark slate header
+    const TOT_BG = 'FF334155'; // Slightly lighter slate for totals
+    const ALT_BG = 'FFF8FAFC'; // Very subtle off-white alternate rows
+    const NEL_BG = 'FFFFF1F2'; // Barely-there rose — non-eligible
+    const NEL_FG = 'FF9F1239'; // Deep rose text
+    const DEF_FG = 'FF1E293B'; // Near-black body text
+    const BDR    = 'FFE2E8F0'; // Light slate border
+
+    const thin    = { style: 'thin',   color: { rgb: BDR } };
+    const medium  = { style: 'medium', color: { rgb: 'FF94A3B8' } };
+    const borders = { top: thin, bottom: thin, left: thin, right: thin };
+
+    const hdrStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: HDR_BG } },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 10, name: 'Calibri' },
+      border: borders,
+      alignment: { vertical: 'center' },
+    };
+    const totStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11, name: 'Calibri' },
+      border: { ...borders, top: medium },
+      alignment: { vertical: 'center' },
+    };
+    const mkRow = (bg, fg, bold = false) => ({
+      fill: { patternType: 'solid', fgColor: { rgb: bg } },
+      font: { color: { rgb: fg }, sz: 10, name: 'Calibri', bold },
+      border: borders,
+      alignment: { vertical: 'center' },
+    });
+
+    // ── Summary sheet ─────────────────────────────────────────────────────
+    let sPayouts = 0, sTotal = 0, sPaid = 0, sUnpaid = 0, sElig = 0, sAwaiting = 0;
     const summaryRows = partnerGroups.map(g => {
-      sumPayouts += g.count;
-      sumTotal += g.total;
-      sumPaid += g.paid;
-      sumUnpaid += g.unpaid;
-      sumEligible += g.eligible;
-      sumAwaiting += g.awaiting;
+      sPayouts += g.count; sTotal += g.total;
+      sPaid += g.paid; sUnpaid += g.unpaid;
+      sElig += g.eligible; sAwaiting += g.awaiting;
       return {
-        'Partner': g.name,
-        'Total Payouts': g.count,
-        'Total Amount (INR)': g.total,
-        'Settled (INR)': g.paid,
-        'Outstanding (INR)': g.unpaid,
+        'Partner':               g.name,
+        'Total Payouts':         g.count,
+        'Total Amount (INR)':    g.total,
+        'Settled (INR)':         g.paid,
+        'Outstanding (INR)':     g.unpaid,
         'Eligible to Pay (INR)': g.eligible,
-        'Non-eligible (INR)': g.awaiting,
+        'Non-eligible (INR)':    g.awaiting,
       };
     });
-
     summaryRows.push({});
     summaryRows.push({
-      'Partner': 'TOTAL',
-      'Total Payouts': sumPayouts,
-      'Total Amount (INR)': sumTotal,
-      'Settled (INR)': sumPaid,
-      'Outstanding (INR)': sumUnpaid,
-      'Eligible to Pay (INR)': sumEligible,
-      'Non-eligible (INR)': sumAwaiting,
+      'Partner':               'TOTAL',
+      'Total Payouts':         sPayouts,
+      'Total Amount (INR)':    sTotal,
+      'Settled (INR)':         sPaid,
+      'Outstanding (INR)':     sUnpaid,
+      'Eligible to Pay (INR)': sElig,
+      'Non-eligible (INR)':    sAwaiting,
     });
 
-    const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
-    summaryWs['!cols'] = [{ wch: 28 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }];
-
-    // Style Headers
+    const sumWs = XLSX.utils.json_to_sheet(summaryRows);
+    sumWs['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }];
+    sumWs['!rows'] = [];
     for (let C = 0; C < 7; C++) {
-      const cellRef = XLSX.utils.encode_cell({ c: C, r: 0 });
-      if (summaryWs[cellRef]) {
-        summaryWs[cellRef].s = {
-          fill: { patternType: 'solid', fgColor: { rgb: "FF2563EB" } }, // Bright blue header
-          font: { color: { rgb: "FFFFFFFF" }, bold: true }
-        };
-      }
+      const ref = XLSX.utils.encode_cell({ c: C, r: 0 });
+      if (sumWs[ref]) sumWs[ref].s = hdrStyle;
     }
-
-    // Attempt to add styling
+    sumWs['!rows'][0] = { hpt: 22 };
     partnerGroups.forEach((g, idx) => {
-      if (g.eligible === 0 && g.unpaid > 0) {
-        const rowIndex = idx + 1;
-        for (let C = 0; C < 7; C++) {
-          const cellRef = XLSX.utils.encode_cell({ c: C, r: rowIndex });
-          if (summaryWs[cellRef]) {
-            summaryWs[cellRef].s = {
-              fill: { patternType: 'solid', fgColor: { rgb: "FFFFE5E5" } }, // light red
-              font: { color: { rgb: "FF990000" }, bold: true }
-            };
-          }
-        }
+      const r = idx + 1;
+      const isNE = g.eligible === 0 && g.unpaid > 0;
+      const bg = isNE ? NEL_BG : (idx % 2 === 0 ? 'FFFFFFFF' : ALT_BG);
+      const fg = isNE ? NEL_FG : DEF_FG;
+      for (let C = 0; C < 7; C++) {
+        const ref = XLSX.utils.encode_cell({ c: C, r });
+        if (sumWs[ref]) sumWs[ref].s = mkRow(bg, fg, isNE && C === 0);
       }
     });
-
-    // ── Summary totals row — outstanding bold styling ───────────────────
-    const totalRowIndex = summaryRows.length - 1;
-    const summaryTotalStyle = {
-      fill: { patternType: 'solid', fgColor: { rgb: "FF065F46" } }, // Deep emerald
-      font: { bold: true, color: { rgb: "FFFFFFFF" }, sz: 14, name: 'Calibri' },
-      border: {
-        top:    { style: 'medium', color: { rgb: "FF000000" } },
-        bottom: { style: 'medium', color: { rgb: "FF000000" } },
-        left:   { style: 'thin',   color: { rgb: "FF000000" } },
-        right:  { style: 'thin',   color: { rgb: "FF000000" } },
-      },
-      alignment: { horizontal: 'center', vertical: 'center' }
-    };
+    const sumTotIdx = summaryRows.length - 1;
     for (let C = 0; C < 7; C++) {
-      const cellRef = XLSX.utils.encode_cell({ c: C, r: totalRowIndex });
-      if (!summaryWs[cellRef]) summaryWs[cellRef] = { t: 's', v: '' };
-      summaryWs[cellRef].s = summaryTotalStyle;
+      const ref = XLSX.utils.encode_cell({ c: C, r: sumTotIdx });
+      if (!sumWs[ref]) sumWs[ref] = { t: 's', v: '' };
+      sumWs[ref].s = totStyle;
     }
-    // Set row height for totals row
-    summaryWs['!rows'] = summaryWs['!rows'] || [];
-    summaryWs['!rows'][totalRowIndex] = { hpt: 28 };
-    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+    sumWs['!rows'][sumTotIdx] = { hpt: 24 };
+    XLSX.utils.book_append_sheet(wb, sumWs, 'Summary');
 
-    // ── One sheet per partner ────────────────────────────────────────────
+    // ── One sheet per partner ──────────────────────────────────────────────
     partnerGroups.forEach(group => {
-      let sumPaid = 0, sumEligible = 0, sumNonEligible = 0;
-
+      let tPaid = 0, tElig = 0, tNonElig = 0;
       const rows = group.cuts.map(cut => {
         const eligibility = eligibilityLabel(cut);
         const amount = Number(cut?.amount) || 0;
-        
-        if (cut?.status === 'PAID') sumPaid += amount;
-        else if (eligibility === 'Eligible') sumEligible += amount;
-        else sumNonEligible += amount;
-
+        if (cut?.status === 'PAID') tPaid += amount;
+        else if (eligibility === 'Eligible') tElig += amount;
+        else tNonElig += amount;
         return {
-          'Payout Date': formatDate(cut?.date, true),
-          'Patient ID': cut?.patientDisplayId || '',
-          'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
-          'Age': cut?.patientAge || '',
-          'Gender': cut?.patientGender || '',
-          'Mobile': cut?.patientMobile || '',
-          'Modality': `${(cut?.modality || '').toUpperCase()}${cut?.serviceName ? ` - ${cut.serviceName}` : ''}`,
-          'Reference ID': cut?.reference || '',
-          'Payout Amount (INR)': amount,
-          'Patient Payment': cut?.patientPaymentStatus || '',
-          'Commission Status': cut?.status || 'UNPAID',
-          'Commission Type': cut?.type || '',
-          'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
-          'Payout Eligibility': eligibility,
+          'Date':               formatDate(cut?.date, true),
+          'Patient ID':         cut?.patientDisplayId || '',
+          'Patient Name':       (cut?.patientName || 'N/A').toUpperCase(),
+          'Age':                cut?.patientAge || '',
+          'Gender':             cut?.patientGender || '',
+          'Mobile':             cut?.patientMobile || '',
+          'Service / Modality': `${(cut?.modality || '').toUpperCase()}${cut?.serviceName ? ` \u2014 ${cut.serviceName}` : ''}`,
+          'Reference ID':       cut?.reference || '',
+          'Amount (INR)':       amount,
+          'Patient Payment':    cut?.patientPaymentStatus || '',
+          'Status':             cut?.status || 'UNPAID',
+          'Eligibility':        eligibility,
+          'Remarks':            cut?.description
+                                  ? (cut.description.includes(' - ')
+                                      ? cut.description.split(' - ')[1]
+                                      : cut.description)
+                                  : '',
         };
       });
-
-      // Add empty separator row
+      // Single clean totals footer
       rows.push({});
-
-      // ── Three vivid breakdown rows instead of one cramped line ──────────
       rows.push({
-        'Payout Date': '✅  SETTLED / PAID',
-        'Payout Amount (INR)': sumPaid,
-        'Patient Payment': `₹${sumPaid.toLocaleString('en-IN')}`,
+        'Date':        'TOTALS',
+        'Amount (INR)': group.total,
+        'Status':      `Settled: \u20b9${tPaid.toLocaleString('en-IN')}`,
+        'Eligibility': `Eligible: \u20b9${tElig.toLocaleString('en-IN')}   Pending: \u20b9${tNonElig.toLocaleString('en-IN')}`,
       });
-      rows.push({
-        'Payout Date': '🟢  ELIGIBLE TO PAY',
-        'Payout Amount (INR)': sumEligible,
-        'Patient Payment': `₹${sumEligible.toLocaleString('en-IN')}`,
-      });
-      rows.push({
-        'Payout Date': '🔴  NON-ELIGIBLE (Awaiting)',
-        'Payout Amount (INR)': sumNonEligible,
-        'Patient Payment': `₹${sumNonEligible.toLocaleString('en-IN')}`,
-      });
-      rows.push({
-        'Payout Date': '💰  TOTAL PAYOUT',
-        'Payout Amount (INR)': group.total,
-        'Patient Payment': `₹${group.total.toLocaleString('en-IN')}`,
-      });
-
+      const NCOLS = 13;
       const ws = XLSX.utils.json_to_sheet(rows);
       ws['!cols'] = [
-        { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
-        { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 28 }, { wch: 22 }
+        { wch: 22 }, { wch: 13 }, { wch: 26 }, { wch: 6  }, { wch: 9  }, { wch: 15 },
+        { wch: 30 }, { wch: 15 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 28 },
       ];
-
-      // Style Headers
-      for (let C = 0; C < 14; C++) {
-        const cellRef = XLSX.utils.encode_cell({ c: C, r: 0 });
-        if (ws[cellRef]) {
-          ws[cellRef].s = {
-            fill: { patternType: 'solid', fgColor: { rgb: "FF0F172A" } }, // dark blue/slate
-            font: { color: { rgb: "FFFFFFFF" }, bold: true }
-          };
-        }
+      ws['!rows'] = [];
+      for (let C = 0; C < NCOLS; C++) {
+        const ref = XLSX.utils.encode_cell({ c: C, r: 0 });
+        if (ws[ref]) ws[ref].s = hdrStyle;
       }
-
-      // Apply red color for Non-eligible rows
+      ws['!rows'][0] = { hpt: 22 };
       group.cuts.forEach((cut, idx) => {
-        if (eligibilityLabel(cut) === 'Non-eligible') {
-          const rowIndex = idx + 1;
-          for (let C = 0; C < 14; C++) {
-            const cellRef = XLSX.utils.encode_cell({ c: C, r: rowIndex });
-            if (ws[cellRef]) {
-              ws[cellRef].s = {
-                fill: { patternType: 'solid', fgColor: { rgb: "FFFFE5E5" } }, // light red
-                font: { color: { rgb: "FF990000" } }
-              };
-            }
-          }
+        const r = idx + 1;
+        const isNE = eligibilityLabel(cut) === 'Non-eligible';
+        const bg = isNE ? NEL_BG : (idx % 2 === 0 ? 'FFFFFFFF' : ALT_BG);
+        const fg = isNE ? NEL_FG : DEF_FG;
+        for (let C = 0; C < NCOLS; C++) {
+          const ref = XLSX.utils.encode_cell({ c: C, r });
+          if (ws[ref]) ws[ref].s = mkRow(bg, fg);
         }
       });
-
-      // ── Style the 4 breakdown rows at the bottom ─────────────────────
-      const totalSectionStart = rows.length - 4; // settled, eligible, non-eligible, total
-      const breakdownStyles = [
-        { fill: "FF065F46", font: "FFFFFFFF" }, // Settled  — deep emerald
-        { fill: "FF1D4ED8", font: "FFFFFFFF" }, // Eligible — royal blue
-        { fill: "FFB91C1C", font: "FFFFFFFF" }, // Non-elig — bold red
-        { fill: "FF1E1B4B", font: "FFD4AF37" }, // Total    — deep navy / gold text
-      ];
-      const numCols = 14;
-      ws['!rows'] = ws['!rows'] || [];
-      breakdownStyles.forEach((style, i) => {
-        const rowIdx = totalSectionStart + i;
-        ws['!rows'][rowIdx] = { hpt: 26 };
-        for (let C = 0; C < numCols; C++) {
-          const cellRef = XLSX.utils.encode_cell({ c: C, r: rowIdx });
-          if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' };
-          ws[cellRef].s = {
-            fill: { patternType: 'solid', fgColor: { rgb: style.fill } },
-            font: { bold: true, color: { rgb: style.font }, sz: i === 3 ? 14 : 12, name: 'Calibri' },
-            border: {
-              top:    { style: i === 0 ? 'medium' : 'thin', color: { rgb: "FF000000" } },
-              bottom: { style: i === 3 ? 'medium' : 'thin', color: { rgb: "FF000000" } },
-              left:   { style: 'thin', color: { rgb: "FF000000" } },
-              right:  { style: 'thin', color: { rgb: "FF000000" } },
-            },
-            alignment: { vertical: 'center' }
-          };
-        }
-      });
-
-      const sheetName = group.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
+      const totIdx = rows.length - 1;
+      for (let C = 0; C < NCOLS; C++) {
+        const ref = XLSX.utils.encode_cell({ c: C, r: totIdx });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+        ws[ref].s = totStyle;
+      }
+      ws['!rows'][totIdx] = { hpt: 24 };
+      const sheetName = group.name.slice(0, 31).replace(/[:\\/?*[\]]/g, '_');
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
-
     const dateStr = new Date().toISOString().split('T')[0];
     XLSX.writeFile(wb, `1RAD_Referral_Payouts_${timeFilter}_${dateStr}.xlsx`);
   };
