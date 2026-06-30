@@ -234,7 +234,34 @@ jobs:
         run: npm ci
 
       - name: Build Electron installer
-        run: npm run dist:win
+        env:
+          STORAGE_ENDPOINT: ${{ secrets.PROD_STORAGE_ENDPOINT }}
+          STORAGE_BUCKET: ${{ secrets.PROD_STORAGE_BUCKET }}
+        shell: bash
+        run: |
+          # Strip trailing slash from endpoint just in case, then construct the feed URL
+          ENDPOINT="${STORAGE_ENDPOINT%/}"
+          FEED_URL="$ENDPOINT/$STORAGE_BUCKET/downloads/"
+          echo "Baking feed URL into installer: $FEED_URL"
+          npm run dist:win -- -c.publish.provider=generic -c.publish.url=$FEED_URL
+
+      - name: Upload installer to E2E Object Storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_STORAGE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_STORAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.PROD_STORAGE_REGION }}
+          STORAGE_ENDPOINT: ${{ secrets.PROD_STORAGE_ENDPOINT }}
+          STORAGE_BUCKET: ${{ secrets.PROD_STORAGE_BUCKET }}
+        shell: bash
+        run: |
+          aws s3 cp release/ s3://$STORAGE_BUCKET/downloads/ \
+            --endpoint-url $STORAGE_ENDPOINT \
+            --recursive \
+            --exclude "*" \
+            --include "*.exe" \
+            --include "*.blockmap" \
+            --include "latest.yml" \
+            --acl public-read
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4

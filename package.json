@@ -45,13 +45,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "1Rad",
       "artifactName": "1Rad-Setup.${ext}"
-    },
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "https://REPLACE-ME.blob.core.windows.net/downloads/"
-      }
-    ]
+    }
   },
   "dependencies": {
     "@cornerstonejs/core": "^4.22.2",
