@@ -20,14 +20,14 @@ const STATUS_STYLE = {
   pending:  { bg: '#fffbeb', color: '#d97706', border: '#fde68a', dot: '#f59e0b' },
 };
 
-function StatCard({ label, value, color = '#0f52ba', icon }) {
+function StatCard({ label, value, color = '#0f52ba', icon, compact = false }) {
   return (
-    <div style={{ background: 'white', borderRadius: '18px', padding: '22px 24px', border: '1px solid #e8edf2', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+    <div style={{ background: 'white', borderRadius: compact ? '12px' : '18px', padding: compact ? '12px 14px' : '22px 24px', border: '1px solid #e8edf2', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: compact ? '6px' : '14px' }}>
         <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{label}</span>
-        <span style={{ fontSize: '18px' }}>{icon}</span>
+        <span style={{ fontSize: compact ? '14px' : '18px' }}>{icon}</span>
       </div>
-      <div style={{ fontSize: '28px', fontWeight: 950, color, letterSpacing: '-1px' }}>{value}</div>
+      <div style={{ fontSize: compact ? '20px' : '28px', fontWeight: 950, color, letterSpacing: '-1px' }}>{value}</div>
     </div>
   );
 }
@@ -47,8 +47,15 @@ export default function DicomBridgePage() {
   const [localConfig, setLocalConfig] = useState({ uploadMode: 'auto', autoModalities: [] });
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  // Tablet: 640–1023px — sidebar is visible (200px wide) but screen is still short.
+  // We tighten padding and cap the table body height so nothing needs to page-scroll.
+  const [isTablet, setIsTablet] = useState(window.innerWidth > 768 && window.innerWidth < 1024);
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    const handleResize = () => {
+      const w = window.innerWidth;
+      setIsMobile(w <= 768);
+      setIsTablet(w > 768 && w < 1024);
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -132,27 +139,29 @@ export default function DicomBridgePage() {
   });
 
   return (
-    <div style={{ background: '#f0f4f8', minHeight: '100vh' }}>
+    <div style={{ background: '#f0f4f8', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Hero Header ── */}
-      <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f2a5e 60%, #1e3a8a 100%)', padding: isMobile ? '24px 20px 32px' : '36px 50px 46px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f2a5e 60%, #1e3a8a 100%)', padding: isMobile ? '16px 20px 20px' : isTablet ? '14px 28px 18px' : '36px 50px 46px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
         <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '280px', height: '280px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', pointerEvents: 'none' }} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
           <div>
-            <div style={{ fontSize: '10px', fontWeight: 950, color: 'rgba(255,255,255,0.4)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 950, color: 'rgba(255,255,255,0.4)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: isTablet ? '4px' : '8px' }}>
               1RAD / DICOM BRIDGE
             </div>
-            <h1 style={{ fontSize: '28px', fontWeight: 950, color: 'white', letterSpacing: '-1px', margin: '0 0 10px' }}>
+            <h1 style={{ fontSize: isTablet ? '18px' : '28px', fontWeight: 950, color: 'white', letterSpacing: '-1px', margin: isTablet ? '0 0 4px' : '0 0 10px' }}>
               DICOM Bridge Monitor
             </h1>
-            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600, margin: 0 }}>
-              Orthanc → 1Rad automatic upload pipeline
-            </p>
+            {!isTablet && (
+              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600, margin: 0 }}>
+                Orthanc → 1Rad automatic upload pipeline
+              </p>
+            )}
           </div>
 
           {/* Connection status */}
-          <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '18px 24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: isTablet ? '10px 14px' : '18px 24px', display: 'flex', alignItems: 'center', gap: isTablet ? '10px' : '16px' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                 <div style={{
@@ -191,7 +200,7 @@ export default function DicomBridgePage() {
       </div>
 
         {/* TAB BAR */}
-        <div style={{ display: 'flex', gap: '8px', padding: isMobile ? '20px 20px 16px' : '20px 50px 16px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ display: 'flex', gap: '8px', padding: isMobile ? '12px 20px 10px' : isTablet ? '10px 28px 8px' : '20px 50px 16px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', flexShrink: 0 }}>
           {[
             { id: 'monitor', label: 'Activity Monitor' },
             { id: 'settings', label: 'Bridge Settings' },
@@ -218,19 +227,21 @@ export default function DicomBridgePage() {
           ))}
         </div>
 
-        <div style={{ padding: isMobile ? '16px 20px 80px' : '32px 50px 80px' }}>
+        {/* Scrollable tab content area */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: isTablet ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: isMobile ? '12px 20px 60px' : isTablet ? '12px 28px 16px' : '32px 50px 80px', flex: isTablet ? 1 : 'none', minHeight: 0, display: isTablet ? 'flex' : 'block', flexDirection: 'column' }}>
         {/* TAB: ACTIVITY MONITOR */}
         {activeTab === 'monitor' && (<>
-        {/* Stats row */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '36px' }}>
-          <StatCard label="Uploaded"      value={status?.uploaded     ?? '—'} color="#16a34a" icon="✅" />
-          <StatCard label="Pending"       value={status?.pending      ?? '—'} color="#d97706" icon="⏳" />
-          <StatCard label="Failed"        value={status?.failed       ?? '—'} color="#dc2626" icon="❌" />
-          <StatCard label="Change Cursor" value={status?.lastChangeId ?? '—'} color="#0f52ba" icon="📡" />
+        {/* Stats row — compact on tablet */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isTablet ? '10px' : '16px', marginBottom: isTablet ? '12px' : '36px', flexShrink: 0 }}>
+          <StatCard label="Uploaded"      value={status?.uploaded     ?? '—'} color="#16a34a" icon="✅" compact={isTablet} />
+          <StatCard label="Pending"       value={status?.pending      ?? '—'} color="#d97706" icon="⏳" compact={isTablet} />
+          <StatCard label="Failed"        value={status?.failed       ?? '—'} color="#dc2626" icon="❌" compact={isTablet} />
+          <StatCard label="Change Cursor" value={status?.lastChangeId ?? '—'} color="#0f52ba" icon="📡" compact={isTablet} />
         </div>
 
-        {/* Filters + table */}
-        <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+        {/* Filters + table — flex: 1 so table body can fill remaining space */}
+        <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', flex: isTablet ? 1 : 'none', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
 
           {/* Table header */}
           <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -261,7 +272,8 @@ export default function DicomBridgePage() {
             </div>
           </div>
 
-          {/* Table */}
+          {/* Table — body scrolls independently on tablet so header/stats/tabs stay pinned */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {!connected ? (
             <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8' }}>
               <div style={{ fontSize: '36px', marginBottom: '12px' }}>📡</div>
@@ -337,13 +349,20 @@ export default function DicomBridgePage() {
                           {r.error_message}
                         </div>
                       )}
+
+                      {r.status_warning && (
+                        <div style={{ marginTop: '10px', padding: '7px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '10px', color: '#b45309', fontWeight: 700, display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                          <span>⚠</span>
+                          <span>Status update failed — appointment badge may not show SCANNED. {r.status_warning}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#f8fafc' }}>
+              <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr>
                   {['Patient', 'Modality', 'Study Date', 'Appointment ID', 'Confidence', 'Uploaded At', 'Status'].map(h => (
                     <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>
@@ -399,6 +418,12 @@ export default function DicomBridgePage() {
                             {r.error_message}
                           </div>
                         )}
+                        {r.status_warning && (
+                          <div style={{ fontSize: '9px', color: '#b45309', marginTop: '4px', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '4px' }} title={`Status update failed: ${r.status_warning}`}>
+                            <span>⚠</span>
+                            <span>Status update failed</span>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -406,11 +431,14 @@ export default function DicomBridgePage() {
               </tbody>
             </table>
           )}
+          </div>
         </div>
         </>
         )}
 
+
         {/* TAB: SETTINGS */}
+
         {activeTab === 'settings' && (
           <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: isMobile ? '24px' : '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', maxWidth: '900px', margin: '0 auto' }}>
             <div style={{ marginBottom: '24px' }}>
@@ -838,6 +866,7 @@ WORKLIST_STATION_AETS={"CT":"GE_CT_01","DX":"GE_XR_01"}`}</pre>
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
