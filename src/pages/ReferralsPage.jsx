@@ -296,8 +296,32 @@ export default function ReferralsPage() {
     return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
   };
   const copyDoctorLink = async (referrerId) => {
-    try { await navigator.clipboard.writeText(await buildDoctorLink(referrerId)); notifyToast('Link copied ✓', 'success'); }
-    catch { notifyToast('Could not generate the link.', 'error'); }
+    try { 
+      const link = await buildDoctorLink(referrerId);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = link;
+        // Move outside of viewport
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+        } finally {
+          textArea.remove();
+        }
+      }
+      notifyToast('Link copied ✓', 'success'); 
+    }
+    catch (err) { 
+      console.error('Link generation/copy error:', err);
+      notifyToast('Could not generate or copy the link.', 'error'); 
+    }
   };
   // One-click WhatsApp send via NexEagle's WhatsApp Business API: the link is
   // delivered server-side straight to the doctor's number (no app hand-off).
