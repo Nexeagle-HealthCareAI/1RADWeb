@@ -139,7 +139,8 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
   const sex       = fullAppointment?.patientGender || fullAppointment?.gender || '—';
   const study     = _matchedService?.serviceName || fullAppointment?.service || fullAppointment?.modality || '—';
   const modality  = _matchedService?.modality    || fullAppointment?.modality || '—'; // used by the thank-you line
-  const refBy     = fullAppointment?.referredBy || 'Self';
+  const refDegSpec = [fullAppointment?.referrerDegree, fullAppointment?.referrerSpecialty].filter(Boolean).join(', ');
+  const refBy     = (fullAppointment?.referredBy || 'Self') + (refDegSpec && fullAppointment?.referredBy ? ` (${refDegSpec})` : '');
   const repDate   = savedMetadata?.finalizedAt
     ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
     : new Date().toLocaleDateString();

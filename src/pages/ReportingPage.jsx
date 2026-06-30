@@ -2300,7 +2300,8 @@ const ReportingPage = () => {
     const age   = a.patientAge || a.age || '—';
     const sex   = a.patientGender || a.gender || '—';
     const study = svc?.serviceName || a.service || a.modality || '—';
-    const refBy = a.referredBy || 'Self';
+    const refDegSpec = [a.referrerDegree, a.referrerSpecialty].filter(Boolean).join(', ');
+    const refBy = (a.referredBy || 'Self') + (refDegSpec && a.referredBy ? ` (${refDegSpec})` : '');
     const date  = new Date().toLocaleDateString();
     return (
       `<p><strong>${esc(name)}</strong></p>` +
