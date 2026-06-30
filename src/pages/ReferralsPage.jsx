@@ -628,6 +628,32 @@ export default function ReferralsPage() {
     notifyToast(`Download started — ${caseLedgerList.length} partner${caseLedgerList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
   };
 
+  const handleExportPatientMasterList = () => {
+    if (!patientMasterList || patientMasterList.length === 0) {
+      notifyToast('No patients to export yet.', 'info');
+      return;
+    }
+    const headers = ['ID', 'PTID', 'Full Name', 'Mobile', 'Age', 'Gender', 'Address', 'Source Of Info', 'Registered Date'];
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    let csv = headers.join(',') + '\n';
+    patientMasterList.forEach((p, i) => {
+      const addressStr = [p.address, p.village, p.district].filter(Boolean).join(', ');
+      csv += [
+        i + 1, cell(p.patientIdentifier), cell(p.fullName), cell(p.mobile),
+        p.age || '', cell(p.gender), cell(addressStr), cell(p.sourceOfInfo),
+        cell(new Date(p.registeredAt).toLocaleDateString())
+      ].join(',') + '\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Patient_Master_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    notifyToast(`Download started — ${patientMasterList.length} patient${patientMasterList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
+  };
+
   // Sync settings when doctor selection changes
   const fetchDoctorProtocol = useCallback(async (docId) => {
     if (!docId) {
