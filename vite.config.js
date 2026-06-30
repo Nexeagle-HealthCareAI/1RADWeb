@@ -30,7 +30,7 @@ export default defineConfig({
       },
       workbox: {
         // Precache app shell. Large DICOM-related chunks can blow past the default 2 MB limit.
-        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15 MB — main bundle grew with Cornerstone/xlsx libs
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Don't intercept anything the page itself shouldn't ever hit through SW:
         // SPA navigations are handled below; static assets above; runtime caches further down.
