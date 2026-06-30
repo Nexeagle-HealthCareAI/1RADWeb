@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx-js-style';
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
 import { celebrate } from '../../utils/celebrate';
@@ -272,35 +273,78 @@ const RevenueHub = ({
     let headers = [];
     let rows = [];
     const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
-    const isExportingSelected = selectedIds.size > 0;
     const fileName = `1RAD_Financial_Report_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
 
-    // Admin-approval columns: the latest approval request tied to a row (by its
-    // invoiceId / appointmentId) → its status + the reason given. Blank when the
-    // row never went through admin approval.
+    // Premium design tokens 
+    const HDR_BG = 'FF1E293B'; // Dark slate header
+    const TOT_BG = 'FF334155'; // Lighter slate totals
+    const ALT_BG = 'FFF8FAFC'; // Off-white alternate rows
+    const DEF_FG = 'FF1E293B'; // Near-black body text
+    const BDR    = 'FFE2E8F0'; // Light slate border
+
+    const thin    = { style: 'thin',   color: { rgb: BDR } };
+    const medium  = { style: 'medium', color: { rgb: 'FF94A3B8' } };
+    const borders = { top: thin, bottom: thin, left: thin, right: thin };
+
+    const hdrStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: HDR_BG } },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 10, name: 'Calibri' },
+      border: borders,
+      alignment: { vertical: 'center' },
+    };
+    const totStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11, name: 'Calibri' },
+      border: { ...borders, top: medium },
+      alignment: { vertical: 'center' },
+    };
+    const mkRow = (bg, fg) => ({
+      fill: { patternType: 'solid', fgColor: { rgb: bg } },
+      font: { color: { rgb: fg }, sz: 10, name: 'Calibri' },
+      border: borders,
+      alignment: { vertical: 'center' },
+    });
+
+    const applySheet = (ws, numCols, numDataRows, hasTotalsRow = false) => {
+      ws['!rows'] = ws['!rows'] || [];
+      for (let C = 0; C < numCols; C++) {
+        const ref = XLSX.utils.encode_cell({ c: C, r: 0 });
+        if (ws[ref]) ws[ref].s = hdrStyle;
+      }
+      ws['!rows'][0] = { hpt: 22 };
+      for (let R = 1; R <= numDataRows; R++) {
+        const bg = R % 2 === 0 ? ALT_BG : 'FFFFFFFF';
+        for (let C = 0; C < numCols; C++) {
+          const ref = XLSX.utils.encode_cell({ c: C, r: R });
+          if (ws[ref]) ws[ref].s = mkRow(bg, DEF_FG);
+        }
+      }
+      if (hasTotalsRow) {
+        const totIdx = numDataRows + 1;
+        for (let C = 0; C < numCols; C++) {
+          const ref = XLSX.utils.encode_cell({ c: C, r: totIdx });
+          if (ws[ref]) ws[ref].s = totStyle;
+        }
+        ws['!rows'][totIdx] = { hpt: 26 };
+      }
+    };
+
     const approvalCells = (row) => {
       const a = approvalForInvoice(approvalMap, row);
-      if (!a) return ['—', ''];
+      if (!a) return ['--', ''];
       const b = approvalBadge(a.status);
-      return [b ? b.short : (a.status || '—'), a.reason || ''];
+      return [b ? b.short : (a.status || '--'), a.reason || ''];
     };
+
+    let totals = { gross: 0, discount: 0, net: 0, cut: 0, income: 0 };
 
     if (timeFilter === 'FUTURE') {
       headers = [
-        'Appointment ID',
-        'Patient Name',
-        'Referred By',
-        'Scheduled For',
-        'Modality',
-        'Service Name',
-        'Projected Revenue (INR)',
-        'Estimated Referral Cut (INR)',
-        'Estimated Net (INR)',
-        'Admin Approval',
-        'Reason'
+        'Appointment ID', 'Patient Name', 'Referred By', 'Scheduled For',
+        'Modality', 'Service Name', 'Projected Revenue (INR)', 'Estimated Referral Cut (INR)',
+        'Estimated Net (INR)', 'Admin Approval', 'Reason'
       ];
 
-      // Future appointments
       const apps = futureAppointments || [];
       const filteredApps = isExportingSelected 
         ? apps.filter(app => selectedIds.has(app.appointmentId)) 
@@ -309,6 +353,10 @@ const RevenueHub = ({
       filteredApps.forEach(app => {
         const price = getServicePrice(app.service);
         const cut = getServiceCut(app);
+        totals.gross += price;
+        totals.cut += cut;
+        totals.income += (price - cut);
+        
         rows.push([
           app.displayId || 'N/A',
           app.patientName || 'UNKNOWN',
@@ -323,13 +371,16 @@ const RevenueHub = ({
         ]);
       });
 
-      // Pre-billed future transactions
       const preBilled = filteredInvoices || [];
       const filteredPreBilled = isExportingSelected 
         ? preBilled.filter(inv => selectedIds.has(inv.invoiceId)) 
         : preBilled;
 
       filteredPreBilled.forEach(inv => {
+        totals.gross += (inv.totalAmount || 0);
+        totals.cut += (inv.commissionAmount || 0);
+        totals.income += ((inv.totalAmount || 0) - (inv.commissionAmount || 0));
+
         rows.push([
           inv.displayId || 'N/A',
           inv.patientName || 'UNKNOWN',
@@ -343,21 +394,18 @@ const RevenueHub = ({
           ...approvalCells(inv)
         ]);
       });
+      
+      rows.push([]);
+      rows.push([
+        'TOTALS', '', '', '', '', '',
+        totals.gross, totals.cut, totals.income, '', ''
+      ]);
+
     } else {
       headers = [
-        'Invoice ID',
-        'Patient Name',
-        'Referred By',
-        'Timestamp',
-        'Modality',
-        'Gross Amount (INR)',
-        'Discount Amount (INR)',
-        'Net Payable (INR)',
-        'Referral Cut (INR)',
-        'Net Clinic Income (INR)',
-        'Status',
-        'Admin Approval',
-        'Reason'
+        'Invoice ID', 'Patient Name', 'Referred By', 'Timestamp', 'Modality',
+        'Gross Amount (INR)', 'Discount Amount (INR)', 'Net Payable (INR)',
+        'Referral Cut (INR)', 'Net Clinic Income (INR)', 'Status', 'Admin Approval', 'Reason'
       ];
 
       const invoicesToExport = filteredInvoices || [];
@@ -366,6 +414,12 @@ const RevenueHub = ({
         : invoicesToExport;
 
       filteredInvoicesToExport.forEach(inv => {
+        totals.gross += (inv.grossAmount || 0);
+        totals.discount += (inv.discountAmount || 0);
+        totals.net += (inv.totalAmount || 0);
+        totals.cut += (inv.commissionAmount || 0);
+        totals.income += ((inv.totalAmount || 0) - (inv.commissionAmount || 0));
+
         rows.push([
           inv.displayId || 'N/A',
           inv.patientName || 'UNKNOWN',
@@ -381,36 +435,29 @@ const RevenueHub = ({
           ...approvalCells(inv)
         ]);
       });
+
+      rows.push([]);
+      rows.push([
+        'TOTALS', '', '', '', '',
+        totals.gross, totals.discount, totals.net, totals.cut, totals.income, '', '', ''
+      ]);
     }
 
-    // Convert rows to CSV formatted string
-    const escapeCsvCell = (cell) => {
-      if (cell === null || cell === undefined) return '';
-      const cellStr = String(cell);
-      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
-        return `"${cellStr.replace(/"/g, '""')}"`;
-      }
-      return cellStr;
-    };
-
-    const csvContent = [
-      headers.map(escapeCsvCell).join(','),
-      ...rows.map(row => row.map(escapeCsvCell).join(','))
-    ].join('\n');
-
-    // Excel compatibility UTF-8 BOM
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const dataArr = [headers, ...rows];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(dataArr);
     
-    // Trigger download
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${fileName}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Set column widths
+    const wscols = headers.map(() => ({ wch: 18 }));
+    wscols[0] = { wch: 14 }; // ID
+    wscols[1] = { wch: 22 }; // Name
+    wscols[2] = { wch: 22 }; // Referrer
+    ws['!cols'] = wscols;
+
+    applySheet(ws, headers.length, rows.length - 2, true);
+    
+    XLSX.utils.book_append_sheet(wb, ws, "Financial Report");
+    XLSX.writeFile(wb, fileName + ".xlsx");
   };
 
   return (
