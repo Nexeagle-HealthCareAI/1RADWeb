@@ -235,8 +235,8 @@ jobs:
 
       - name: Build Electron installer
         env:
-          STORAGE_ENDPOINT: ${{ secrets.PROD_STORAGE_ENDPOINT }}
-          STORAGE_BUCKET: ${{ secrets.PROD_STORAGE_BUCKET }}
+          STORAGE_ENDPOINT: ${{ vars.PROD_STORAGE_ENDPOINT }}
+          STORAGE_BUCKET: ${{ vars.PROD_STORAGE_BUCKET }}
         shell: bash
         run: |
           # Strip trailing slash from endpoint just in case, then construct the feed URL
@@ -249,9 +249,9 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.PROD_STORAGE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_STORAGE_SECRET_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.PROD_STORAGE_REGION }}
-          STORAGE_ENDPOINT: ${{ secrets.PROD_STORAGE_ENDPOINT }}
-          STORAGE_BUCKET: ${{ secrets.PROD_STORAGE_BUCKET }}
+          AWS_DEFAULT_REGION: ${{ vars.STORAGE_REGION }}
+          STORAGE_ENDPOINT: ${{ vars.PROD_STORAGE_ENDPOINT }}
+          STORAGE_BUCKET: ${{ vars.PROD_STORAGE_BUCKET }}
         shell: bash
         run: |
           aws s3 cp release/ s3://$STORAGE_BUCKET/downloads/ \

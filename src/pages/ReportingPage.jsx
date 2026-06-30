@@ -2366,7 +2366,7 @@ const ReportingPage = () => {
       onFinalize={handleFinalizeReport}
       onAddendum={handleAddAddendum}
       signerName={currentUser?.name || ''}
-      signerCredentials={currentUser?.degree || currentUser?.credentials || ''}
+      signerCredentials={[currentUser?.degree || currentUser?.credentials, currentUser?.specialty].filter(Boolean).join(', ')}
       reportStatus={reportStatus}
       addenda={reportAddenda}
       signature={reportSignature}
