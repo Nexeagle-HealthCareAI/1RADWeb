@@ -79,7 +79,7 @@ export default function SharedStudyPage() {
   if (state === 'expired' || state === 'invalid' || state === 'error') {
     const isExpired = state === 'expired';
     return (
-      <div style={{ minHeight: '100vh', background: 'radial-gradient(ellipse at top, #0f172a 0%, #020617 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, "Segoe UI", sans-serif' }}>
+      <div style={{ minHeight: '100dvh', background: 'radial-gradient(ellipse at top, #0f172a 0%, #020617 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, "Segoe UI", sans-serif' }}>
         <div style={{ marginBottom: 28 }}><Brand size={46} /></div>
         <div style={{ width: '100%', maxWidth: 460, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 22, padding: '36px 28px', textAlign: 'center' }}>
           <div style={{ fontSize: 44, marginBottom: 14 }}>{isExpired ? '⏳' : '🔒'}</div>
@@ -112,7 +112,7 @@ export default function SharedStudyPage() {
 
   if (state === 'loading') {
     return (
-      <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18 }}>
+      <div style={{ minHeight: '100dvh', background: '#020617', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18 }}>
         <Brand size={44} />
         <div style={{ width: 38, height: 38, border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'shspin 0.8s linear infinite' }} />
         <div style={{ color: '#3b82f6', fontSize: 13, fontWeight: 800, letterSpacing: 2 }}>LOADING SECURE STUDY</div>
@@ -124,7 +124,7 @@ export default function SharedStudyPage() {
   // ── Ready: header + viewer ───────────────────────────────────────────────
   const current = series[active];
   return (
-    <div style={{ height: '100vh', width: '100vw', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: '100dvh', width: '100dvw', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
       <div style={{ height: 56, flexShrink: 0, background: 'linear-gradient(135deg, #0f172a, #1e293b)', borderBottom: '2px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
         <Brand size={32} />
         <div style={{ textAlign: 'right', color: '#94a3b8', fontSize: 12 }}>

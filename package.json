@@ -45,13 +45,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "1Rad",
       "artifactName": "1Rad-Setup.${ext}"
-    },
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "https://REPLACE-ME.blob.core.windows.net/downloads/"
-      }
-    ]
+    }
   },
   "dependencies": {
     "@cornerstonejs/core": "^4.22.2",
@@ -97,7 +91,8 @@
     "react-dom": "^19.2.4",
     "react-pdf": "10.4.1",
     "react-router-dom": "^7.14.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

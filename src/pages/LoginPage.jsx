@@ -4,7 +4,6 @@ import useAuth from '../auth/useAuth';
 import PinSetupModal from '../auth/PinSetupModal';
 import { ROLE_HOME, ROLE_LABELS, NAV_ITEMS } from '../data/roles';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
-import TacticalWorkflow from '../components/TacticalWorkflow';
 import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
 
@@ -397,14 +396,13 @@ export default function LoginPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
           <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle" style={{
             width: '40px', height: '40px', objectFit: 'contain',
-            borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,242,254,0.3)',
           }} />
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
-            <span style={{ fontSize: '26px', fontWeight: 900, color: '#fff', letterSpacing: '-0.5px' }}>NexEagle</span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#00f2fe', letterSpacing: '3px' }}>1RAD</span>
+            <span style={{ fontSize: '26px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>NexEagle</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD</span>
           </div>
         </div>
-        <div style={{ fontSize: '9px', fontWeight: 700, color: 'rgba(255,255,255,0.25)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>
+        <div style={{ fontSize: '9px', fontWeight: 700, color: 'rgba(15,23,42,0.25)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>
           Radiology Management System
         </div>
 
@@ -435,11 +433,11 @@ export default function LoginPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{
                   width: '4px', height: '4px', borderRadius: '50%',
-                  background: '#00f2fe', boxShadow: '0 0 6px #00f2fe',
+                  background: '#2563eb', boxShadow: '0 0 6px #2563eb',
                 }} />
                 <span style={{
                   fontSize: '9px', fontWeight: 800, letterSpacing: '2.5px',
-                  textTransform: 'uppercase', color: '#00f2fe', opacity: 0.8,
+                  textTransform: 'uppercase', color: '#2563eb', opacity: 0.8,
                 }}>
                   {INDUSTRY_QUOTES[quoteIndex].title}
                 </span>
@@ -463,12 +461,12 @@ export default function LoginPage() {
               <div style={{
                 position: 'absolute', left: 0, top: '4px', bottom: '4px',
                 width: '2px', borderRadius: '2px',
-                background: 'linear-gradient(to bottom, #00f2fe, rgba(0,242,254,0.1))',
+                background: 'linear-gradient(to bottom, #2563eb, rgba(0,242,254,0.1))',
               }} />
 
               <p style={{
                 fontSize: '15px', fontStyle: 'italic', fontWeight: 400,
-                color: 'rgba(255,255,255,0.82)', lineHeight: 1.7,
+                color: 'rgba(15,23,42,0.82)', lineHeight: 1.7,
                 margin: 0,
               }}>
                 {INDUSTRY_QUOTES[quoteIndex].problem}
@@ -485,9 +483,9 @@ export default function LoginPage() {
               gap: '10px',
               alignItems: 'flex-start',
             }}>
-              <span style={{ color: '#00f2fe', fontSize: '15px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
+              <span style={{ color: '#2563eb', fontSize: '15px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
               <p style={{
-                fontSize: '12px', color: 'rgba(255,255,255,0.7)',
+                fontSize: '12px', color: 'rgba(15,23,42,0.7)',
                 lineHeight: 1.65, margin: 0, fontWeight: 400,
               }}>
                 {INDUSTRY_QUOTES[quoteIndex].solution}
@@ -507,13 +505,13 @@ export default function LoginPage() {
                   style={{
                     width: i === quoteIndex ? '22px' : '5px',
                     height: '4px', borderRadius: '2px',
-                    background: i === quoteIndex ? '#00f2fe' : 'rgba(0,242,254,0.18)',
+                    background: i === quoteIndex ? '#2563eb' : 'rgba(0,242,254,0.18)',
                     transition: 'all 0.4s ease', cursor: 'pointer',
                     boxShadow: i === quoteIndex ? '0 0 8px rgba(0,242,254,0.5)' : 'none',
                   }}
                 />
               ))}
-              <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(255,255,255,0.2)', fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(15,23,42,0.2)', fontVariantNumeric: 'tabular-nums' }}>
                 {quoteIndex + 1} / {INDUSTRY_QUOTES.length}
               </span>
             </div>
@@ -521,13 +519,6 @@ export default function LoginPage() {
         </div>
         {/* end hero wrapper */}
 
-        {/* ── Pipeline strip — ambient footer ── */}
-        <div style={{
-          borderTop: '1px solid rgba(255,255,255,0.05)',
-          paddingTop: '16px',
-        }}>
-          <TacticalWorkflow />
-        </div>
       </div>
       {/* end immersive-brand */}
 
@@ -538,13 +529,12 @@ export default function LoginPage() {
             alt="NexEagle"
             style={{
               width: '40px', height: '40px',
-              objectFit: 'contain', borderRadius: '10px',
+              objectFit: 'contain',
               marginBottom: '16px',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)'
             }}
           />
-          <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
-          <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Sign in to your account to continue</p>
+          <h2 className="auth-title" style={{ color: '#0f172a', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
+          <p className="auth-subtitle" style={{ color: 'rgba(15,23,42,0.5)', fontSize: '12px' }}>Sign in to your account to continue</p>
         </div>
 
         {/* ── Offline-ready highlight — reassures users the app keeps working
@@ -561,7 +551,7 @@ export default function LoginPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '34px', height: '34px', flexShrink: 0, borderRadius: '9px',
             background: isOnline ? 'rgba(0,242,254,0.12)' : 'rgba(16,185,129,0.20)',
-            color: isOnline ? '#00f2fe' : '#34d399',
+            color: isOnline ? '#2563eb' : '#34d399',
             boxShadow: isOnline ? '0 0 14px rgba(0,242,254,0.25)' : '0 0 14px rgba(16,185,129,0.30)',
           }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -574,11 +564,11 @@ export default function LoginPage() {
           <div style={{ lineHeight: 1.45 }}>
             <div style={{
               fontSize: '11px', fontWeight: 900, letterSpacing: '0.5px', textTransform: 'uppercase',
-              color: isOnline ? '#00f2fe' : '#34d399',
+              color: isOnline ? '#2563eb' : '#34d399',
             }}>
               {isOnline ? 'Works fully offline' : 'You are offline — that is okay'}
             </div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(255,255,255,0.62)' }}>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(15,23,42,0.62)' }}>
               {isOnline
                 ? 'Sign in once and keep working without internet — everything syncs automatically when you reconnect.'
                 : 'No internet needed. Sign in with your saved PIN and continue — your changes sync the moment you are back online.'}
@@ -586,7 +576,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="login-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '25px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>
+        <div className="login-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '25px', padding: '4px', background: 'rgba(15,23,42,0.05)', borderRadius: '10px' }}>
           {pinUsers.length > 0 && (
             <button
               type="button"
@@ -601,9 +591,9 @@ export default function LoginPage() {
                 fontSize: '11px',
                 fontWeight: 800,
                 transition: 'all 0.3s',
-                background: loginMode === 'pin' ? '#00f2fe' : 'transparent',
-                color: loginMode === 'pin' ? '#060a12' : '#fff',
-                boxShadow: loginMode === 'pin' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none',
+                background: loginMode === 'pin' ? '#2563eb' : 'transparent',
+                color: loginMode === 'pin' ? '#ffffff' : '#0f172a',
+                boxShadow: loginMode === 'pin' ? '0 0 15px rgba(37, 99, 235, 0.4)' : 'none',
               }}
             >PIN</button>
           )}
@@ -620,9 +610,9 @@ export default function LoginPage() {
               fontSize: '11px', 
               fontWeight: 800, 
               transition: 'all 0.3s', 
-              background: loginMode === 'password' ? '#00f2fe' : 'transparent', 
-              color: loginMode === 'password' ? '#060a12' : '#fff',
-              boxShadow: loginMode === 'password' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none'
+              background: loginMode === 'password' ? '#2563eb' : 'transparent', 
+              color: loginMode === 'password' ? '#ffffff' : '#0f172a',
+              boxShadow: loginMode === 'password' ? '0 0 15px rgba(37, 99, 235, 0.4)' : 'none'
             }}
           >
             Password
@@ -640,9 +630,9 @@ export default function LoginPage() {
               fontSize: '11px', 
               fontWeight: 800, 
               transition: 'all 0.3s', 
-              background: loginMode === 'otp' ? '#00f2fe' : 'transparent', 
-              color: loginMode === 'otp' ? '#060a12' : '#fff',
-              boxShadow: loginMode === 'otp' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none'
+              background: loginMode === 'otp' ? '#2563eb' : 'transparent', 
+              color: loginMode === 'otp' ? '#ffffff' : '#0f172a',
+              boxShadow: loginMode === 'otp' ? '0 0 15px rgba(37, 99, 235, 0.4)' : 'none'
             }}
           >
             OTP / SMS Code
@@ -672,7 +662,7 @@ export default function LoginPage() {
           <form onSubmit={handlePinSubmit} className="auth-form" autoComplete="off">
             {pinUsers.length > 1 && (
               <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: 'rgba(15,23,42,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
                   Saved account
                 </label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -687,9 +677,9 @@ export default function LoginPage() {
                         setPinLockUntilMs(u.lockedUntilMs || 0);
                       }}
                       style={{
-                        background: selectedPinUserId === u.userId ? 'rgba(0, 242, 254, 0.18)' : 'rgba(255,255,255,0.05)',
-                        color: '#fff',
-                        border: selectedPinUserId === u.userId ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.12)',
+                        background: selectedPinUserId === u.userId ? 'rgba(37, 99, 235, 0.18)' : 'rgba(15,23,42,0.05)',
+                        color: '#0f172a',
+                        border: selectedPinUserId === u.userId ? '1px solid #2563eb' : '1px solid rgba(15,23,42,0.12)',
                         padding: '8px 12px',
                         borderRadius: '8px',
                         fontSize: '12px',
@@ -719,8 +709,8 @@ export default function LoginPage() {
                   textAlign: 'center',
                   fontSize: '20px',
                   background: 'rgba(0, 0, 0, 0.35)',
-                  color: '#fff',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#0f172a',
+                  border: '1px solid rgba(15, 23, 42, 0.15)',
                   borderRadius: '10px',
                   padding: '14px',
                   width: '100%',
@@ -751,7 +741,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => { setLoginMode('password'); setPinError(''); }}
-                style={{ background: 'transparent', border: 'none', color: '#00f2fe', fontSize: '11px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.3px' }}
+                style={{ background: 'transparent', border: 'none', color: '#2563eb', fontSize: '11px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.3px' }}
               >Use password instead</button>
             </div>
           </form>
@@ -775,7 +765,7 @@ export default function LoginPage() {
             <div className="form-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label>Password</label>
-                <Link to="/forgot-password" style={{ fontSize: '10px', color: '#00f2fe', textDecoration: 'none', fontWeight: 800 }}>Forgot Password?</Link>
+                <Link to="/forgot-password" style={{ fontSize: '10px', color: '#2563eb', textDecoration: 'none', fontWeight: 800 }}>Forgot Password?</Link>
               </div>
               <div style={{ position: 'relative' }}>
                 <input
@@ -807,11 +797,11 @@ export default function LoginPage() {
                   style={{ letterSpacing: '8px', textAlign: 'center', fontWeight: 900, fontSize: '18px' }}
                   required
                 />
-                <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center' }}>
+                <p style={{ fontSize: '10px', color: 'rgba(15,23,42,0.4)', marginTop: '8px', textAlign: 'center' }}>
                   Didn't receive the code? {countdown > 0 ? (
-                    <span style={{ color: '#00f2fe', fontWeight: 800 }}>Resend in 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
+                    <span style={{ color: '#2563eb', fontWeight: 800 }}>Resend in 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
                   ) : (
-                    <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>Resend OTP</button>
+                    <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>Resend OTP</button>
                   )}
                 </p>
               </div>
@@ -821,9 +811,9 @@ export default function LoginPage() {
           {error && (
             <div className={`error-message ${errorCode === 'USER_NOT_FOUND' ? 'cta-error' : ''}`} 
                  style={{ 
-                   background: errorCode === 'USER_NOT_FOUND' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(231, 76, 60, 0.1)', 
-                   color: errorCode === 'USER_NOT_FOUND' ? '#00f2fe' : '#e74c3c', 
-                   border: errorCode === 'USER_NOT_FOUND' ? '1px solid rgba(0, 242, 254, 0.2)' : '1px solid rgba(231, 76, 60, 0.2)',
+                   background: errorCode === 'USER_NOT_FOUND' ? 'rgba(37, 99, 235, 0.1)' : 'rgba(231, 76, 60, 0.1)', 
+                   color: errorCode === 'USER_NOT_FOUND' ? '#2563eb' : '#e74c3c', 
+                   border: errorCode === 'USER_NOT_FOUND' ? '1px solid rgba(37, 99, 235, 0.2)' : '1px solid rgba(231, 76, 60, 0.2)',
                    padding: '15px',
                    borderRadius: '8px',
                    marginBottom: '20px',
@@ -838,8 +828,8 @@ export default function LoginPage() {
                   type="button" 
                   onClick={() => navigate('/register', { state: { identifier, isFromLogin: true } })}
                   style={{ 
-                    background: '#00f2fe', 
-                    color: '#060a12', 
+                    background: '#2563eb', 
+                    color: '#ffffff', 
                     border: 'none', 
                     padding: '8px 12px', 
                     borderRadius: '4px', 
@@ -847,7 +837,7 @@ export default function LoginPage() {
                     fontWeight: 900, 
                     cursor: 'pointer',
                     alignSelf: 'flex-start',
-                    boxShadow: '0 0 10px rgba(0, 242, 254, 0.3)'
+                    boxShadow: '0 0 10px rgba(37, 99, 235, 0.3)'
                   }}
                 >
                   Register as a New Centre
@@ -856,7 +846,7 @@ export default function LoginPage() {
 
               {errorCode === 'ACCOUNT_INACTIVE' && (
                 <p style={{ fontSize: '10px', opacity: 0.8, margin: 0 }}>
-                  Account Status: <span style={{ fontWeight: 800, color: '#00f2fe' }}>{accountStatus?.toUpperCase()}</span>. 
+                  Account Status: <span style={{ fontWeight: 800, color: '#2563eb' }}>{accountStatus?.toUpperCase()}</span>. 
                   Please wait for your account to be verified by the administrator.
                 </p>
               )}
@@ -893,8 +883,8 @@ export default function LoginPage() {
         <div className="neon-divider"></div>
         
         <div className="auth-footer" style={{ textAlign: 'center' }}>
-           <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>
-              New centre? <Link to="/register" style={{ color: '#00f2fe', textDecoration: 'none', borderBottom: '1px solid #00f2fe' }}>Register here</Link>
+           <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(15,23,42,0.7)' }}>
+              New centre? <Link to="/register" style={{ color: '#2563eb', textDecoration: 'none', borderBottom: '1px solid #2563eb' }}>Register here</Link>
            </p>
         </div>
       </div>

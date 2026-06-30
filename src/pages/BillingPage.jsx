@@ -103,7 +103,7 @@ export default function BillingPage() {
   const [isSavingPayout, setIsSavingPayout] = useState(false);
   const [editPayout, setEditPayout] = useState({ commissionId: '', referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '', status: 'UNPAID' });
   const [referralCommissions, setReferralCommissions] = useState([]);
-  const [referrerFilter, setReferrerFilter] = useState('ALL'); // 'ALL' or referrerId
+  const [referrerFilter, setReferrerFilter] = useState(['ALL']); // ['ALL'] or array of referrerIds
   const [appointments, setAppointments] = useState([]);
 
   // FinanceManager Specific State
@@ -415,6 +415,27 @@ export default function BillingPage() {
   // Load the approval-request map on mount (powers the Revenue approval column).
   useEffect(() => { loadApprovalMap(); }, [loadApprovalMap]);
 
+  // Load the real Auto-Bill setting from the server so the toggle in the
+  // Control tab reflects what is actually persisted in the database.
+  useEffect(() => {
+    if (!activeCenter?.id) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiClient.get(`/hospitals/${activeCenter.id}`);
+        const enabled = res.data.isAutoBillingEnabled ?? res.data.IsAutoBillingEnabled ?? false;
+        if (alive) setBillingSettings(prev => ({ ...prev, autoBill: enabled }));
+      } catch {
+        // Keep the default; the toggle can still optimistically save via PUT.
+        if (alive) setBillingSettings(prev => ({
+          ...prev,
+          autoBill: activeCenter.isAutoBillingEnabled ?? false,
+        }));
+      }
+    })();
+    return () => { alive = false; };
+  }, [activeCenter?.id]);
+
   // B3 Slice 5 — referral commissions liveQuery. Status defaults to ALL
   // (the page's own UI filters specific statuses post-query).
   useEffect(() => {
@@ -533,8 +554,58 @@ export default function BillingPage() {
     });
   };
 
-  const handleToggleAutoBill = () => {
-    setBillingSettings(prev => ({ ...prev, autoBill: !prev.autoBill }));
+  const handleToggleAutoBill = async () => {
+    const newAutoBill = !billingSettings.autoBill;
+    const targetHubId = activeCenter?.id;
+    if (!targetHubId) {
+      notifyToast({ title: 'No centre selected', message: 'Please select a centre before changing this setting.' }, 'warning');
+      return;
+    }
+
+    // We need the current hospital data for the PUT payload (API requires all fields).
+    // Fall back to what we know if the GET hasn't been called yet.
+    let hospitalPayload;
+    try {
+      const res = await apiClient.get(`/hospitals/${targetHubId}`);
+      hospitalPayload = {
+        hospitalName: res.data.hospitalName || res.data.HospitalName || activeCenter.name || '',
+        hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
+        gstin: res.data.gstin || res.data.GSTIN || '',
+        registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
+        pan: res.data.pan || res.data.PAN || '',
+        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
+        isAutoBillingEnabled: newAutoBill,
+      };
+    } catch {
+      hospitalPayload = {
+        hospitalName: activeCenter.name || '',
+        hospitalAddress: '',
+        gstin: '', registrationNumber: '', pan: '', nabhNumber: '',
+        isAutoBillingEnabled: newAutoBill,
+      };
+    }
+
+    if (!isOnline) {
+      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...hospitalPayload });
+      notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
+      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      return;
+    }
+
+    try {
+      await apiClient.put(`/hospitals/${targetHubId}`, hospitalPayload);
+      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      notifyToast({ title: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'}`, message: newAutoBill ? 'Invoices will now be generated automatically on appointment completion.' : 'Automatic invoice generation has been turned off.' }, newAutoBill ? 'success' : 'info');
+    } catch (err) {
+      console.error('[FINANCE] Auto-billing toggle failed', err);
+      if (!err.response) {
+        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...hospitalPayload });
+        notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
+        setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      } else {
+        notifyToast({ title: 'Save failed', message: 'Could not update billing settings. Please try again.' }, 'error');
+      }
+    }
   };
   
   const handlePrintThermal = async (invInput = null) => {
@@ -1137,20 +1208,105 @@ export default function BillingPage() {
         };
       });
 
+      // ── Premium design tokens — matches Referral export style ─────────────
+      const HDR_BG = 'FF1E293B'; // Dark slate header
+      const TOT_BG = 'FF334155'; // Lighter slate totals
+      const ALT_BG = 'FFF8FAFC'; // Off-white alternate rows
+      const DEF_FG = 'FF1E293B'; // Near-black body text
+      const BDR    = 'FFE2E8F0'; // Light slate border
+
+      const thin    = { style: 'thin',   color: { rgb: BDR } };
+      const medium  = { style: 'medium', color: { rgb: 'FF94A3B8' } };
+      const borders = { top: thin, bottom: thin, left: thin, right: thin };
+
+      const hdrStyle = {
+        fill: { patternType: 'solid', fgColor: { rgb: HDR_BG } },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 10, name: 'Calibri' },
+        border: borders,
+        alignment: { vertical: 'center' },
+      };
+      const totStyle = {
+        fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 13, name: 'Calibri' },
+        border: { ...borders, top: medium },
+        alignment: { vertical: 'center' },
+      };
+      const mkRow = (bg, fg) => ({
+        fill: { patternType: 'solid', fgColor: { rgb: bg } },
+        font: { color: { rgb: fg }, sz: 10, name: 'Calibri' },
+        border: borders,
+        alignment: { vertical: 'center' },
+      });
+
+      const applySheet = (ws, numCols, numDataRows, hasTotalsRow = false) => {
+        ws['!rows'] = ws['!rows'] || [];
+        // Header row
+        for (let C = 0; C < numCols; C++) {
+          const ref = XLSX.utils.encode_cell({ c: C, r: 0 });
+          if (ws[ref]) ws[ref].s = hdrStyle;
+        }
+        ws['!rows'][0] = { hpt: 22 };
+        // Data rows — zebra
+        for (let R = 1; R <= numDataRows; R++) {
+          const bg = R % 2 === 0 ? ALT_BG : 'FFFFFFFF';
+          for (let C = 0; C < numCols; C++) {
+            const ref = XLSX.utils.encode_cell({ c: C, r: R });
+            if (ws[ref]) ws[ref].s = mkRow(bg, DEF_FG);
+          }
+        }
+        // Totals row (last row if hasTotalsRow)
+        if (hasTotalsRow) {
+          const totIdx = numDataRows + 1;
+          for (let C = 0; C < numCols; C++) {
+            const ref = XLSX.utils.encode_cell({ c: C, r: totIdx });
+            if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+            ws[ref].s = totStyle;
+          }
+          ws['!rows'][totIdx] = { hpt: 30 };
+        }
+      };
+
       const wb = XLSX.utils.book_new();
-      const ws1 = XLSX.utils.json_to_sheet(invoiceRows);
+
+      // ── Sheet 1: Invoices ────────────────────────────────────────────────
+      // Compute totals for footer row
+      const invTotals = safeInvoices.reduce((acc, inv) => {
+        acc.gross   += Number(inv.grossAmount)      || 0;
+        acc.disc    += Number(inv.discountAmount)   || 0;
+        acc.total   += Number(inv.totalAmount)      || 0;
+        acc.paid    += Number(inv.paidAmount)       || 0;
+        acc.balance += Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0));
+        acc.ref     += Number(inv.commissionAmount) || 0;
+        return acc;
+      }, { gross: 0, disc: 0, total: 0, paid: 0, balance: 0, ref: 0 });
+
+      const invoiceRowsWithFooter = [
+        ...invoiceRows,
+        {},
+        {
+          'Invoice ID': 'TOTALS',
+          'Gross Amount': Math.round(invTotals.gross),
+          'Discount':     Math.round(invTotals.disc),
+          'Total Payable':Math.round(invTotals.total),
+          'Paid Amount':  Math.round(invTotals.paid),
+          'Balance':      Math.round(invTotals.balance),
+          'Referral Cut': Math.round(invTotals.ref),
+          'Net Centre Income': Math.round(invTotals.total - invTotals.ref),
+        },
+      ];
+
+      const ws1 = XLSX.utils.json_to_sheet(invoiceRowsWithFooter);
       ws1['!cols'] = [
         { wch: 14 }, { wch: 26 }, { wch: 14 }, { wch: 22 }, { wch: 22 },
-        { wch: 8 },  { wch: 40 },
+        { wch: 8  }, { wch: 40 },
         { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
         { wch: 14 }, { wch: 18 },
         { wch: 10 }, { wch: 22 }, { wch: 12 },
       ];
+      applySheet(ws1, 17, invoiceRows.length, true);
       XLSX.utils.book_append_sheet(wb, ws1, 'Invoices');
 
-      // Sheet 2 — per-line item detail. Each row maps 1:1 with an
-      // InvoiceItem so the analyst can pivot revenue by modality or
-      // service across the filtered set.
+      // ── Sheet 2: Line Items ──────────────────────────────────────────────
       const itemRows = [];
       for (const inv of safeInvoices) {
         const items = inv.items || [];
@@ -1180,10 +1336,11 @@ export default function BillingPage() {
           { wch: 36 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
           { wch: 12 }, { wch: 22 }, { wch: 12 },
         ];
+        applySheet(ws2, 11, itemRows.length);
         XLSX.utils.book_append_sheet(wb, ws2, 'Line Items');
       }
 
-      // Sheet 3 — modality breakdown across the filtered set.
+      // ── Sheet 3: Modality Mix ────────────────────────────────────────────
       const byMod = new Map();
       for (const inv of safeInvoices) {
         const items = inv.items || [];
@@ -1220,12 +1377,13 @@ export default function BillingPage() {
       if (modalityRows.length > 0) {
         const ws3 = XLSX.utils.json_to_sheet(modalityRows);
         ws3['!cols'] = [
-          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+          { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
         ];
+        applySheet(ws3, 6, modalityRows.length);
         XLSX.utils.book_append_sheet(wb, ws3, 'Modality Mix');
       }
 
-      // Sheet 4 — stats summary mirroring the KPI cards on the page.
+      // ── Sheet 4: Stats Summary ───────────────────────────────────────────
       const statsRows = [
         { Metric: 'Total Revenue',     Value: Math.round(liveStats?.totalRevenue   || 0) },
         { Metric: 'Total Billed',      Value: Math.round(liveStats?.totalBilled    || 0) },
@@ -1245,6 +1403,7 @@ export default function BillingPage() {
       ];
       const ws4 = XLSX.utils.json_to_sheet(statsRows);
       ws4['!cols'] = [{ wch: 22 }, { wch: 22 }];
+      applySheet(ws4, 2, statsRows.length);
       XLSX.utils.book_append_sheet(wb, ws4, 'Stats Summary');
 
       const fname = useRange && (start || end)
@@ -1510,8 +1669,13 @@ export default function BillingPage() {
             status: (c.commissionStatus || c.status || 'UNPAID').toUpperCase(),
             referrerId: c.referrerId,
             modality: c.modality || 'MRI',
+            serviceName: c.serviceName || '',
             remarks: c.remarks || '',
             patientName: c.patientName || 'N/A',
+            patientDisplayId: c.patientDisplayId || '',
+            patientAge: c.patientAge || '',
+            patientGender: c.patientGender || '',
+            patientMobile: c.patientMobile || '',
             patientPaymentStatus: derivePatientPaymentStatus(c),
             paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0,
             // Payee-first model: the referral record (name above) IS the payee.
@@ -1665,8 +1829,8 @@ export default function BillingPage() {
         }
 
         // Partner (Referrer) Filter
-        if (referrerFilter !== 'ALL') {
-            if (cut.referrerId !== referrerFilter) return false;
+        if (!referrerFilter.includes('ALL')) {
+            if (!referrerFilter.includes(cut.referrerId)) return false;
         }
 
         // Free-text search across patient, partner, reference, modality, description
@@ -2451,7 +2615,10 @@ export default function BillingPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
+          {billingViewMode === 'REFERRAL_CUTS' && (
+            <h3 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.3px', margin: 0 }}>Referral Settlements</h3>
+          )}
           {/* Global "Search invoices or patients" removed — each tab (Revenue,
               Referrals, Expenses) now has its own table-level search input. */}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>

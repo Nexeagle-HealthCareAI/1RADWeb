@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { dispatchApiError } from './apiErrorEvents';
 
-export const BASE_URL = import.meta.env.VITE_API_URL || 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
+export const BASE_URL = import.meta.env.VITE_API_URL;
 
 // One-time diagnostic so we can verify in the browser console which API the
 // deployed bundle is actually calling. Remove once Prod is confirmed routing
@@ -75,7 +75,7 @@ async function performTokenRefresh() {
     headers: { 'Content-Type': 'application/json' },
   });
   const data = resp?.data || {};
-  const newAccess  = data.accessToken  || data.AccessToken;
+  const newAccess = data.accessToken || data.AccessToken;
   const newRefresh = data.refreshToken || data.RefreshToken;
   if (!newAccess) throw new Error(data.error || 'REFRESH_FAILED');
   localStorage.setItem('1rad_token', newAccess);
@@ -125,9 +125,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config || {};
-    const status   = error.response?.status;
-    const url      = original.url || '';
-    const code     = error.response?.data?.code;
+    const status = error.response?.status;
+    const url = original.url || '';
+    const code = error.response?.data?.code;
     // Registration-stage routes count as auth routes here: a 401 on them must
     // surface to the signup form (e.g. "verification expired — resend the
     // code"), NEVER trigger a token refresh or forceLogout — that wiped the

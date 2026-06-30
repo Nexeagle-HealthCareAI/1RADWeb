@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useId, useCallback, useMemo } from 'react';
 import { notifyToast } from '../utils/toast';
+import { perfFirstPaint, registerDecodeCounter } from '../utils/dicomPerfTrace';
 import {
   RenderingEngine,
   Enums,
@@ -61,7 +62,9 @@ const DICOM_CONFIG = {
   USE_WEB_WORKERS: true, 
   
   // Maximum number of web workers based on CPU cores
-  MAX_WEB_WORKERS: Math.min(navigator.hardwareConcurrency || 4, 8),
+  // Cap phones at 4 workers — the smaller cache (800 MB) plus 8 parallel decoders
+  // can OOM a high-core phone. Tablets/desktops keep up to 8.
+  MAX_WEB_WORKERS: Math.min(navigator.hardwareConcurrency || 4, (typeof window !== 'undefined' && window.innerWidth < 768) ? 4 : 8),
   
   // Timeout for initial image load (milliseconds). Allows worker decode path
   // (15s FAST_FAIL) to fail and Path C fallback (~1s) to complete inside the
@@ -892,9 +895,21 @@ const AdvancedDicomViewer = ({
     const el = elementRef.current;
     if (!el) return;
     // Any real paint means the sharp image is up → drop the preview.
-    const onRendered = () => setSlicePreview((p) => (p.show ? { ...p, show: false } : p));
+    const onRendered = () => {
+      perfFirstPaint(); // perf trace: study-open → first slice on screen (idempotent)
+      setSlicePreview((p) => (p.show ? { ...p, show: false } : p));
+    };
     try { el.addEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ }
     return () => { try { el.removeEventListener(Enums.Events.IMAGE_RENDERED, onRendered); } catch { /* noop */ } };
+  }, []);
+
+  // perf trace: count slice decodes off Cornerstone's global IMAGE_LOADED to
+  // derive throughput (slices/sec). Attached once across all viewer instances
+  // (they share one eventTarget), so no double-counting; pure measurement.
+  useEffect(() => {
+    try {
+      registerDecodeCounter(cornerstone.eventTarget, cornerstone.Enums.Events.IMAGE_LOADED);
+    } catch { /* noop — instrumentation must never break the viewer */ }
   }, []);
 
   // Cold-start blurry stand-in: prefer the MIDDLE slice's preview (that's the
@@ -1001,7 +1016,9 @@ const AdvancedDicomViewer = ({
   const sweptSeriesRef = useRef(null);
   useEffect(() => {
     if (mprMode || !Array.isArray(files) || files.length === 0) return;
-    if (getConnectionTier() !== 'fast' || isMobileDevice) return;
+    // Recompute locally — the init-scope `isMobileDevice` isn't visible here.
+    const onMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    if (getConnectionTier() !== 'fast' || onMobile) return;
     // One sweep per distinct series (keyed, not per scroll tick).
     const key = `${files.length}:${files[0]?.dicomUrl || files[0]?.url || ''}`;
     if (sweptSeriesRef.current === key) return;
@@ -1268,12 +1285,23 @@ const AdvancedDicomViewer = ({
       });
     };
     
+    // Re-fit the canvas to the new box. The ResizeObserver catches most layout
+    // changes, but on ROTATION it can lag a frame behind the new dimensions, so
+    // resize explicitly (and again after the layout settles).
+    const onViewportResize = () => {
+      checkDevice();
+      const engine = renderingEngineRef.current;
+      if (!engine) return;
+      try { engine.resize(true, true); } catch { /* noop */ }
+      setTimeout(() => { try { engine.resize(true, true); } catch { /* noop */ } }, 120);
+    };
+
     checkDevice();
-    window.addEventListener('resize', checkDevice);
-    window.addEventListener('orientationchange', checkDevice);
+    window.addEventListener('resize', onViewportResize);
+    window.addEventListener('orientationchange', onViewportResize);
     return () => {
-      window.removeEventListener('resize', checkDevice);
-      window.removeEventListener('orientationchange', checkDevice);
+      window.removeEventListener('resize', onViewportResize);
+      window.removeEventListener('orientationchange', onViewportResize);
     };
   }, []);
 
@@ -1390,7 +1418,39 @@ const AdvancedDicomViewer = ({
     let isPanning = false;
     let touchStartTime = 0;
     let isSliceGesture = false;
-    
+
+    // 1-finger slice-scroll (vertical drag → step slices, with fling inertia) +
+    // 2-finger pan state. We read the LIVE index from the viewport because this
+    // effect doesn't re-run per slice — a captured currentImageIndex would desync.
+    const PX_PER_SLICE = 12;
+    let scrollAccumY = 0, velocityY = 0, lastMoveY = 0, lastMoveTime = 0, inertiaRaf = null;
+    let twoFingerCenter = null;
+
+    const getVp = () => renderingEngineRef.current?.getViewport(viewportId) || null;
+    const stepSlice = (delta) => {
+      const vp = getVp();
+      if (!vp) return null;
+      const total = (vp.getImageIds?.() || files || []).length || 1;
+      const cur = vp.getCurrentImageIdIndex?.() ?? 0;
+      const next = Math.max(0, Math.min(total - 1, cur + delta));
+      if (next !== cur) {
+        vp.setImageIdIndex(next);
+        setCurrentImageIndex(next);
+        if (onSliceChange) onSliceChange(next, total);
+      }
+      return { atBound: next === cur };
+    };
+    // Turn accumulated vertical travel into whole-slice steps.
+    const drainScroll = () => {
+      let steps = 0;
+      while (Math.abs(scrollAccumY) >= PX_PER_SLICE) {
+        steps += scrollAccumY > 0 ? 1 : -1;
+        scrollAccumY -= scrollAccumY > 0 ? PX_PER_SLICE : -PX_PER_SLICE;
+      }
+      return steps ? stepSlice(steps) : null;
+    };
+    const cancelInertia = () => { if (inertiaRaf) { cancelAnimationFrame(inertiaRaf); inertiaRaf = null; } };
+
     const getTouchDistance = (touch1, touch2) => {
       const dx = touch1.clientX - touch2.clientX;
       const dy = touch1.clientY - touch2.clientY;
@@ -1415,14 +1475,16 @@ const AdvancedDicomViewer = ({
         e.preventDefault();
         console.log('[DICOM] Three-finger slice gesture started');
       } else if (e.touches.length === 2) {
-        // Two-finger gestures (pinch zoom)
+        // Two-finger gestures: pinch zoom + pan (by center movement)
         isPinching = true;
         isPanning = false;
         isSliceGesture = false;
         initialPinchDistance = getTouchDistance(e.touches[0], e.touches[1]);
+        twoFingerCenter = getTouchCenter(e.touches[0], e.touches[1]);
+        cancelInertia();
         e.preventDefault();
       } else if (e.touches.length === 1) {
-        // Single finger gestures (pan or tap)
+        // Single finger: vertical drag scrolls slices (+ fling), double-tap resets
         isPanning = true;
         isPinching = false;
         isSliceGesture = false;
@@ -1430,7 +1492,13 @@ const AdvancedDicomViewer = ({
           x: e.touches[0].clientX,
           y: e.touches[0].clientY
         };
-        
+        // Reset slice-scroll accumulators + stop any running fling.
+        cancelInertia();
+        scrollAccumY = 0;
+        velocityY = 0;
+        lastMoveY = e.touches[0].clientY;
+        lastMoveTime = Date.now();
+
         // Check for double tap
         const currentTime = Date.now();
         const tapLength = currentTime - lastTouchTime;
@@ -1526,55 +1594,41 @@ const AdvancedDicomViewer = ({
           }
         }
         
+        // Pan by two-finger CENTER movement so a zoomed image can be repositioned.
+        if (twoFingerCenter) {
+          const cdx = center.x - twoFingerCenter.x;
+          const cdy = center.y - twoFingerCenter.y;
+          if (Math.abs(cdx) > 0.5 || Math.abs(cdy) > 0.5) {
+            const vp = getVp();
+            if (vp) {
+              const cam = vp.getCamera();
+              const ps = cam.parallelScale / 1000;
+              const ndx = -cdx * ps, ndy = cdy * ps;
+              vp.setCamera({
+                focalPoint: [cam.focalPoint[0] + ndx, cam.focalPoint[1] + ndy, cam.focalPoint[2]],
+                position: [cam.position[0] + ndx, cam.position[1] + ndy, cam.position[2]],
+              });
+              vp.render();
+            }
+          }
+        }
+        twoFingerCenter = center;
+
         initialPinchDistance = currentDistance;
         e.preventDefault();
       } else if (e.touches.length === 1 && isPanning && lastPanPosition && !isSliceGesture) {
-        // Single finger pan (only if touch has moved significantly)
+        // Single-finger VERTICAL drag → scroll slices (the primary touch gesture
+        // for a DICOM stack). Accumulate travel; every PX_PER_SLICE px = 1 slice.
         const touch = e.touches[0];
-        const deltaX = touch.clientX - lastPanPosition.x;
-        const deltaY = touch.clientY - lastPanPosition.y;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        
-        // Only start panning if finger has moved more than 10px (prevents accidental pans)
-        if (distance > 10) {
-          if (renderingEngineRef.current) {
-            const viewport = renderingEngineRef.current.getViewport(viewportId);
-            if (viewport) {
-              const camera = viewport.getCamera();
-              const canvas = viewport.getCanvas();
-              
-              // Calculate pan delta based on current zoom level
-              const panScale = camera.parallelScale / 1000;
-              const panDelta = {
-                x: -deltaX * panScale,
-                y: deltaY * panScale
-              };
-              
-              // Apply pan
-              const newFocalPoint = [
-                camera.focalPoint[0] + panDelta.x,
-                camera.focalPoint[1] + panDelta.y,
-                camera.focalPoint[2]
-              ];
-              
-              viewport.setCamera({ 
-                focalPoint: newFocalPoint,
-                position: [
-                  camera.position[0] + panDelta.x,
-                  camera.position[1] + panDelta.y,
-                  camera.position[2]
-                ]
-              });
-              viewport.render();
-            }
-          }
-          
-          lastPanPosition = {
-            x: touch.clientX,
-            y: touch.clientY
-          };
-          e.preventDefault();
-        }
+        scrollAccumY += touch.clientY - lastPanPosition.y;
+        const now = Date.now();
+        const dt = now - lastMoveTime;
+        if (dt > 0) velocityY = (touch.clientY - lastMoveY) / dt; // px/ms, for fling
+        lastMoveY = touch.clientY;
+        lastMoveTime = now;
+        drainScroll();
+        lastPanPosition = { x: touch.clientX, y: touch.clientY };
+        e.preventDefault();
       }
     };
     
@@ -1593,7 +1647,23 @@ const AdvancedDicomViewer = ({
         isPanning = false;
         lastPanPosition = null;
         isSliceGesture = false;
-        
+        twoFingerCenter = null;
+
+        // Fling: keep scrolling slices with decay when the finger lifts fast, so
+        // a flick coasts through a long stack instead of stopping dead.
+        if (Math.abs(velocityY) > 0.35) {
+          let v = velocityY;
+          const tick = () => {
+            scrollAccumY += v * 16; // ~one frame of travel
+            const r = drainScroll();
+            if (r && r.atBound) { inertiaRaf = null; return; } // hit first/last slice
+            v *= 0.92;
+            inertiaRaf = Math.abs(v) > 0.04 ? requestAnimationFrame(tick) : null;
+          };
+          inertiaRaf = requestAnimationFrame(tick);
+        }
+        velocityY = 0;
+
         // Handle single tap for tool activation (if it was a quick tap, not a pan)
         if (touchDuration < 200 && !isPinching && !isSliceGesture) {
           // This was likely a tap, let it through for tool interaction
@@ -1608,6 +1678,8 @@ const AdvancedDicomViewer = ({
       isPanning = false;
       isSliceGesture = false;
       lastPanPosition = null;
+      twoFingerCenter = null;
+      cancelInertia();
     };
     
     // Add touch event listeners with passive: false to allow preventDefault
@@ -1620,6 +1692,7 @@ const AdvancedDicomViewer = ({
     element.addEventListener('contextmenu', (e) => e.preventDefault());
     
     return () => {
+      cancelInertia();
       element.removeEventListener('touchstart', handleTouchStart);
       element.removeEventListener('touchmove', handleTouchMove);
       element.removeEventListener('touchend', handleTouchEnd);

@@ -296,8 +296,32 @@ export default function ReferralsPage() {
     return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
   };
   const copyDoctorLink = async (referrerId) => {
-    try { await navigator.clipboard.writeText(await buildDoctorLink(referrerId)); notifyToast('Link copied ✓', 'success'); }
-    catch { notifyToast('Could not generate the link.', 'error'); }
+    try { 
+      const link = await buildDoctorLink(referrerId);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = link;
+        // Move outside of viewport
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+        } finally {
+          textArea.remove();
+        }
+      }
+      notifyToast('Link copied ✓', 'success'); 
+    }
+    catch (err) { 
+      console.error('Link generation/copy error:', err);
+      notifyToast('Could not generate or copy the link.', 'error'); 
+    }
   };
   // One-click WhatsApp send via NexEagle's WhatsApp Business API: the link is
   // delivered server-side straight to the doctor's number (no app hand-off).
@@ -517,9 +541,12 @@ export default function ReferralsPage() {
     if (selectedData.length === 0) return;
 
     if (type === 'EXCEL') {
-        let csv = "REFERRAL_ID,PATIENT,CONTACT,MODALITY,SERVICE,COMMISSION,STATUS,DATE\n";
+        let csv = "REFERRAL_ID,PATIENT,CONTACT,MODALITY,SERVICE,COMMISSION,STATUS,DATE,ADDRESS,SOURCE_OF_INFO\n";
         selectedData.forEach(p => {
-            csv += `${p.patientIdentifier || 'N/A'},${p.name},${p.mobile},${p.modality},${p.service},${p.commissionAmount},${p.status},${p.registrationDate}\n`;
+            const addressStr = [p.address, p.village, p.district].filter(Boolean).join(', ');
+            const escapedAddress = `"${addressStr.replace(/"/g, '""')}"`;
+            const escapedSource = `"${(p.sourceOfInfo || '').replace(/"/g, '""')}"`;
+            csv += `${p.patientIdentifier || 'N/A'},"${p.name}",${p.mobile},${p.modality},"${p.service}",${p.commissionAmount},${p.status},${p.registrationDate},${escapedAddress},${escapedSource}\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
@@ -623,6 +650,32 @@ export default function ReferralsPage() {
     // Release the object URL once the download has spooled (avoids a leak).
     setTimeout(() => window.URL.revokeObjectURL(url), 1000);
     notifyToast(`Download started — ${caseLedgerList.length} partner${caseLedgerList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
+  };
+
+  const handleExportPatientMasterList = () => {
+    if (!patientMasterList || patientMasterList.length === 0) {
+      notifyToast('No patients to export yet.', 'info');
+      return;
+    }
+    const headers = ['ID', 'PTID', 'Full Name', 'Mobile', 'Age', 'Gender', 'Address', 'Source Of Info', 'Registered Date'];
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    let csv = headers.join(',') + '\n';
+    patientMasterList.forEach((p, i) => {
+      const addressStr = [p.address, p.village, p.district].filter(Boolean).join(', ');
+      csv += [
+        i + 1, cell(p.patientIdentifier), cell(p.fullName), cell(p.mobile),
+        p.age || '', cell(p.gender), cell(addressStr), cell(p.sourceOfInfo),
+        cell(new Date(p.registeredAt).toLocaleDateString())
+      ].join(',') + '\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Patient_Master_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    notifyToast(`Download started — ${patientMasterList.length} patient${patientMasterList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
   };
 
   // Sync settings when doctor selection changes
@@ -4154,6 +4207,18 @@ export default function ReferralsPage() {
                 overflowX: 'auto',
                 WebkitOverflowScrolling: 'touch'
               }}>
+                <div style={{ padding: '20px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', background: '#fcfdfe' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>Patient Directory</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>All patients linked to referrers</div>
+                  </div>
+                  <button 
+                    onClick={handleExportPatientMasterList}
+                    style={{ padding: '10px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    📥 EXPORT TO EXCEL
+                  </button>
+                </div>
                 {!isMobile ? (
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -4163,16 +4228,18 @@ export default function ReferralsPage() {
                       <th onClick={() => toggleMasterSort('fullName')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'fullName' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>FULL NAME{sortArrow(masterSort, 'fullName')}</th>
                       <th onClick={() => toggleMasterSort('mobile')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'mobile' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>CONTACT NODE{sortArrow(masterSort, 'mobile')}</th>
                       <th onClick={() => toggleMasterSort('age')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'age' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>AGE / GENDER{sortArrow(masterSort, 'age')}</th>
+                      <th onClick={() => toggleMasterSort('address')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'address' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>ADDRESS{sortArrow(masterSort, 'address')}</th>
+                      <th onClick={() => toggleMasterSort('sourceOfInfo')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'sourceOfInfo' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>SOURCE OF INFO{sortArrow(masterSort, 'sourceOfInfo')}</th>
                       <th onClick={() => toggleMasterSort('registeredAt')} style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: masterSort.key === 'registeredAt' ? '#0f52ba' : '#94a3b8', letterSpacing: '1px', cursor: 'pointer', userSelect: 'none' }}>REG DATE{sortArrow(masterSort, 'registeredAt')}</th>
                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadingMaster ? (
-                       <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center' }}><div className="pulse-loader" style={{ margin: '0 auto' }}></div></td></tr>
+                       <tr><td colSpan="9" style={{ padding: '60px', textAlign: 'center' }}><div className="pulse-loader" style={{ margin: '0 auto' }}></div></td></tr>
                     ) : patientMasterList.length === 0 ? (
                       <tr>
-                        <td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</td>
+                        <td colSpan="9" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</td>
                       </tr>
                     ) : (
                       sortedMaster.map((p, i) => (
@@ -4191,6 +4258,12 @@ export default function ReferralsPage() {
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{[p.address, p.village, p.district].filter(Boolean).join(', ') || '—'}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.sourceOfInfo || '—'}</div>
                           </td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                             <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
@@ -4242,6 +4315,8 @@ export default function ReferralsPage() {
                                <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(p.fullName || 'Unknown').toUpperCase()}</div>
                                <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>{p.mobile}</div>
+                               <div style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginTop: '4px' }}>📍 {[p.address, p.village, p.district].filter(Boolean).join(', ') || 'No address'}</div>
+                               <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '4px' }}>Source: {p.sourceOfInfo || 'Unknown'}</div>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
                                <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
@@ -4320,6 +4395,8 @@ export default function ReferralsPage() {
                       <th onClick={() => toggleRosterSort('name')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'name' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Partner{sortArrow(rosterSort, 'name')}</th>
                       <th onClick={() => toggleRosterSort('isDoctor')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'isDoctor' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Type{sortArrow(rosterSort, 'isDoctor')}</th>
                       <th onClick={() => toggleRosterSort('contact')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'contact' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Contact{sortArrow(rosterSort, 'contact')}</th>
+                      <th onClick={() => toggleRosterSort('email')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'email' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Email{sortArrow(rosterSort, 'email')}</th>
+                      <th onClick={() => toggleRosterSort('address')} style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'address' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Address{sortArrow(rosterSort, 'address')}</th>
                       <th onClick={() => toggleRosterSort('patientCount')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'patientCount' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Studies{sortArrow(rosterSort, 'patientCount')}</th>
                       <th onClick={() => toggleRosterSort('totalCommission')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'totalCommission' ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Total Commission{sortArrow(rosterSort, 'totalCommission')}</th>
                       <th onClick={() => toggleRosterSort('paidCommission')} style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: rosterSort.key === 'paidCommission' ? '#0f52ba' : '#16a34a', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>Total Paid Incentive{sortArrow(rosterSort, 'paidCommission')}</th>
@@ -4330,7 +4407,7 @@ export default function ReferralsPage() {
                   <tbody>
                     {caseLedgerList.length === 0 ? (
                       <tr>
-                        <td colSpan="9" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
+                        <td colSpan="11" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
                       </tr>
                     ) : (
                       sortedRoster
@@ -4357,7 +4434,6 @@ export default function ReferralsPage() {
                                 ) : null; })()}
                               </div>
                             )}
-                            {s.address && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '3px' }}>📍 {s.address}</div>}
                           </td>
                           <td style={{ padding: '16px 24px' }}>
                             <span style={{ fontSize: '9px', fontWeight: 800, padding: '3px 9px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309', whiteSpace: 'nowrap' }}>
@@ -4366,7 +4442,12 @@ export default function ReferralsPage() {
                           </td>
                           <td style={{ padding: '16px 24px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>{s.contact || '—'}</div>
-                            {s.email && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>{s.email}</div>}
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>{s.email || '—'}</div>
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>{s.address || '—'}</div>
                           </td>
                           <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                             <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>{s.patientCount || 0}</div>

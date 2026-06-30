@@ -173,42 +173,42 @@ const RadiologyWorkflowBG = () => {
 
         {/* Workflow Nodes */}
         <g className="workflow-node" transform="translate(100, 200)">
-          <circle r="8" fill="#00f2fe" />
+          <circle r="8" fill="#2563eb" />
           <text x="15" y="5" className="node-label">REGISTRATION</text>
         </g>
         
         <g className="workflow-node" transform="translate(300, 400)">
-          <circle r="8" fill="#00f2fe" />
+          <circle r="8" fill="#2563eb" />
           <text x="15" y="5" className="node-label">TRIAGE/VITALS</text>
         </g>
 
         <g className="workflow-node" transform="translate(500, 300)">
-          <circle r="12" fill="#00f2fe" filter="url(#glow)" />
+          <circle r="12" fill="#2563eb" filter="url(#glow)" />
           <text x="20" y="5" className="node-label highlight">MODALITY SCAN (CT/MRI)</text>
         </g>
 
         <g className="workflow-node" transform="translate(700, 500)">
-          <circle r="8" fill="#00f2fe" />
+          <circle r="8" fill="#2563eb" />
           <text x="15" y="5" className="node-label">PACS SYNC</text>
         </g>
 
         <g className="workflow-node" transform="translate(900, 400)">
-          <circle r="8" fill="#00f2fe" />
+          <circle r="8" fill="#2563eb" />
           <text x="15" y="5" className="node-label">CLOUD ARCHIVE</text>
         </g>
 
         <g className="workflow-node" transform="translate(500, 700)">
-          <circle r="10" fill="#00f2fe" />
+          <circle r="10" fill="#2563eb" />
           <text x="20" y="5" className="node-label highlight">AI ANALYSIS</text>
         </g>
 
         <g className="workflow-node" transform="translate(300, 850)">
-          <circle r="8" fill="#00f2fe" />
+          <circle r="8" fill="#2563eb" />
           <text x="15" y="5" className="node-label">RADIOLOGIST REVIEW</text>
         </g>
 
         <g className="workflow-node" transform="translate(700, 850)">
-          <circle r="8" fill="#00f2fe" />
+          <circle r="8" fill="#2563eb" />
           <text x="15" y="5" className="node-label">REPORT SIGNED</text>
         </g>
 
