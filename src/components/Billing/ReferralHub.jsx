@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
 
@@ -94,6 +94,32 @@ const ReferralHub = ({
   invoices = [],
   approvalMap = { rows: [] }
 }) => {
+  const [isPartnerDropdownOpen, setIsPartnerDropdownOpen] = useState(false);
+
+  const toggleReferrer = (id) => {
+    if (id === 'ALL') {
+      setReferrerFilter(['ALL']);
+      return;
+    }
+    let newFilter = [...referrerFilter].filter(f => f !== 'ALL');
+    if (newFilter.includes(id)) {
+      newFilter = newFilter.filter(f => f !== id);
+    } else {
+      newFilter.push(id);
+    }
+    if (newFilter.length === 0) newFilter = ['ALL'];
+    setReferrerFilter(newFilter);
+  };
+
+  const getPartnerLabel = () => {
+    if (referrerFilter.includes('ALL')) return 'ALL PARTNERS (GLOBAL)';
+    if (referrerFilter.length === 1) {
+      const ref = referrers?.find(r => r.referrerId === referrerFilter[0]);
+      return ref ? ref.name?.toUpperCase() : '1 PARTNER';
+    }
+    return `${referrerFilter.length} PARTNERS`;
+  };
+
   // Net revenue (post-discount) of a commission's invoice — used to cap the
   // "Update payout" amount so a referral commission can never exceed what the
   // visit actually earned. Looked up by the cut's invoice reference. (item 4)
@@ -166,6 +192,7 @@ const ReferralHub = ({
     return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
   }, [presentCuts]);
 
+  const [settlementFilter, setSettlementFilter] = useState(['ALL']);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -229,7 +256,21 @@ const ReferralHub = ({
 
   // Earned payouts grouped by partner (present/past service dates). Self/walk-in
   // is excluded inside the helper — it earns no commission. (#20)
-  const partnerGroups = useMemo(() => groupCutsByPartner(presentCuts), [presentCuts]);
+  const basePartnerGroups = useMemo(() => groupCutsByPartner(presentCuts), [presentCuts]);
+
+  const partnerGroups = useMemo(() => {
+    return basePartnerGroups.filter(g => {
+      if (settlementFilter.includes('ALL')) return true;
+      let status = 'UNSETTLED';
+      if (g.total > 0) {
+        if (Math.abs(g.total - g.paid) < 0.01) status = 'SETTLED';
+        else if (g.paid > 0) status = 'PARTIALLY_SETTLED';
+      } else if (g.total === 0) {
+        status = 'SETTLED';
+      }
+      return settlementFilter.includes(status);
+    });
+  }, [basePartnerGroups, settlementFilter]);
 
   // Upcoming/optimistic payouts grouped by partner (future service dates).
 
@@ -247,6 +288,23 @@ const ReferralHub = ({
     setDrawerSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSettlementFilter = (val) => {
+    if (val === 'ALL') {
+      setSettlementFilter(['ALL']);
+      return;
+    }
+    setSettlementFilter(prev => {
+      let next = prev.filter(v => v !== 'ALL');
+      if (next.includes(val)) {
+        next = next.filter(v => v !== val);
+      } else {
+        next = [...next, val];
+      }
+      if (next.length === 0) return ['ALL'];
       return next;
     });
   };
@@ -383,42 +441,207 @@ const ReferralHub = ({
     const wb = XLSX.utils.book_new();
 
     // ── Summary sheet ────────────────────────────────────────────────────
-    const summaryRows = partnerGroups.map(g => ({
-      'Partner': g.name,
-      'Total Payouts': g.count,
-      'Total Amount (INR)': g.total,
-      'Settled (INR)': g.paid,
-      'Outstanding (INR)': g.unpaid,
-      'Eligible to Pay (INR)': g.eligible,
-      'Non-eligible (INR)': g.awaiting,
-    }));
+    let sumPayouts = 0, sumTotal = 0, sumPaid = 0, sumUnpaid = 0, sumEligible = 0, sumAwaiting = 0;
+    const summaryRows = partnerGroups.map(g => {
+      sumPayouts += g.count;
+      sumTotal += g.total;
+      sumPaid += g.paid;
+      sumUnpaid += g.unpaid;
+      sumEligible += g.eligible;
+      sumAwaiting += g.awaiting;
+      return {
+        'Partner': g.name,
+        'Total Payouts': g.count,
+        'Total Amount (INR)': g.total,
+        'Settled (INR)': g.paid,
+        'Outstanding (INR)': g.unpaid,
+        'Eligible to Pay (INR)': g.eligible,
+        'Non-eligible (INR)': g.awaiting,
+      };
+    });
+
+    summaryRows.push({});
+    summaryRows.push({
+      'Partner': 'TOTAL',
+      'Total Payouts': sumPayouts,
+      'Total Amount (INR)': sumTotal,
+      'Settled (INR)': sumPaid,
+      'Outstanding (INR)': sumUnpaid,
+      'Eligible to Pay (INR)': sumEligible,
+      'Non-eligible (INR)': sumAwaiting,
+    });
+
     const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
     summaryWs['!cols'] = [{ wch: 28 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }];
+
+    // Style Headers
+    for (let C = 0; C < 7; C++) {
+      const cellRef = XLSX.utils.encode_cell({ c: C, r: 0 });
+      if (summaryWs[cellRef]) {
+        summaryWs[cellRef].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: "FF2563EB" } }, // Bright blue header
+          font: { color: { rgb: "FFFFFFFF" }, bold: true }
+        };
+      }
+    }
+
+    // Attempt to add styling
+    partnerGroups.forEach((g, idx) => {
+      if (g.eligible === 0 && g.unpaid > 0) {
+        const rowIndex = idx + 1;
+        for (let C = 0; C < 7; C++) {
+          const cellRef = XLSX.utils.encode_cell({ c: C, r: rowIndex });
+          if (summaryWs[cellRef]) {
+            summaryWs[cellRef].s = {
+              fill: { patternType: 'solid', fgColor: { rgb: "FFFFE5E5" } }, // light red
+              font: { color: { rgb: "FF990000" }, bold: true }
+            };
+          }
+        }
+      }
+    });
+
+    // ── Summary totals row — outstanding bold styling ───────────────────
+    const totalRowIndex = summaryRows.length - 1;
+    const summaryTotalStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: "FF065F46" } }, // Deep emerald
+      font: { bold: true, color: { rgb: "FFFFFFFF" }, sz: 14, name: 'Calibri' },
+      border: {
+        top:    { style: 'medium', color: { rgb: "FF000000" } },
+        bottom: { style: 'medium', color: { rgb: "FF000000" } },
+        left:   { style: 'thin',   color: { rgb: "FF000000" } },
+        right:  { style: 'thin',   color: { rgb: "FF000000" } },
+      },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    };
+    for (let C = 0; C < 7; C++) {
+      const cellRef = XLSX.utils.encode_cell({ c: C, r: totalRowIndex });
+      if (!summaryWs[cellRef]) summaryWs[cellRef] = { t: 's', v: '' };
+      summaryWs[cellRef].s = summaryTotalStyle;
+    }
+    // Set row height for totals row
+    summaryWs['!rows'] = summaryWs['!rows'] || [];
+    summaryWs['!rows'][totalRowIndex] = { hpt: 28 };
     XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
 
     // ── One sheet per partner ────────────────────────────────────────────
     partnerGroups.forEach(group => {
-      const rows = group.cuts.map(cut => ({
-        'Payout Date': formatDate(cut?.date, true),
-        'Patient ID': cut?.patientId || '',
-        'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
-        'Age': cut?.patientAge || '',
-        'Gender': cut?.patientGender || '',
-        'Mobile': cut?.mobile || cut?.patientMobile || '',
-        'Modality': (cut?.modality || '').toUpperCase(),
-        'Reference ID': cut?.reference || '',
-        'Payout Amount (INR)': Number(cut?.amount) || 0,
-        'Patient Payment': cut?.patientPaymentStatus || '',
-        'Commission Status': cut?.status || 'UNPAID',
-        'Commission Type': cut?.type || '',
-        'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
-        'Payout Eligibility': eligibilityLabel(cut),
-      }));
+      let sumPaid = 0, sumEligible = 0, sumNonEligible = 0;
+
+      const rows = group.cuts.map(cut => {
+        const eligibility = eligibilityLabel(cut);
+        const amount = Number(cut?.amount) || 0;
+        
+        if (cut?.status === 'PAID') sumPaid += amount;
+        else if (eligibility === 'Eligible') sumEligible += amount;
+        else sumNonEligible += amount;
+
+        return {
+          'Payout Date': formatDate(cut?.date, true),
+          'Patient ID': cut?.patientDisplayId || '',
+          'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
+          'Age': cut?.patientAge || '',
+          'Gender': cut?.patientGender || '',
+          'Mobile': cut?.patientMobile || '',
+          'Modality': `${(cut?.modality || '').toUpperCase()}${cut?.serviceName ? ` - ${cut.serviceName}` : ''}`,
+          'Reference ID': cut?.reference || '',
+          'Payout Amount (INR)': amount,
+          'Patient Payment': cut?.patientPaymentStatus || '',
+          'Commission Status': cut?.status || 'UNPAID',
+          'Commission Type': cut?.type || '',
+          'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
+          'Payout Eligibility': eligibility,
+        };
+      });
+
+      // Add empty separator row
+      rows.push({});
+
+      // ── Three vivid breakdown rows instead of one cramped line ──────────
+      rows.push({
+        'Payout Date': '✅  SETTLED / PAID',
+        'Payout Amount (INR)': sumPaid,
+        'Patient Payment': `₹${sumPaid.toLocaleString('en-IN')}`,
+      });
+      rows.push({
+        'Payout Date': '🟢  ELIGIBLE TO PAY',
+        'Payout Amount (INR)': sumEligible,
+        'Patient Payment': `₹${sumEligible.toLocaleString('en-IN')}`,
+      });
+      rows.push({
+        'Payout Date': '🔴  NON-ELIGIBLE (Awaiting)',
+        'Payout Amount (INR)': sumNonEligible,
+        'Patient Payment': `₹${sumNonEligible.toLocaleString('en-IN')}`,
+      });
+      rows.push({
+        'Payout Date': '💰  TOTAL PAYOUT',
+        'Payout Amount (INR)': group.total,
+        'Patient Payment': `₹${group.total.toLocaleString('en-IN')}`,
+      });
+
       const ws = XLSX.utils.json_to_sheet(rows);
       ws['!cols'] = [
         { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
-        { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }, { wch: 16 }
+        { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 28 }, { wch: 22 }
       ];
+
+      // Style Headers
+      for (let C = 0; C < 14; C++) {
+        const cellRef = XLSX.utils.encode_cell({ c: C, r: 0 });
+        if (ws[cellRef]) {
+          ws[cellRef].s = {
+            fill: { patternType: 'solid', fgColor: { rgb: "FF0F172A" } }, // dark blue/slate
+            font: { color: { rgb: "FFFFFFFF" }, bold: true }
+          };
+        }
+      }
+
+      // Apply red color for Non-eligible rows
+      group.cuts.forEach((cut, idx) => {
+        if (eligibilityLabel(cut) === 'Non-eligible') {
+          const rowIndex = idx + 1;
+          for (let C = 0; C < 14; C++) {
+            const cellRef = XLSX.utils.encode_cell({ c: C, r: rowIndex });
+            if (ws[cellRef]) {
+              ws[cellRef].s = {
+                fill: { patternType: 'solid', fgColor: { rgb: "FFFFE5E5" } }, // light red
+                font: { color: { rgb: "FF990000" } }
+              };
+            }
+          }
+        }
+      });
+
+      // ── Style the 4 breakdown rows at the bottom ─────────────────────
+      const totalSectionStart = rows.length - 4; // settled, eligible, non-eligible, total
+      const breakdownStyles = [
+        { fill: "FF065F46", font: "FFFFFFFF" }, // Settled  — deep emerald
+        { fill: "FF1D4ED8", font: "FFFFFFFF" }, // Eligible — royal blue
+        { fill: "FFB91C1C", font: "FFFFFFFF" }, // Non-elig — bold red
+        { fill: "FF1E1B4B", font: "FFD4AF37" }, // Total    — deep navy / gold text
+      ];
+      const numCols = 14;
+      ws['!rows'] = ws['!rows'] || [];
+      breakdownStyles.forEach((style, i) => {
+        const rowIdx = totalSectionStart + i;
+        ws['!rows'][rowIdx] = { hpt: 26 };
+        for (let C = 0; C < numCols; C++) {
+          const cellRef = XLSX.utils.encode_cell({ c: C, r: rowIdx });
+          if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' };
+          ws[cellRef].s = {
+            fill: { patternType: 'solid', fgColor: { rgb: style.fill } },
+            font: { bold: true, color: { rgb: style.font }, sz: i === 3 ? 14 : 12, name: 'Calibri' },
+            border: {
+              top:    { style: i === 0 ? 'medium' : 'thin', color: { rgb: "FF000000" } },
+              bottom: { style: i === 3 ? 'medium' : 'thin', color: { rgb: "FF000000" } },
+              left:   { style: 'thin', color: { rgb: "FF000000" } },
+              right:  { style: 'thin', color: { rgb: "FF000000" } },
+            },
+            alignment: { vertical: 'center' }
+          };
+        }
+      });
+
       const sheetName = group.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
@@ -492,59 +715,113 @@ const ReferralHub = ({
          gap: isMobile ? '20px' : '0',
          marginBottom: '35px' 
        }}>
-           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-              <div>
-                 <h3 style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>REFERRAL PAYOUT COMMAND</h3>
-                 <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Real-time partner clinical concessions.</p>
-              </div>
-
-              <button
-                onClick={handleExportToExcel}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '8px 16px',
-                  borderRadius: '10px',
-                  fontSize: '9px',
-                  fontWeight: 950,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-                }}
-              >
-                <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
-              </button>
-           </div>
-          
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '15px' : '20px' }}>
              <div style={{ position: 'relative' }}>
-                <label style={{ position: 'absolute', top: '-15px', left: '0', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PARTNER_IDENTITY</label>
-                <select 
-                  value={referrerFilter} 
-                  onChange={e => setReferrerFilter(e.target.value)}
+                <div 
+                  onClick={() => setIsPartnerDropdownOpen(!isPartnerDropdownOpen)}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none'; }}
                   style={{ 
-                    padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, 
-                    background: 'white', color: '#1e293b', width: '100%', minWidth: isMobile ? '0' : '180px', outline: 'none' 
+                    padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, 
+                    background: 'white', color: '#1e293b', width: '100%', minWidth: isMobile ? '0' : '200px', 
+                    cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    transition: 'all 0.2s ease'
                   }}
                 >
-                  <option value="ALL">ALL PARTNERS (GLOBAL)</option>
-                  {(referrers || []).map(ref => (
-                    <option key={ref.referrerId} value={ref.referrerId}>{ref.name?.toUpperCase()}</option>
-                  ))}
-                </select>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#64748b' }}>👥</span>
+                    <span>{getPartnerLabel()}</span>
+                  </div>
+                  <span style={{ 
+                    transform: isPartnerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
+                    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    color: '#94a3b8', fontSize: '10px'
+                  }}>▼</span>
+                </div>
+                {isPartnerDropdownOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 8px)', left: 0, 
+                    background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(226, 232, 240, 0.8)',
+                    borderRadius: '16px', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.15), 0 0 10px rgba(0,0,0,0.03)', zIndex: 100, width: 'max-content',
+                    maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '8px',
+                    animation: 'fadeIn 0.2s ease-out'
+                  }}>
+                    <div 
+                      onClick={() => { toggleReferrer('ALL'); setIsPartnerDropdownOpen(false); }}
+                      onMouseEnter={(e) => { if (!referrerFilter.includes('ALL')) e.currentTarget.style.background = '#f8fafc'; }}
+                      onMouseLeave={(e) => { if (!referrerFilter.includes('ALL')) e.currentTarget.style.background = 'transparent'; }}
+                      style={{
+                        padding: '10px 14px', borderRadius: '10px', cursor: 'pointer', fontSize: '10px', fontWeight: 800,
+                        background: referrerFilter.includes('ALL') ? 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)' : 'transparent',
+                        color: referrerFilter.includes('ALL') ? '#1d4ed8' : '#475569',
+                        transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', gap: '10px'
+                      }}
+                    >
+                      <div style={{ 
+                        width: '16px', height: '16px', borderRadius: '5px', 
+                        border: `2px solid ${referrerFilter.includes('ALL') ? '#1d4ed8' : '#cbd5e1'}`,
+                        background: referrerFilter.includes('ALL') ? '#1d4ed8' : 'white',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.2s ease'
+                      }}>
+                        {referrerFilter.includes('ALL') && <span style={{ color: 'white', fontSize: '10px', fontWeight: 900 }}>✓</span>}
+                      </div>
+                      ALL PARTNERS (GLOBAL)
+                    </div>
+                    <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #e2e8f0, transparent)', margin: '6px 0' }} />
+                    {(referrers || []).map(ref => (
+                      <div 
+                        key={ref.referrerId}
+                        onClick={() => toggleReferrer(ref.referrerId)}
+                        onMouseEnter={(e) => { if (!referrerFilter.includes(ref.referrerId)) e.currentTarget.style.background = '#f8fafc'; }}
+                        onMouseLeave={(e) => { if (!referrerFilter.includes(ref.referrerId)) e.currentTarget.style.background = 'transparent'; }}
+                        style={{
+                          padding: '10px 14px', borderRadius: '10px', cursor: 'pointer', fontSize: '10px', fontWeight: 800,
+                          background: referrerFilter.includes(ref.referrerId) ? 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)' : 'transparent',
+                          color: referrerFilter.includes(ref.referrerId) ? '#1d4ed8' : '#475569',
+                          display: 'flex', alignItems: 'center', gap: '10px',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <div style={{ 
+                          width: '16px', height: '16px', borderRadius: '5px', 
+                          border: `2px solid ${referrerFilter.includes(ref.referrerId) ? '#1d4ed8' : '#cbd5e1'}`,
+                          background: referrerFilter.includes(ref.referrerId) ? '#1d4ed8' : 'white',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.2s ease'
+                        }}>
+                          {referrerFilter.includes(ref.referrerId) && <span style={{ color: 'white', fontSize: '10px', fontWeight: 900 }}>✓</span>}
+                        </div>
+                        {ref.name?.toUpperCase()}
+                      </div>
+                    ))}
+                  </div>
+                )}
+             </div>
+
+             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS:</span>
+                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', flexWrap: 'wrap' }}>
+                   {[
+                     { id: 'ALL', label: 'ALL' },
+                     { id: 'SETTLED', label: 'SETTLED' },
+                     { id: 'PARTIALLY_SETTLED', label: 'PARTIALLY' },
+                     { id: 'UNSETTLED', label: 'UNSETTLED' }
+                   ].map(s => (
+                     <button 
+                      key={s.id}
+                      onClick={() => toggleSettlementFilter(s.id)}
+                      style={{ 
+                        padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: settlementFilter.includes(s.id) ? '#e11d48' : 'transparent',
+                        color: settlementFilter.includes(s.id) ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        flex: isMobile ? 1 : 'none'
+                      }}
+                     >{s.label}</button>
+                   ))}
+                </div>
              </div>
 
              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
@@ -604,6 +881,38 @@ const ReferralHub = ({
               </div>
              )}
           </div>
+          
+           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleExportToExcel}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontSize: '9px',
+                  fontWeight: 950,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                }}
+              >
+                <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
+              </button>
+           </div>
        </div>
 
        <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '18px', marginBottom: '40px' }}>
@@ -979,7 +1288,9 @@ const ReferralHub = ({
                             <div>
                               <div style={{ fontSize: '15px', fontWeight: 900, color: '#1e293b' }}>{(cut?.patientName || 'N/A').toUpperCase()}</div>
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>
-                                {(cut?.modality || 'MRI').toUpperCase()}{cut?.reference ? ` · ${cut.reference}` : ''}
+                                {(cut?.modality || 'MRI').toUpperCase()}
+                                {cut?.serviceName ? ` - ${cut.serviceName}` : ''}
+                                {cut?.reference ? ` · ${cut.reference}` : ''}
                               </div>
                               {activePartner?.isPayee && cut?.referringDoctor && (
                                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', marginTop: '4px' }}>

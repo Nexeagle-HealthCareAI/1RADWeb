@@ -103,7 +103,7 @@ export default function BillingPage() {
   const [isSavingPayout, setIsSavingPayout] = useState(false);
   const [editPayout, setEditPayout] = useState({ commissionId: '', referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '', status: 'UNPAID' });
   const [referralCommissions, setReferralCommissions] = useState([]);
-  const [referrerFilter, setReferrerFilter] = useState('ALL'); // 'ALL' or referrerId
+  const [referrerFilter, setReferrerFilter] = useState(['ALL']); // ['ALL'] or array of referrerIds
   const [appointments, setAppointments] = useState([]);
 
   // FinanceManager Specific State
@@ -415,6 +415,27 @@ export default function BillingPage() {
   // Load the approval-request map on mount (powers the Revenue approval column).
   useEffect(() => { loadApprovalMap(); }, [loadApprovalMap]);
 
+  // Load the real Auto-Bill setting from the server so the toggle in the
+  // Control tab reflects what is actually persisted in the database.
+  useEffect(() => {
+    if (!activeCenter?.id) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiClient.get(`/hospitals/${activeCenter.id}`);
+        const enabled = res.data.isAutoBillingEnabled ?? res.data.IsAutoBillingEnabled ?? false;
+        if (alive) setBillingSettings(prev => ({ ...prev, autoBill: enabled }));
+      } catch {
+        // Keep the default; the toggle can still optimistically save via PUT.
+        if (alive) setBillingSettings(prev => ({
+          ...prev,
+          autoBill: activeCenter.isAutoBillingEnabled ?? false,
+        }));
+      }
+    })();
+    return () => { alive = false; };
+  }, [activeCenter?.id]);
+
   // B3 Slice 5 — referral commissions liveQuery. Status defaults to ALL
   // (the page's own UI filters specific statuses post-query).
   useEffect(() => {
@@ -533,8 +554,58 @@ export default function BillingPage() {
     });
   };
 
-  const handleToggleAutoBill = () => {
-    setBillingSettings(prev => ({ ...prev, autoBill: !prev.autoBill }));
+  const handleToggleAutoBill = async () => {
+    const newAutoBill = !billingSettings.autoBill;
+    const targetHubId = activeCenter?.id;
+    if (!targetHubId) {
+      notifyToast({ title: 'No centre selected', message: 'Please select a centre before changing this setting.' }, 'warning');
+      return;
+    }
+
+    // We need the current hospital data for the PUT payload (API requires all fields).
+    // Fall back to what we know if the GET hasn't been called yet.
+    let hospitalPayload;
+    try {
+      const res = await apiClient.get(`/hospitals/${targetHubId}`);
+      hospitalPayload = {
+        hospitalName: res.data.hospitalName || res.data.HospitalName || activeCenter.name || '',
+        hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
+        gstin: res.data.gstin || res.data.GSTIN || '',
+        registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
+        pan: res.data.pan || res.data.PAN || '',
+        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
+        isAutoBillingEnabled: newAutoBill,
+      };
+    } catch {
+      hospitalPayload = {
+        hospitalName: activeCenter.name || '',
+        hospitalAddress: '',
+        gstin: '', registrationNumber: '', pan: '', nabhNumber: '',
+        isAutoBillingEnabled: newAutoBill,
+      };
+    }
+
+    if (!isOnline) {
+      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...hospitalPayload });
+      notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
+      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      return;
+    }
+
+    try {
+      await apiClient.put(`/hospitals/${targetHubId}`, hospitalPayload);
+      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      notifyToast({ title: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'}`, message: newAutoBill ? 'Invoices will now be generated automatically on appointment completion.' : 'Automatic invoice generation has been turned off.' }, newAutoBill ? 'success' : 'info');
+    } catch (err) {
+      console.error('[FINANCE] Auto-billing toggle failed', err);
+      if (!err.response) {
+        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...hospitalPayload });
+        notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
+        setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      } else {
+        notifyToast({ title: 'Save failed', message: 'Could not update billing settings. Please try again.' }, 'error');
+      }
+    }
   };
   
   const handlePrintThermal = async (invInput = null) => {
@@ -1510,8 +1581,13 @@ export default function BillingPage() {
             status: (c.commissionStatus || c.status || 'UNPAID').toUpperCase(),
             referrerId: c.referrerId,
             modality: c.modality || 'MRI',
+            serviceName: c.serviceName || '',
             remarks: c.remarks || '',
             patientName: c.patientName || 'N/A',
+            patientDisplayId: c.patientDisplayId || '',
+            patientAge: c.patientAge || '',
+            patientGender: c.patientGender || '',
+            patientMobile: c.patientMobile || '',
             patientPaymentStatus: derivePatientPaymentStatus(c),
             paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0,
             // Payee-first model: the referral record (name above) IS the payee.
@@ -1665,8 +1741,8 @@ export default function BillingPage() {
         }
 
         // Partner (Referrer) Filter
-        if (referrerFilter !== 'ALL') {
-            if (cut.referrerId !== referrerFilter) return false;
+        if (!referrerFilter.includes('ALL')) {
+            if (!referrerFilter.includes(cut.referrerId)) return false;
         }
 
         // Free-text search across patient, partner, reference, modality, description
@@ -2451,7 +2527,10 @@ export default function BillingPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
+          {billingViewMode === 'REFERRAL_CUTS' && (
+            <h3 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.3px', margin: 0 }}>Referral Settlements</h3>
+          )}
           {/* Global "Search invoices or patients" removed — each tab (Revenue,
               Referrals, Expenses) now has its own table-level search input. */}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
