@@ -1208,20 +1208,105 @@ export default function BillingPage() {
         };
       });
 
+      // ── Premium design tokens — matches Referral export style ─────────────
+      const HDR_BG = 'FF1E293B'; // Dark slate header
+      const TOT_BG = 'FF334155'; // Lighter slate totals
+      const ALT_BG = 'FFF8FAFC'; // Off-white alternate rows
+      const DEF_FG = 'FF1E293B'; // Near-black body text
+      const BDR    = 'FFE2E8F0'; // Light slate border
+
+      const thin    = { style: 'thin',   color: { rgb: BDR } };
+      const medium  = { style: 'medium', color: { rgb: 'FF94A3B8' } };
+      const borders = { top: thin, bottom: thin, left: thin, right: thin };
+
+      const hdrStyle = {
+        fill: { patternType: 'solid', fgColor: { rgb: HDR_BG } },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 10, name: 'Calibri' },
+        border: borders,
+        alignment: { vertical: 'center' },
+      };
+      const totStyle = {
+        fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11, name: 'Calibri' },
+        border: { ...borders, top: medium },
+        alignment: { vertical: 'center' },
+      };
+      const mkRow = (bg, fg) => ({
+        fill: { patternType: 'solid', fgColor: { rgb: bg } },
+        font: { color: { rgb: fg }, sz: 10, name: 'Calibri' },
+        border: borders,
+        alignment: { vertical: 'center' },
+      });
+
+      const applySheet = (ws, numCols, numDataRows, hasTotalsRow = false) => {
+        ws['!rows'] = ws['!rows'] || [];
+        // Header row
+        for (let C = 0; C < numCols; C++) {
+          const ref = XLSX.utils.encode_cell({ c: C, r: 0 });
+          if (ws[ref]) ws[ref].s = hdrStyle;
+        }
+        ws['!rows'][0] = { hpt: 22 };
+        // Data rows — zebra
+        for (let R = 1; R <= numDataRows; R++) {
+          const bg = R % 2 === 0 ? ALT_BG : 'FFFFFFFF';
+          for (let C = 0; C < numCols; C++) {
+            const ref = XLSX.utils.encode_cell({ c: C, r: R });
+            if (ws[ref]) ws[ref].s = mkRow(bg, DEF_FG);
+          }
+        }
+        // Totals row (last row if hasTotalsRow)
+        if (hasTotalsRow) {
+          const totIdx = numDataRows + 1;
+          for (let C = 0; C < numCols; C++) {
+            const ref = XLSX.utils.encode_cell({ c: C, r: totIdx });
+            if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+            ws[ref].s = totStyle;
+          }
+          ws['!rows'][totIdx] = { hpt: 24 };
+        }
+      };
+
       const wb = XLSX.utils.book_new();
-      const ws1 = XLSX.utils.json_to_sheet(invoiceRows);
+
+      // ── Sheet 1: Invoices ────────────────────────────────────────────────
+      // Compute totals for footer row
+      const invTotals = safeInvoices.reduce((acc, inv) => {
+        acc.gross   += Number(inv.grossAmount)      || 0;
+        acc.disc    += Number(inv.discountAmount)   || 0;
+        acc.total   += Number(inv.totalAmount)      || 0;
+        acc.paid    += Number(inv.paidAmount)       || 0;
+        acc.balance += Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0));
+        acc.ref     += Number(inv.commissionAmount) || 0;
+        return acc;
+      }, { gross: 0, disc: 0, total: 0, paid: 0, balance: 0, ref: 0 });
+
+      const invoiceRowsWithFooter = [
+        ...invoiceRows,
+        {},
+        {
+          'Invoice ID': 'TOTALS',
+          'Gross Amount': Math.round(invTotals.gross),
+          'Discount':     Math.round(invTotals.disc),
+          'Total Payable':Math.round(invTotals.total),
+          'Paid Amount':  Math.round(invTotals.paid),
+          'Balance':      Math.round(invTotals.balance),
+          'Referral Cut': Math.round(invTotals.ref),
+          'Net Centre Income': Math.round(invTotals.total - invTotals.ref),
+        },
+      ];
+
+      const ws1 = XLSX.utils.json_to_sheet(invoiceRowsWithFooter);
       ws1['!cols'] = [
         { wch: 14 }, { wch: 26 }, { wch: 14 }, { wch: 22 }, { wch: 22 },
-        { wch: 8 },  { wch: 40 },
+        { wch: 8  }, { wch: 40 },
         { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
         { wch: 14 }, { wch: 18 },
         { wch: 10 }, { wch: 22 }, { wch: 12 },
       ];
+      applySheet(ws1, 17, invoiceRows.length, true);
       XLSX.utils.book_append_sheet(wb, ws1, 'Invoices');
 
-      // Sheet 2 — per-line item detail. Each row maps 1:1 with an
-      // InvoiceItem so the analyst can pivot revenue by modality or
-      // service across the filtered set.
+      // ── Sheet 2: Line Items ──────────────────────────────────────────────
       const itemRows = [];
       for (const inv of safeInvoices) {
         const items = inv.items || [];
@@ -1251,10 +1336,11 @@ export default function BillingPage() {
           { wch: 36 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
           { wch: 12 }, { wch: 22 }, { wch: 12 },
         ];
+        applySheet(ws2, 11, itemRows.length);
         XLSX.utils.book_append_sheet(wb, ws2, 'Line Items');
       }
 
-      // Sheet 3 — modality breakdown across the filtered set.
+      // ── Sheet 3: Modality Mix ────────────────────────────────────────────
       const byMod = new Map();
       for (const inv of safeInvoices) {
         const items = inv.items || [];
@@ -1291,12 +1377,13 @@ export default function BillingPage() {
       if (modalityRows.length > 0) {
         const ws3 = XLSX.utils.json_to_sheet(modalityRows);
         ws3['!cols'] = [
-          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+          { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
         ];
+        applySheet(ws3, 6, modalityRows.length);
         XLSX.utils.book_append_sheet(wb, ws3, 'Modality Mix');
       }
 
-      // Sheet 4 — stats summary mirroring the KPI cards on the page.
+      // ── Sheet 4: Stats Summary ───────────────────────────────────────────
       const statsRows = [
         { Metric: 'Total Revenue',     Value: Math.round(liveStats?.totalRevenue   || 0) },
         { Metric: 'Total Billed',      Value: Math.round(liveStats?.totalBilled    || 0) },
@@ -1316,6 +1403,7 @@ export default function BillingPage() {
       ];
       const ws4 = XLSX.utils.json_to_sheet(statsRows);
       ws4['!cols'] = [{ wch: 22 }, { wch: 22 }];
+      applySheet(ws4, 2, statsRows.length);
       XLSX.utils.book_append_sheet(wb, ws4, 'Stats Summary');
 
       const fname = useRange && (start || end)
