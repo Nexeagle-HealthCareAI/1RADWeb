@@ -273,8 +273,7 @@ const RevenueHub = ({
     let headers = [];
     let rows = [];
     const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
-    const isExportingSelected = selectedIds.size > 0;
-    const fileName = 1RAD_Financial_Report___;
+    const fileName = `1RAD_Financial_Report_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
 
     // Premium design tokens 
     const HDR_BG = 'FF1E293B'; // Dark slate header
