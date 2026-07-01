@@ -2420,7 +2420,15 @@ const ReportingPage = () => {
 
   return (
     <>
-    <div className="reporting-app-container">
+    <div className="reporting-app-container" style={{ position: 'relative', overflow: 'hidden' }}>
+      {String(activeAppointment?.status || '').toUpperCase() === 'DELIVERED' && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='250'%3E%3Ctext x='-20' y='150' fill='rgba(16,185,129,0.04)' font-size='48' font-family='sans-serif' font-weight='900' transform='rotate(-45 125 125)' letter-spacing='6'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
+          backgroundRepeat: 'repeat',
+          pointerEvents: 'none', userSelect: 'none', zIndex: 0
+        }} />
+      )}
       {/* SCOPED CSS */}
       <style>{`
         .reporting-app-container {

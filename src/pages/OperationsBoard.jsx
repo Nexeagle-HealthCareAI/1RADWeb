@@ -968,10 +968,19 @@ export default function OperationsBoard() {
                           borderRadius: '10px',
                           padding: '8px 10px',
                           display: 'flex', flexDirection: 'column', gap: '6px',
+                          position: 'relative', overflow: 'hidden'
                         }}
                       >
+                        {String(status || '').toUpperCase() === 'DELIVERED' && (
+                          <div style={{
+                            position: 'absolute', inset: 0,
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Ctext x='-20' y='90' fill='rgba(16,185,129,0.06)' font-size='24' font-family='sans-serif' font-weight='900' transform='rotate(-45 70 70)' letter-spacing='3'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'repeat',
+                            pointerEvents: 'none', userSelect: 'none', zIndex: 0
+                          }} />
+                        )}
                         {/* Top line — token + patient name + status pill */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
                           <span style={{
                             flexShrink: 0,
                             fontFamily: 'monospace',
@@ -1288,9 +1297,17 @@ export default function OperationsBoard() {
                   const premisesStyle = premisesPillStyle(premisesSev);
                   const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
                   return (
-                    <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', position: 'relative', overflow: 'hidden' }}>
+                      {String(appt.status || '').toUpperCase() === 'DELIVERED' && (
+                        <div style={{
+                          position: 'absolute', inset: 0,
+                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Ctext x='-20' y='110' fill='rgba(16,185,129,0.06)' font-size='32' font-family='sans-serif' font-weight='900' transform='rotate(-45 90 90)' letter-spacing='4'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
+                          backgroundRepeat: 'repeat',
+                          pointerEvents: 'none', userSelect: 'none', zIndex: 0
+                        }} />
+                      )}
                       {/* Top row: token + badges */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', position: 'relative', zIndex: 1 }}>
                         <div>
                           <div style={{ fontWeight: 950, color: '#0f52ba', fontSize: '18px', fontFamily: 'monospace' }}>
                             {appt.dailyTokenNumber ? `#${String(appt.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
