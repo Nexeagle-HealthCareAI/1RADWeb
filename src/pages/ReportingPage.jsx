@@ -2424,12 +2424,12 @@ const ReportingPage = () => {
       {String(activeAppointment?.status || '').toUpperCase() === 'DELIVERED' && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
-          color: 'rgba(220, 38, 38, 0.08)',
-          borderTop: '12px solid rgba(220, 38, 38, 0.08)',
-          borderBottom: '12px solid rgba(220, 38, 38, 0.08)',
+          color: 'rgba(220, 38, 38, 0.15)',
+          borderTop: '12px solid rgba(220, 38, 38, 0.15)',
+          borderBottom: '12px solid rgba(220, 38, 38, 0.15)',
           padding: '20px 80px',
           fontSize: '12rem', fontWeight: 900, fontFamily: 'serif',
-          pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+          pointerEvents: 'none', userSelect: 'none', zIndex: 9999,
           whiteSpace: 'nowrap', letterSpacing: '20px'
         }}>
           DELIVERED

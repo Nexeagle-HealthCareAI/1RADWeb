@@ -979,7 +979,7 @@ export default function OperationsBoard() {
                             borderBottom: '3px solid rgba(220, 38, 38, 0.15)',
                             padding: '6px 20px',
                             fontSize: '2.5rem', fontWeight: 900, fontFamily: 'serif',
-                            pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+                            pointerEvents: 'none', userSelect: 'none', zIndex: 50,
                             whiteSpace: 'nowrap', letterSpacing: '4px'
                           }}>
                             DELIVERED
@@ -1307,12 +1307,12 @@ export default function OperationsBoard() {
                       {String(appt.status || '').toUpperCase() === 'DELIVERED' && (
                         <div style={{
                           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
-                          color: 'rgba(220, 38, 38, 0.12)',
-                          borderTop: '5px solid rgba(220, 38, 38, 0.12)',
-                          borderBottom: '5px solid rgba(220, 38, 38, 0.12)',
+                          color: 'rgba(220, 38, 38, 0.15)',
+                          borderTop: '5px solid rgba(220, 38, 38, 0.15)',
+                          borderBottom: '5px solid rgba(220, 38, 38, 0.15)',
                           padding: '10px 40px',
                           fontSize: '4.5rem', fontWeight: 900, fontFamily: 'serif',
-                          pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+                          pointerEvents: 'none', userSelect: 'none', zIndex: 50,
                           whiteSpace: 'nowrap', letterSpacing: '8px'
                         }}>
                           DELIVERED
