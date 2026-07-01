@@ -107,6 +107,9 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     if (isDev) mainWindow.webContents.openDevTools();
+    // ── TEMP DEBUG: force DevTools open in prod to diagnose login issue ──────
+    // REMOVE THIS LINE once the login bug is identified and fixed.
+    if (!isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
   mainWindow.on('closed', () => {
