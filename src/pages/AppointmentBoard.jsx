@@ -2437,20 +2437,7 @@ export default function AppointmentBoard() {
         minWidth: 0,
         position: 'relative'
       }}>
-        {String(app.status || '').toUpperCase() === 'DELIVERED' && (
-          <div style={{
-            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
-            color: 'rgba(220, 38, 38, 0.15)',
-            borderTop: '5px solid rgba(220, 38, 38, 0.15)',
-            borderBottom: '5px solid rgba(220, 38, 38, 0.15)',
-            padding: '10px 40px',
-            fontSize: '5rem', fontWeight: 900, fontFamily: 'serif',
-            pointerEvents: 'none', userSelect: 'none', zIndex: 50,
-            whiteSpace: 'nowrap', letterSpacing: '8px'
-          }}>
-            DELIVERED
-          </div>
-        )}
+
         <div style={{ padding: '10px 14px 8px', background: 'transparent', position: 'relative', zIndex: 1 }}>
           {/* Header row — visit-level info (patient + meta + status +
               quick actions). All sub-rows below are service-scoped.
@@ -2495,6 +2482,11 @@ export default function AppointmentBoard() {
                   {paidApptIds.has(app.appointmentId || app.id) && (
                     <span title="Payment received" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.3px', padding: '1px 7px', borderRadius: '999px', color: '#15803d', background: '#dcfce7', border: '1px solid #86efac', whiteSpace: 'nowrap' }}>
                       ✓ PAID
+                    </span>
+                  )}
+                  {String(app.status || '').toUpperCase() === 'DELIVERED' && (
+                    <span title="Report Delivered to Patient" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px', padding: '2px 8px', borderRadius: '999px', color: '#fff', background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', boxShadow: '0 2px 4px rgba(168, 85, 247, 0.3)', whiteSpace: 'nowrap' }}>
+                      ✨ Report Delivered to Patient
                     </span>
                   )}
                   {(() => {
