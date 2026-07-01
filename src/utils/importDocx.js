@@ -39,8 +39,38 @@ const wval = (el) => (el ? el.getAttribute('w:val') : null);
 
 const ORDERED_FMTS = new Set(['decimal', 'decimalZero', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'ordinal']);
 
+// ─── Image (w:drawing / w:pict) → HTML ────────────────────────────────────
+function drawingToHtml(node, imageMap) {
+  let embedId = null;
+  const blips = node.getElementsByTagName('a:blip');
+  if (blips.length > 0) {
+    embedId = blips[0].getAttribute('r:embed');
+  } else {
+    const imagedata = node.getElementsByTagName('v:imagedata');
+    if (imagedata.length > 0) {
+      embedId = imagedata[0].getAttribute('r:id');
+    }
+  }
+  
+  if (embedId && imageMap && imageMap.has(embedId)) {
+    let wPx = '', hPx = '';
+    const extents = node.getElementsByTagName('wp:extent');
+    if (extents.length > 0) {
+      const cx = parseFloat(extents[0].getAttribute('cx'));
+      const cy = parseFloat(extents[0].getAttribute('cy'));
+      if (cx > 0) wPx = Math.round(cx / 9525);
+      if (cy > 0) hPx = Math.round(cy / 9525);
+    }
+    const attrs = [`src="${imageMap.get(embedId)}"`];
+    if (wPx) attrs.push(`width="${wPx}"`);
+    if (hPx) attrs.push(`height="${hPx}"`);
+    return `<img ${attrs.join(' ')}/>`;
+  }
+  return '';
+}
+
 // ─── Run (w:r) → inline HTML ──────────────────────────────────────────────
-function runToHtml(r) {
+function runToHtml(r, imageMap) {
   // Collect text / breaks / tabs in document order.
   let inner = '';
   for (const c of r.childNodes) {
@@ -48,6 +78,9 @@ function runToHtml(r) {
     else if (c.nodeName === 'w:tab') inner += '&nbsp;&nbsp;&nbsp;&nbsp;';
     else if (c.nodeName === 'w:br') inner += '<br/>';
     else if (c.nodeName === 'w:cr') inner += '<br/>';
+    else if (c.nodeName === 'w:drawing' || c.nodeName === 'w:pict') {
+      inner += drawingToHtml(c, imageMap);
+    }
   }
   if (!inner) return '';
 
@@ -80,11 +113,11 @@ function runToHtml(r) {
 }
 
 // Concatenate the inline HTML of a paragraph's runs (incl. hyperlinks).
-function inlineOf(p) {
+function inlineOf(p, imageMap) {
   let html = '';
   for (const c of p.childNodes) {
-    if (c.nodeName === W_R) html += runToHtml(c);
-    else if (c.nodeName === 'w:hyperlink') html += kids(c, W_R).map(runToHtml).join('');
+    if (c.nodeName === W_R) html += runToHtml(c, imageMap);
+    else if (c.nodeName === 'w:hyperlink') html += kids(c, W_R).map((r) => runToHtml(r, imageMap)).join('');
   }
   return html;
 }
@@ -179,7 +212,7 @@ function buildNumberingMap(numberingXml) {
 }
 
 // ─── Table (w:tbl) → HTML ─────────────────────────────────────────────────
-function tableToHtml(tbl) {
+function tableToHtml(tbl, imageMap) {
   // Column widths from <w:tblGrid> (twips → px). Applied as `colwidth` on the
   // first row's cells so the editor's resizable table restores the widths.
   const tblGrid = kid(tbl, 'w:tblGrid');
@@ -209,8 +242,8 @@ function tableToHtml(tbl) {
       colIdx += span;
       let cellHtml = '';
       for (const c of tc.childNodes) {
-        if (c.nodeName === W_P) cellHtml += blockParaToHtml(c);
-        else if (c.nodeName === W_TBL) cellHtml += tableToHtml(c);
+        if (c.nodeName === W_P) cellHtml += blockParaToHtml(c, imageMap);
+        else if (c.nodeName === W_TBL) cellHtml += tableToHtml(c, imageMap);
       }
       cells += `<td${attrs.length ? ' ' + attrs.join(' ') : ''}>${cellHtml || '<p></p>'}</td>`;
     }
@@ -221,30 +254,30 @@ function tableToHtml(tbl) {
 }
 
 // A single (non-list) paragraph → block HTML.
-function blockParaToHtml(p) {
+function blockParaToHtml(p, imageMap) {
   const { tag, styleAttr, dataAttrs } = paraMeta(p);
-  const inner = inlineOf(p);
+  const inner = inlineOf(p, imageMap);
   return `<${tag}${styleAttr}${dataAttrs}>${inner}</${tag}>`;
 }
 
 // ─── Body walker (handles list grouping) ──────────────────────────────────
-function bodyToHtml(body, numberingMap) {
+function bodyToHtml(body, numberingMap, imageMap) {
   const blocks = Array.from(body.childNodes).filter(n => n.nodeName === W_P || n.nodeName === W_TBL);
   let html = '';
   let i = 0;
   while (i < blocks.length) {
     const node = blocks[i];
-    if (node.nodeName === W_TBL) { html += tableToHtml(node); i++; continue; }
+    if (node.nodeName === W_TBL) { html += tableToHtml(node, imageMap); i++; continue; }
 
     const meta = paraMeta(node);
-    if (!meta.list) { html += blockParaToHtml(node); i++; continue; }
+    if (!meta.list) { html += blockParaToHtml(node, imageMap); i++; continue; }
 
     // Collect a run of consecutive list paragraphs and emit nested <ul>/<ol>.
     const items = [];
     while (i < blocks.length && blocks[i].nodeName === W_P) {
       const m = paraMeta(blocks[i]);
       if (!m.list) break;
-      items.push({ ilvl: m.list.ilvl, ordered: !!numberingMap.get(m.list.numId), html: inlineOf(blocks[i]) });
+      items.push({ ilvl: m.list.ilvl, ordered: !!numberingMap.get(m.list.numId), html: inlineOf(blocks[i], imageMap) });
       i++;
     }
     html += renderList(items);
@@ -291,8 +324,32 @@ export async function docxToHtml(arrayBuffer) {
   const numberingXml = await zip.file('word/numbering.xml')?.async('string');
   const numberingMap = buildNumberingMap(numberingXml);
 
+  const imageMap = new Map();
+  const relsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
+  if (relsXml) {
+    const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
+    const rels = relsDoc.getElementsByTagName('Relationship');
+    for (const rel of rels) {
+      const id = rel.getAttribute('Id');
+      const target = rel.getAttribute('Target');
+      if (target && (target.startsWith('media/') || target.startsWith('/word/media/'))) {
+        const zipPath = target.startsWith('/') ? target.slice(1) : `word/${target}`;
+        const file = zip.file(zipPath);
+        if (file) {
+          const base64 = await file.async('base64');
+          let mime = 'image/png';
+          const ext = target.split('.').pop()?.toLowerCase();
+          if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+          else if (ext === 'gif') mime = 'image/gif';
+          else if (ext === 'svg') mime = 'image/svg+xml';
+          imageMap.set(id, `data:${mime};base64,${base64}`);
+        }
+      }
+    }
+  }
+
   const doc = new DOMParser().parseFromString(docXml, 'application/xml');
   const body = doc.getElementsByTagName('w:body')[0];
   if (!body) throw new Error('w:body not found');
-  return bodyToHtml(body, numberingMap);
+  return bodyToHtml(body, numberingMap, imageMap);
 }
