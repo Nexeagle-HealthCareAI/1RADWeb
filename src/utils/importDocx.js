@@ -13,6 +13,13 @@
 // ════════════════════════════════════════════════════════════════
 
 import JSZip from 'jszip';
+import { DOMParser as XMLDOMParser } from '@xmldom/xmldom';
+
+const getDOMParser = () => {
+  return typeof window !== 'undefined' && window.DOMParser 
+    ? window.DOMParser 
+    : XMLDOMParser;
+};
 
 const W_P = 'w:p', W_R = 'w:r', W_TBL = 'w:tbl';
 
@@ -227,7 +234,8 @@ function buildNumberingMap(numberingXml) {
   const map = new Map(); // numId -> ordered boolean
   if (!numberingXml) return map;
   try {
-    const doc = new DOMParser().parseFromString(numberingXml, 'application/xml');
+    const Parser = getDOMParser();
+    const doc = new Parser().parseFromString(numberingXml, 'application/xml');
     const abstractFmt = new Map(); // abstractNumId -> ordered (lvl 0)
     for (const an of doc.getElementsByTagName('w:abstractNum')) {
       const aid = an.getAttribute('w:abstractNumId');
@@ -372,7 +380,8 @@ export async function docxToHtml(arrayBuffer) {
   const imageMap = new Map();
   const relsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
   if (relsXml) {
-    const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
+    const Parser = getDOMParser();
+    const relsDoc = new Parser().parseFromString(relsXml, 'application/xml');
     const rels = relsDoc.getElementsByTagName('Relationship');
     for (const rel of rels) {
       const id = rel.getAttribute('Id');
@@ -393,7 +402,8 @@ export async function docxToHtml(arrayBuffer) {
     }
   }
 
-  const doc = new DOMParser().parseFromString(docXml, 'application/xml');
+  const Parser = getDOMParser();
+  const doc = new Parser().parseFromString(docXml, 'application/xml');
   const body = doc.getElementsByTagName('w:body')[0];
   if (!body) throw new Error('w:body not found');
   return bodyToHtml(body, numberingMap, imageMap);
