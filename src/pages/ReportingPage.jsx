@@ -2295,20 +2295,23 @@ const ReportingPage = () => {
     const a = activeAppointment || {};
     const svc = activeServiceId ? (a.services || []).find(s => s.id === activeServiceId) : null;
     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const name  = (a.patientName || '').toUpperCase() || '—';
-    const ptid  = a.patientIdentifier || a.ptid || a.id || '—';
-    const age   = a.patientAge || a.age || '—';
-    const sex   = a.patientGender || a.gender || '—';
-    const study = svc?.serviceName || a.service || a.modality || '—';
+    const name       = (a.patientName || '').toUpperCase() || '—';
+    const ptid       = a.patientIdentifier || a.ptid || a.id || '—';
+    const age        = a.patientAge || a.age || '—';
+    const sex        = a.patientGender || a.gender || '—';
+    const study      = svc?.serviceName || a.service || a.modality || '—';
+    const refByName  = a.referredBy || 'Self';
     const refDegSpec = [a.referrerDegree, a.referrerSpecialty].filter(Boolean).join(', ');
-    const refBy = (a.referredBy || 'Self') + (refDegSpec && a.referredBy ? ` (${refDegSpec})` : '');
-    const date  = new Date().toLocaleDateString();
+    const date       = new Date().toLocaleDateString();
     return (
       `<p><strong>${esc(name)}</strong></p>` +
       `<p>ID: ${esc(ptid)} &nbsp;·&nbsp; Age/Sex: ${esc(age)}/${esc(sex)} &nbsp;·&nbsp; ` +
-      `Study: ${esc(study)} &nbsp;·&nbsp; Ref: ${esc(refBy)} &nbsp;·&nbsp; Date: ${esc(date)}</p><hr>`
+      `Study: ${esc(study)} &nbsp;·&nbsp; Ref: ${esc(refByName)}` +
+      (refDegSpec ? ` <em style="font-size:0.88em;color:#64748b;">(${esc(refDegSpec)})</em>` : '') +
+      ` &nbsp;·&nbsp; Date: ${esc(date)}</p><hr>`
     );
   };
+
 
   // Convert the locked banner → editable report content at the top of the doc.
   const convertHeaderToContent = () => {

@@ -282,7 +282,13 @@ export default function StudiesPage() {
       const res = await apiClient.post(`/Study/studies/${s.imagingStudyId}/share`);
       const token = res?.data?.data?.token;
       if (!token) throw new Error('No share token returned.');
-      setShareLink(`${window.location.origin}/share/${token}`);
+      // In Electron the app runs over file:// — window.location.origin returns
+      // "file://" which makes the share link un-openable. Use the env-configured
+      // web host so the link always points to the real web app. Falls back to
+      // window.location.origin for the browser (web) deployment.
+      const webOrigin = (import.meta.env.VITE_APP_URL || '').replace(/\/$/, '')
+        || (window.location.protocol !== 'file:' ? window.location.origin : '');
+      setShareLink(`${webOrigin}/share/${token}`);
     } catch (e) {
       showToast('err', e?.response?.data?.error || e.message || 'Could not create share link.');
       setShareFor(null);
@@ -290,6 +296,7 @@ export default function StudiesPage() {
       setShareBusy(false);
     }
   };
+
   const copyShare = async () => {
     try {
       await navigator.clipboard.writeText(shareLink);
