@@ -35,10 +35,25 @@ export default function AppointmentCard({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="appointment-card">
+    <div className="appointment-card" style={{ position: 'relative', overflow: 'hidden' }}>
+      {appointment.status?.toLowerCase() === 'delivered' && (
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+          color: 'rgba(220, 38, 38, 0.15)',
+          borderTop: '4px solid rgba(220, 38, 38, 0.15)',
+          borderBottom: '4px solid rgba(220, 38, 38, 0.15)',
+          padding: '10px 40px',
+          fontSize: '3rem', fontWeight: 900, fontFamily: 'serif',
+          pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+          whiteSpace: 'nowrap', letterSpacing: '8px'
+        }}>
+          DELIVERED
+        </div>
+      )}
       {/* Status Bar */}
       <div className="card-status-bar" style={{
-        background: `linear-gradient(90deg, ${meta.color} 0%, ${meta.color}88 100%)`
+        background: `linear-gradient(90deg, ${meta.color} 0%, ${meta.color}88 100%)`,
+        position: 'relative', zIndex: 1
       }} />
 
       {/* Token & Status Section */}

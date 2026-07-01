@@ -2434,13 +2434,24 @@ export default function AppointmentBoard() {
         overflow: 'hidden',
         background: 'white',
         boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-        // Compact row redesign — no rigid min-width, content wraps
-        // gracefully so the worklist fits on standard laptop screens
-        // without horizontal scroll. The earlier 950px floor came
-        // from the old 8-column grid; that grid is now flexbox.
         minWidth: 0,
+        position: 'relative'
       }}>
-        <div style={{ padding: '10px 14px 8px', background: 'transparent' }}>
+        {String(app.status || '').toUpperCase() === 'DELIVERED' && (
+          <div style={{
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+            color: 'rgba(220, 38, 38, 0.15)',
+            borderTop: '5px solid rgba(220, 38, 38, 0.15)',
+            borderBottom: '5px solid rgba(220, 38, 38, 0.15)',
+            padding: '10px 40px',
+            fontSize: '5rem', fontWeight: 900, fontFamily: 'serif',
+            pointerEvents: 'none', userSelect: 'none', zIndex: 50,
+            whiteSpace: 'nowrap', letterSpacing: '8px'
+          }}>
+            DELIVERED
+          </div>
+        )}
+        <div style={{ padding: '10px 14px 8px', background: 'transparent', position: 'relative', zIndex: 1 }}>
           {/* Header row — visit-level info (patient + meta + status +
               quick actions). All sub-rows below are service-scoped.
               Layout: identity cluster on the left, action cluster on

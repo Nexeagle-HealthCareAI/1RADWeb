@@ -968,10 +968,25 @@ export default function OperationsBoard() {
                           borderRadius: '10px',
                           padding: '8px 10px',
                           display: 'flex', flexDirection: 'column', gap: '6px',
+                          position: 'relative', overflow: 'hidden'
                         }}
                       >
+                        {String(status || '').toUpperCase() === 'DELIVERED' && (
+                          <div style={{
+                            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+                            color: 'rgba(220, 38, 38, 0.15)',
+                            borderTop: '3px solid rgba(220, 38, 38, 0.15)',
+                            borderBottom: '3px solid rgba(220, 38, 38, 0.15)',
+                            padding: '6px 20px',
+                            fontSize: '2.5rem', fontWeight: 900, fontFamily: 'serif',
+                            pointerEvents: 'none', userSelect: 'none', zIndex: 50,
+                            whiteSpace: 'nowrap', letterSpacing: '4px'
+                          }}>
+                            DELIVERED
+                          </div>
+                        )}
                         {/* Top line — token + patient name + status pill */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
                           <span style={{
                             flexShrink: 0,
                             fontFamily: 'monospace',
@@ -1288,9 +1303,23 @@ export default function OperationsBoard() {
                   const premisesStyle = premisesPillStyle(premisesSev);
                   const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
                   return (
-                    <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', position: 'relative', overflow: 'hidden' }}>
+                      {String(appt.status || '').toUpperCase() === 'DELIVERED' && (
+                        <div style={{
+                          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+                          color: 'rgba(220, 38, 38, 0.15)',
+                          borderTop: '5px solid rgba(220, 38, 38, 0.15)',
+                          borderBottom: '5px solid rgba(220, 38, 38, 0.15)',
+                          padding: '10px 40px',
+                          fontSize: '4.5rem', fontWeight: 900, fontFamily: 'serif',
+                          pointerEvents: 'none', userSelect: 'none', zIndex: 50,
+                          whiteSpace: 'nowrap', letterSpacing: '8px'
+                        }}>
+                          DELIVERED
+                        </div>
+                      )}
                       {/* Top row: token + badges */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', position: 'relative', zIndex: 1 }}>
                         <div>
                           <div style={{ fontWeight: 950, color: '#0f52ba', fontSize: '18px', fontFamily: 'monospace' }}>
                             {appt.dailyTokenNumber ? `#${String(appt.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
