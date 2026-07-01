@@ -302,9 +302,9 @@ export default function DoctorBoard() {
 
   // --- HANDLERS ---
   const handleOpenWorkspace = async (c) => {
-    // Update status to reporting if not already reporting, reported, or completed
+    // Update status to reporting if not already reporting, reported, completed, or delivered
     const currentStatus = c.status?.toLowerCase();
-    if (!['reporting', 'reported', 'completed'].includes(currentStatus)) {
+    if (!['reporting', 'reported', 'completed', 'delivered'].includes(currentStatus)) {
       await handleStatusUpdate(c.appointmentId || c.id, 'reporting');
     }
 
@@ -557,7 +557,7 @@ export default function DoctorBoard() {
               {paginatedCases.map(c => {
                 const status = c.status?.toLowerCase();
                 const isReady = ['scanned', 'reporting'].includes(status);
-                const isActive = ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status) && c.isToday;
+                const isActive = ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed', 'delivered'].includes(status) && c.isToday;
                 const isScanning = ['confirmed', 'in_progress'].includes(status);
                 const isExpected = ['scheduled', 'booked'].includes(status) && c.isToday;
                 
@@ -751,11 +751,11 @@ export default function DoctorBoard() {
                     <td style={{ padding: '20px' }}>
                       <span style={{ 
                         padding: '6px 12px', borderRadius: '10px', fontSize: '7.5px', fontWeight: 950,
-                        background: status === 'reported' ? '#f0fdf4' : isReady ? '#e9f7ef' : isScanning ? '#fef3c7' : isExpected ? '#f0f7ff' : '#f8fafc',
-                        color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
-                        border: `1px solid ${status === 'reported' ? '#bbf7d0' : isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
+                        background: status === 'delivered' ? '#d1fae5' : status === 'reported' ? '#f0fdf4' : isReady ? '#e9f7ef' : isScanning ? '#fef3c7' : isExpected ? '#f0f7ff' : '#f8fafc',
+                        color: status === 'delivered' ? '#047857' : status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
+                        border: `1px solid ${status === 'delivered' ? '#a7f3d0' : status === 'reported' ? '#bbf7d0' : isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
-                      }}>{status === 'scanned' ? 'Ready' : status === 'confirmed' ? 'Arrived' : status === 'in_progress' ? 'Scanning' : status === 'scheduled' ? 'Expected' : status === 'reported' ? 'Finalized' : status === 'completed' ? 'Archived' : status}</span>
+                      }}>{status === 'delivered' ? 'Delivered' : status === 'scanned' ? 'Ready' : status === 'confirmed' ? 'Arrived' : status === 'in_progress' ? 'Scanning' : status === 'scheduled' ? 'Expected' : status === 'reported' ? 'Finalized' : status === 'completed' ? 'Archived' : status}</span>
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -776,7 +776,7 @@ export default function DoctorBoard() {
                           onClick={() => handleOpenWorkspace(c)}
                           title={view !== 'HISTORY' && !isPatientArrived(c) ? 'Patient not arrived — work disabled' : undefined}
                         >
-                          {status === 'reported' ? 'Review' : isReady ? 'Write Report' : 'Open Report'}
+                          {status === 'delivered' ? 'View Report' : status === 'reported' ? 'Review' : isReady ? 'Write Report' : 'Open Report'}
                         </button>
                       </div>
                       {view !== 'HISTORY' && !isPatientArrived(c) && (
