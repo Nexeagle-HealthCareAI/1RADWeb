@@ -260,9 +260,16 @@ export async function buildReportDocxBlob({ appointment, findingsHtml, impressio
     color:  protocol?.fontColor  || undefined,
   };
 
+  const footer = {
+    text: 'Powered by Nexeagle',
+    align: 'center',
+    fontFamily: defaultFont.family,
+    fontSize: 10
+  };
+
   // No headerHtml — the patient banner is in the body now. The header carries
   // only the letterhead background + optional watermark.
-  return buildDocxBlob(bodyHtml, { margins, defaultFont, letterhead, watermark });
+  return buildDocxBlob(bodyHtml, { margins, defaultFont, letterhead, watermark, footer });
 }
 
 export async function openReportInWord({ appointment, findingsHtml, impression, advice, protocol, watch = false, watermark = '' }) {
