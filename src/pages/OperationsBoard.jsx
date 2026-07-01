@@ -971,20 +971,6 @@ export default function OperationsBoard() {
                           position: 'relative', overflow: 'hidden'
                         }}
                       >
-                        {String(status || '').toUpperCase() === 'DELIVERED' && (
-                          <div style={{
-                            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
-                            color: 'rgba(220, 38, 38, 0.15)',
-                            borderTop: '3px solid rgba(220, 38, 38, 0.15)',
-                            borderBottom: '3px solid rgba(220, 38, 38, 0.15)',
-                            padding: '6px 20px',
-                            fontSize: '2.5rem', fontWeight: 900, fontFamily: 'serif',
-                            pointerEvents: 'none', userSelect: 'none', zIndex: 50,
-                            whiteSpace: 'nowrap', letterSpacing: '4px'
-                          }}>
-                            DELIVERED
-                          </div>
-                        )}
                         {/* Top line — token + patient name + status pill */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
                           <span style={{
@@ -1000,6 +986,18 @@ export default function OperationsBoard() {
                             fontSize: '11px', fontWeight: 900, color: '#0f172a',
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                           }} title={appt.patientName}>{appt.patientName}</span>
+                          {String(status || '').toUpperCase() === 'DELIVERED' && (
+                            <span title="Report Delivered to Patient" style={{
+                              flexShrink: 0,
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
+                              padding: '2px 8px', borderRadius: '999px',
+                              color: '#fff', background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                              boxShadow: '0 2px 4px rgba(168, 85, 247, 0.3)', whiteSpace: 'nowrap'
+                            }}>
+                              ✨ Report Delivered to Patient
+                            </span>
+                          )}
                           <span style={{
                             flexShrink: 0,
                             fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
@@ -1304,20 +1302,6 @@ export default function OperationsBoard() {
                   const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
                   return (
                     <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', position: 'relative', overflow: 'hidden' }}>
-                      {String(appt.status || '').toUpperCase() === 'DELIVERED' && (
-                        <div style={{
-                          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
-                          color: 'rgba(220, 38, 38, 0.15)',
-                          borderTop: '5px solid rgba(220, 38, 38, 0.15)',
-                          borderBottom: '5px solid rgba(220, 38, 38, 0.15)',
-                          padding: '10px 40px',
-                          fontSize: '4.5rem', fontWeight: 900, fontFamily: 'serif',
-                          pointerEvents: 'none', userSelect: 'none', zIndex: 50,
-                          whiteSpace: 'nowrap', letterSpacing: '8px'
-                        }}>
-                          DELIVERED
-                        </div>
-                      )}
                       {/* Top row: token + badges */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', position: 'relative', zIndex: 1 }}>
                         <div>
@@ -1327,6 +1311,17 @@ export default function OperationsBoard() {
                           <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>{appt.displayId}</div>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          {String(appt.status || '').toUpperCase() === 'DELIVERED' && (
+                            <span title="Report Delivered to Patient" style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
+                              padding: '2px 8px', borderRadius: '999px',
+                              color: '#fff', background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                              boxShadow: '0 2px 4px rgba(168, 85, 247, 0.3)', whiteSpace: 'nowrap'
+                            }}>
+                              ✨ Report Delivered to Patient
+                            </span>
+                          )}
                           <span className="status-badge" style={{ background: coreStatus.style.bg, color: coreStatus.style.text, border: `1px solid ${coreStatus.style.border}` }}>
                             {coreStatus.label}
                           </span>
