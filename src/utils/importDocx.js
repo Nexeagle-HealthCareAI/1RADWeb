@@ -39,6 +39,34 @@ const wval = (el) => (el ? el.getAttribute('w:val') : null);
 
 const ORDERED_FMTS = new Set(['decimal', 'decimalZero', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'ordinal']);
 
+const HL_COLORS = {
+  black: '#000000', blue: '#0000ff', cyan: '#00ffff', green: '#00ff00', magenta: '#ff00ff', red: '#ff0000', yellow: '#ffff00', white: '#ffffff',
+  darkBlue: '#000080', darkCyan: '#008080', darkGreen: '#008000', darkMagenta: '#800080', darkRed: '#800000', darkYellow: '#808000',
+  darkGray: '#808080', lightGray: '#c0c0c0'
+};
+
+function parseBorders(bordersEl) {
+  if (!bordersEl) return '';
+  const css = [];
+  const sides = ['top', 'left', 'bottom', 'right'];
+  for (const side of sides) {
+    const el = kid(bordersEl, `w:${side}`);
+    if (el) {
+      const val = wval(el);
+      if (val === 'none' || val === 'nil') {
+        css.push(`border-${side}:none`);
+      } else {
+        const sz = parseFloat(el.getAttribute('w:sz') || '4');
+        const color = el.getAttribute('w:color');
+        const px = Math.max(1, Math.round(sz / 8 * 1.333));
+        const colorHex = (color && color !== 'auto') ? `#${color}` : '#000000';
+        css.push(`border-${side}:${px}px solid ${colorHex}`);
+      }
+    }
+  }
+  return css.join(';');
+}
+
 // ─── Image (w:drawing / w:pict) → HTML ────────────────────────────────────
 function drawingToHtml(node, imageMap) {
   let embedId = null;
@@ -85,6 +113,7 @@ function runToHtml(r, imageMap) {
   if (!inner) return '';
 
   const rPr = kid(r, 'w:rPr');
+  let markColor = '';
   if (rPr) {
     const styles = [];
     const sz = kid(rPr, 'w:sz');
@@ -95,6 +124,9 @@ function runToHtml(r, imageMap) {
     const fonts = kid(rPr, 'w:rFonts');
     const fam = fonts?.getAttribute('w:ascii');
     if (fam) styles.push(`font-family:${fam}`);
+
+    const hl = wval(kid(rPr, 'w:highlight'));
+    if (hl && hl !== 'none') markColor = HL_COLORS[hl] || hl;
 
     if (styles.length) inner = `<span style="${styles.join(';')}">${inner}</span>`;
 
@@ -109,6 +141,7 @@ function runToHtml(r, imageMap) {
     if (on(kid(rPr, 'w:i'))) inner = `<em>${inner}</em>`;
     if (on(kid(rPr, 'w:b'))) inner = `<strong>${inner}</strong>`;
   }
+  if (markColor) inner = `<mark style="background-color:${markColor}">${inner}</mark>`;
   return inner;
 }
 
@@ -216,6 +249,11 @@ function tableToHtml(tbl, imageMap) {
   // Column widths from <w:tblGrid> (twips → px). Applied as `colwidth` on the
   // first row's cells so the editor's resizable table restores the widths.
   const tblGrid = kid(tbl, 'w:tblGrid');
+  const tblPr = kid(tbl, 'w:tblPr');
+  const tblBordersCss = parseBorders(kid(tblPr, 'w:tblBorders'));
+  const tblAttrs = [];
+  if (tblBordersCss) tblAttrs.push(`style="${tblBordersCss}"`);
+
   const gridPx = tblGrid
     ? kids(tblGrid, 'w:gridCol').map((g) => { const t = parseFloat(g.getAttribute('w:w')); return Number.isFinite(t) && t > 0 ? Math.round(t / 15) : null; })
     : [];
@@ -230,11 +268,18 @@ function tableToHtml(tbl, imageMap) {
       // Merged columns → colspan; cell shading → background-color.
       const span = parseInt(wval(kid(tcPr, 'w:gridSpan')) || '1', 10);
       const fill = (kid(tcPr, 'w:shd')?.getAttribute('w:fill') || '').trim();
+      const tcBordersCss = parseBorders(kid(tcPr, 'w:tcBorders'));
+      
       const attrs = [];
       if (span > 1) attrs.push(`colspan="${span}"`);
+      
+      const styles = [];
       if (fill && /^[0-9a-fA-F]{6}$/.test(fill) && fill.toLowerCase() !== 'auto') {
-        attrs.push(`style="background-color:#${fill.toUpperCase()}"`);
+        styles.push(`background-color:#${fill.toUpperCase()}`);
       }
+      if (tcBordersCss) styles.push(tcBordersCss);
+      if (styles.length) attrs.push(`style="${styles.join(';')}"`);
+      
       if (rowIdx === 0 && gridPx.length) {
         const ws = gridPx.slice(colIdx, colIdx + span).filter((w) => w != null);
         if (ws.length) attrs.push(`colwidth="${ws.join(',')}"`);
@@ -250,7 +295,7 @@ function tableToHtml(tbl, imageMap) {
     rows += `<tr>${cells}</tr>`;
     rowIdx++;
   }
-  return `<table>${rows}</table>`;
+  return `<table${tblAttrs.length ? ' ' + tblAttrs.join(' ') : ''}>${rows}</table>`;
 }
 
 // A single (non-list) paragraph → block HTML.
