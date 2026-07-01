@@ -91,7 +91,7 @@ const esc = (s) => String(s ?? '')
 // "FINDINGS:" / "IMPRESSION:" section text in the body can't be mistaken for a
 // boundary. Rendered as 1pt white text → effectively invisible in Word.
 export const FINDINGS_START_TOKEN = '[[1RAD-FINDINGS-START]]';
-export const FINDINGS_END_TOKEN   = '[[1RAD-FINDINGS-END]]';
+export const FINDINGS_END_TOKEN = '[[1RAD-FINDINGS-END]]';
 const marker = (token) => `<p><span style="font-size:1pt; color:#FFFFFF">${token}</span></p>`;
 
 // Generate the patient-tracking QR as a PNG data URL (high-res so it stays crisp
@@ -120,13 +120,13 @@ async function buildQrDataUrl(appointmentId) {
 // page 1 (not the repeating header) so it matches the preview and is bound by
 // the configured page margins.
 function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead = false, margins }) {
-  const name   = (appointment?.patientName || '').toUpperCase() || '—';
-  const ptid   = appointment?.patientIdentifier || appointment?.ptid || appointment?.id || '—';
+  const name = (appointment?.patientName || '').toUpperCase() || '—';
+  const ptid = appointment?.patientIdentifier || appointment?.ptid || appointment?.id || '—';
   // Age with its saved unit (Y / M / D) — e.g. "56Y", "6M", "15D".
-  const age    = formatPatientAge(appointment?.patientAge ?? appointment?.age, '—');
-  const sex    = appointment?.patientGender || appointment?.gender || '—';
+  const age = formatPatientAge(appointment?.patientAge ?? appointment?.age, '—');
+  const sex = appointment?.patientGender || appointment?.gender || '—';
   const refDegSpec = [appointment?.referrerDegree, appointment?.referrerSpecialty].filter(Boolean).join(', ');
-  const refBy  = (appointment?.referredBy || 'Self') + (refDegSpec && appointment?.referredBy ? ` (${refDegSpec})` : '');
+  const refBy = (appointment?.referredBy || 'Self') + (refDegSpec && appointment?.referredBy ? ` (${refDegSpec})` : '');
   // Reported date as "5 June, 2026" (day-first, month name, comma before year).
   const _d = new Date();
   const repDate = `${_d.getDate()} ${_d.toLocaleString('en-US', { month: 'long' })}, ${_d.getFullYear()}`;
@@ -241,9 +241,9 @@ export async function buildReportDocxBlob({ appointment, findingsHtml, impressio
   // document opens with the SAME layout the doctor configured in the editor —
   // headerMargin (top) / leftMargin / rightMargin / bottomMargin, verbatim.
   const margins = {
-    top:    protocol?.headerMargin ?? 25,
-    left:   protocol?.leftMargin   ?? 20,
-    right:  protocol?.rightMargin  ?? 20,
+    top: protocol?.headerMargin ?? 25,
+    left: protocol?.leftMargin ?? 20,
+    right: protocol?.rightMargin ?? 20,
     bottom: protocol?.bottomMargin ?? 20,
   };
 
@@ -256,15 +256,15 @@ export async function buildReportDocxBlob({ appointment, findingsHtml, impressio
   const bodyHtml = buildReportHtml({ findingsHtml, impression, advice, bannerHtml });
   const defaultFont = {
     family: protocol?.fontFamily || 'Calibri',
-    sizePt: protocol?.fontSize   || 12,
-    color:  protocol?.fontColor  || undefined,
+    sizePt: protocol?.fontSize || 12,
+    color: protocol?.fontColor || undefined,
   };
 
   const footer = {
     text: 'Powered by Nexeagle',
     align: 'center',
     fontFamily: defaultFont.family,
-    fontSize: 10
+    fontSize: 9
   };
 
   // No headerHtml — the patient banner is in the body now. The header carries

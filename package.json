@@ -66,6 +66,7 @@
     "@tiptap/extension-underline": "^3.23.1",
     "@tiptap/react": "^3.23.1",
     "@tiptap/starter-kit": "^3.23.1",
+    "@xmldom/xmldom": "^0.9.10",
     "axios": "^1.15.0",
     "cornerstone-core": "^2.6.1",
     "cornerstone-wado-image-loader": "^4.13.2",

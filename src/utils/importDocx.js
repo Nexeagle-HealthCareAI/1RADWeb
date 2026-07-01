@@ -13,6 +13,13 @@
 // ════════════════════════════════════════════════════════════════
 
 import JSZip from 'jszip';
+import { DOMParser as XMLDOMParser } from '@xmldom/xmldom';
+
+const getDOMParser = () => {
+  return typeof window !== 'undefined' && window.DOMParser 
+    ? window.DOMParser 
+    : XMLDOMParser;
+};
 
 const W_P = 'w:p', W_R = 'w:r', W_TBL = 'w:tbl';
 
@@ -39,8 +46,66 @@ const wval = (el) => (el ? el.getAttribute('w:val') : null);
 
 const ORDERED_FMTS = new Set(['decimal', 'decimalZero', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'ordinal']);
 
+const HL_COLORS = {
+  black: '#000000', blue: '#0000ff', cyan: '#00ffff', green: '#00ff00', magenta: '#ff00ff', red: '#ff0000', yellow: '#ffff00', white: '#ffffff',
+  darkBlue: '#000080', darkCyan: '#008080', darkGreen: '#008000', darkMagenta: '#800080', darkRed: '#800000', darkYellow: '#808000',
+  darkGray: '#808080', lightGray: '#c0c0c0'
+};
+
+function parseBorders(bordersEl) {
+  if (!bordersEl) return '';
+  const css = [];
+  const sides = ['top', 'left', 'bottom', 'right'];
+  for (const side of sides) {
+    const el = kid(bordersEl, `w:${side}`);
+    if (el) {
+      const val = wval(el);
+      if (val === 'none' || val === 'nil') {
+        css.push(`border-${side}:none`);
+      } else {
+        const sz = parseFloat(el.getAttribute('w:sz') || '4');
+        const color = el.getAttribute('w:color');
+        const px = Math.max(1, Math.round(sz / 8 * 1.333));
+        const colorHex = (color && color !== 'auto') ? `#${color}` : '#000000';
+        css.push(`border-${side}:${px}px solid ${colorHex}`);
+      }
+    }
+  }
+  return css.join(';');
+}
+
+// ─── Image (w:drawing / w:pict) → HTML ────────────────────────────────────
+function drawingToHtml(node, imageMap) {
+  let embedId = null;
+  const blips = node.getElementsByTagName('a:blip');
+  if (blips.length > 0) {
+    embedId = blips[0].getAttribute('r:embed');
+  } else {
+    const imagedata = node.getElementsByTagName('v:imagedata');
+    if (imagedata.length > 0) {
+      embedId = imagedata[0].getAttribute('r:id');
+    }
+  }
+  
+  if (embedId && imageMap && imageMap.has(embedId)) {
+    let wPx = '', hPx = '';
+    const extents = node.getElementsByTagName('wp:extent');
+    if (extents.length > 0) {
+      const cx = parseFloat(extents[0].getAttribute('cx'));
+      const cy = parseFloat(extents[0].getAttribute('cy'));
+      if (cx > 0) wPx = Math.round(cx / 9525);
+      if (cy > 0) hPx = Math.round(cy / 9525);
+    }
+    const attrs = [`src="${imageMap.get(embedId)}"`];
+    if (wPx) attrs.push(`width="${wPx}"`);
+    if (hPx) attrs.push(`height="${hPx}"`);
+    return `<img ${attrs.join(' ')}/>`;
+  }
+  return '';
+}
+
 // ─── Run (w:r) → inline HTML ──────────────────────────────────────────────
-function runToHtml(r) {
+function runToHtml(r, imageMap) {
   // Collect text / breaks / tabs in document order.
   let inner = '';
   for (const c of r.childNodes) {
@@ -48,10 +113,14 @@ function runToHtml(r) {
     else if (c.nodeName === 'w:tab') inner += '&nbsp;&nbsp;&nbsp;&nbsp;';
     else if (c.nodeName === 'w:br') inner += '<br/>';
     else if (c.nodeName === 'w:cr') inner += '<br/>';
+    else if (c.nodeName === 'w:drawing' || c.nodeName === 'w:pict') {
+      inner += drawingToHtml(c, imageMap);
+    }
   }
   if (!inner) return '';
 
   const rPr = kid(r, 'w:rPr');
+  let markColor = '';
   if (rPr) {
     const styles = [];
     const sz = kid(rPr, 'w:sz');
@@ -62,6 +131,9 @@ function runToHtml(r) {
     const fonts = kid(rPr, 'w:rFonts');
     const fam = fonts?.getAttribute('w:ascii');
     if (fam) styles.push(`font-family:${fam}`);
+
+    const hl = wval(kid(rPr, 'w:highlight'));
+    if (hl && hl !== 'none') markColor = HL_COLORS[hl] || hl;
 
     if (styles.length) inner = `<span style="${styles.join(';')}">${inner}</span>`;
 
@@ -76,15 +148,16 @@ function runToHtml(r) {
     if (on(kid(rPr, 'w:i'))) inner = `<em>${inner}</em>`;
     if (on(kid(rPr, 'w:b'))) inner = `<strong>${inner}</strong>`;
   }
+  if (markColor) inner = `<mark style="background-color:${markColor}">${inner}</mark>`;
   return inner;
 }
 
 // Concatenate the inline HTML of a paragraph's runs (incl. hyperlinks).
-function inlineOf(p) {
+function inlineOf(p, imageMap) {
   let html = '';
   for (const c of p.childNodes) {
-    if (c.nodeName === W_R) html += runToHtml(c);
-    else if (c.nodeName === 'w:hyperlink') html += kids(c, W_R).map(runToHtml).join('');
+    if (c.nodeName === W_R) html += runToHtml(c, imageMap);
+    else if (c.nodeName === 'w:hyperlink') html += kids(c, W_R).map((r) => runToHtml(r, imageMap)).join('');
   }
   return html;
 }
@@ -161,7 +234,8 @@ function buildNumberingMap(numberingXml) {
   const map = new Map(); // numId -> ordered boolean
   if (!numberingXml) return map;
   try {
-    const doc = new DOMParser().parseFromString(numberingXml, 'application/xml');
+    const Parser = getDOMParser();
+    const doc = new Parser().parseFromString(numberingXml, 'application/xml');
     const abstractFmt = new Map(); // abstractNumId -> ordered (lvl 0)
     for (const an of doc.getElementsByTagName('w:abstractNum')) {
       const aid = an.getAttribute('w:abstractNumId');
@@ -179,10 +253,15 @@ function buildNumberingMap(numberingXml) {
 }
 
 // ─── Table (w:tbl) → HTML ─────────────────────────────────────────────────
-function tableToHtml(tbl) {
+function tableToHtml(tbl, imageMap) {
   // Column widths from <w:tblGrid> (twips → px). Applied as `colwidth` on the
   // first row's cells so the editor's resizable table restores the widths.
   const tblGrid = kid(tbl, 'w:tblGrid');
+  const tblPr = kid(tbl, 'w:tblPr');
+  const tblBordersCss = parseBorders(kid(tblPr, 'w:tblBorders'));
+  const tblAttrs = [];
+  if (tblBordersCss) tblAttrs.push(`style="${tblBordersCss}"`);
+
   const gridPx = tblGrid
     ? kids(tblGrid, 'w:gridCol').map((g) => { const t = parseFloat(g.getAttribute('w:w')); return Number.isFinite(t) && t > 0 ? Math.round(t / 15) : null; })
     : [];
@@ -197,11 +276,18 @@ function tableToHtml(tbl) {
       // Merged columns → colspan; cell shading → background-color.
       const span = parseInt(wval(kid(tcPr, 'w:gridSpan')) || '1', 10);
       const fill = (kid(tcPr, 'w:shd')?.getAttribute('w:fill') || '').trim();
+      const tcBordersCss = parseBorders(kid(tcPr, 'w:tcBorders'));
+      
       const attrs = [];
       if (span > 1) attrs.push(`colspan="${span}"`);
+      
+      const styles = [];
       if (fill && /^[0-9a-fA-F]{6}$/.test(fill) && fill.toLowerCase() !== 'auto') {
-        attrs.push(`style="background-color:#${fill.toUpperCase()}"`);
+        styles.push(`background-color:#${fill.toUpperCase()}`);
       }
+      if (tcBordersCss) styles.push(tcBordersCss);
+      if (styles.length) attrs.push(`style="${styles.join(';')}"`);
+      
       if (rowIdx === 0 && gridPx.length) {
         const ws = gridPx.slice(colIdx, colIdx + span).filter((w) => w != null);
         if (ws.length) attrs.push(`colwidth="${ws.join(',')}"`);
@@ -209,42 +295,42 @@ function tableToHtml(tbl) {
       colIdx += span;
       let cellHtml = '';
       for (const c of tc.childNodes) {
-        if (c.nodeName === W_P) cellHtml += blockParaToHtml(c);
-        else if (c.nodeName === W_TBL) cellHtml += tableToHtml(c);
+        if (c.nodeName === W_P) cellHtml += blockParaToHtml(c, imageMap);
+        else if (c.nodeName === W_TBL) cellHtml += tableToHtml(c, imageMap);
       }
       cells += `<td${attrs.length ? ' ' + attrs.join(' ') : ''}>${cellHtml || '<p></p>'}</td>`;
     }
     rows += `<tr>${cells}</tr>`;
     rowIdx++;
   }
-  return `<table>${rows}</table>`;
+  return `<table${tblAttrs.length ? ' ' + tblAttrs.join(' ') : ''}>${rows}</table>`;
 }
 
 // A single (non-list) paragraph → block HTML.
-function blockParaToHtml(p) {
+function blockParaToHtml(p, imageMap) {
   const { tag, styleAttr, dataAttrs } = paraMeta(p);
-  const inner = inlineOf(p);
+  const inner = inlineOf(p, imageMap);
   return `<${tag}${styleAttr}${dataAttrs}>${inner}</${tag}>`;
 }
 
 // ─── Body walker (handles list grouping) ──────────────────────────────────
-function bodyToHtml(body, numberingMap) {
+function bodyToHtml(body, numberingMap, imageMap) {
   const blocks = Array.from(body.childNodes).filter(n => n.nodeName === W_P || n.nodeName === W_TBL);
   let html = '';
   let i = 0;
   while (i < blocks.length) {
     const node = blocks[i];
-    if (node.nodeName === W_TBL) { html += tableToHtml(node); i++; continue; }
+    if (node.nodeName === W_TBL) { html += tableToHtml(node, imageMap); i++; continue; }
 
     const meta = paraMeta(node);
-    if (!meta.list) { html += blockParaToHtml(node); i++; continue; }
+    if (!meta.list) { html += blockParaToHtml(node, imageMap); i++; continue; }
 
     // Collect a run of consecutive list paragraphs and emit nested <ul>/<ol>.
     const items = [];
     while (i < blocks.length && blocks[i].nodeName === W_P) {
       const m = paraMeta(blocks[i]);
       if (!m.list) break;
-      items.push({ ilvl: m.list.ilvl, ordered: !!numberingMap.get(m.list.numId), html: inlineOf(blocks[i]) });
+      items.push({ ilvl: m.list.ilvl, ordered: !!numberingMap.get(m.list.numId), html: inlineOf(blocks[i], imageMap) });
       i++;
     }
     html += renderList(items);
@@ -291,8 +377,34 @@ export async function docxToHtml(arrayBuffer) {
   const numberingXml = await zip.file('word/numbering.xml')?.async('string');
   const numberingMap = buildNumberingMap(numberingXml);
 
-  const doc = new DOMParser().parseFromString(docXml, 'application/xml');
+  const imageMap = new Map();
+  const relsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
+  if (relsXml) {
+    const Parser = getDOMParser();
+    const relsDoc = new Parser().parseFromString(relsXml, 'application/xml');
+    const rels = relsDoc.getElementsByTagName('Relationship');
+    for (const rel of rels) {
+      const id = rel.getAttribute('Id');
+      const target = rel.getAttribute('Target');
+      if (target && (target.startsWith('media/') || target.startsWith('/word/media/'))) {
+        const zipPath = target.startsWith('/') ? target.slice(1) : `word/${target}`;
+        const file = zip.file(zipPath);
+        if (file) {
+          const base64 = await file.async('base64');
+          let mime = 'image/png';
+          const ext = target.split('.').pop()?.toLowerCase();
+          if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+          else if (ext === 'gif') mime = 'image/gif';
+          else if (ext === 'svg') mime = 'image/svg+xml';
+          imageMap.set(id, `data:${mime};base64,${base64}`);
+        }
+      }
+    }
+  }
+
+  const Parser = getDOMParser();
+  const doc = new Parser().parseFromString(docXml, 'application/xml');
   const body = doc.getElementsByTagName('w:body')[0];
   if (!body) throw new Error('w:body not found');
-  return bodyToHtml(body, numberingMap);
+  return bodyToHtml(body, numberingMap, imageMap);
 }
