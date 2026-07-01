@@ -38,11 +38,17 @@ export default function AppointmentCard({
     <div className="appointment-card" style={{ position: 'relative', overflow: 'hidden' }}>
       {appointment.status?.toLowerCase() === 'delivered' && (
         <div style={{
-          position: 'absolute', inset: 0,
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Ctext x='-20' y='110' fill='rgba(16,185,129,0.06)' font-size='32' font-family='sans-serif' font-weight='900' transform='rotate(-45 90 90)' letter-spacing='4'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
-          backgroundRepeat: 'repeat',
-          pointerEvents: 'none', userSelect: 'none', zIndex: 0
-        }} />
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+          color: 'rgba(220, 38, 38, 0.15)',
+          borderTop: '4px solid rgba(220, 38, 38, 0.15)',
+          borderBottom: '4px solid rgba(220, 38, 38, 0.15)',
+          padding: '10px 40px',
+          fontSize: '3rem', fontWeight: 900, fontFamily: 'serif',
+          pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+          whiteSpace: 'nowrap', letterSpacing: '8px'
+        }}>
+          DELIVERED
+        </div>
       )}
       {/* Status Bar */}
       <div className="card-status-bar" style={{

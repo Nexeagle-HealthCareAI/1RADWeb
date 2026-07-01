@@ -973,11 +973,17 @@ export default function OperationsBoard() {
                       >
                         {String(status || '').toUpperCase() === 'DELIVERED' && (
                           <div style={{
-                            position: 'absolute', inset: 0,
-                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Ctext x='-20' y='90' fill='rgba(16,185,129,0.06)' font-size='24' font-family='sans-serif' font-weight='900' transform='rotate(-45 70 70)' letter-spacing='3'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
-                            backgroundRepeat: 'repeat',
-                            pointerEvents: 'none', userSelect: 'none', zIndex: 0
-                          }} />
+                            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+                            color: 'rgba(220, 38, 38, 0.15)',
+                            borderTop: '3px solid rgba(220, 38, 38, 0.15)',
+                            borderBottom: '3px solid rgba(220, 38, 38, 0.15)',
+                            padding: '6px 20px',
+                            fontSize: '2.5rem', fontWeight: 900, fontFamily: 'serif',
+                            pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+                            whiteSpace: 'nowrap', letterSpacing: '4px'
+                          }}>
+                            DELIVERED
+                          </div>
                         )}
                         {/* Top line — token + patient name + status pill */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
@@ -1300,11 +1306,17 @@ export default function OperationsBoard() {
                     <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', position: 'relative', overflow: 'hidden' }}>
                       {String(appt.status || '').toUpperCase() === 'DELIVERED' && (
                         <div style={{
-                          position: 'absolute', inset: 0,
-                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Ctext x='-20' y='110' fill='rgba(16,185,129,0.06)' font-size='32' font-family='sans-serif' font-weight='900' transform='rotate(-45 90 90)' letter-spacing='4'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
-                          backgroundRepeat: 'repeat',
-                          pointerEvents: 'none', userSelect: 'none', zIndex: 0
-                        }} />
+                          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+                          color: 'rgba(220, 38, 38, 0.12)',
+                          borderTop: '5px solid rgba(220, 38, 38, 0.12)',
+                          borderBottom: '5px solid rgba(220, 38, 38, 0.12)',
+                          padding: '10px 40px',
+                          fontSize: '4.5rem', fontWeight: 900, fontFamily: 'serif',
+                          pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+                          whiteSpace: 'nowrap', letterSpacing: '8px'
+                        }}>
+                          DELIVERED
+                        </div>
                       )}
                       {/* Top row: token + badges */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', position: 'relative', zIndex: 1 }}>

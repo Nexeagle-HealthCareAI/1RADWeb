@@ -2423,11 +2423,17 @@ const ReportingPage = () => {
     <div className="reporting-app-container" style={{ position: 'relative', overflow: 'hidden' }}>
       {String(activeAppointment?.status || '').toUpperCase() === 'DELIVERED' && (
         <div style={{
-          position: 'absolute', inset: 0,
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='250'%3E%3Ctext x='-20' y='150' fill='rgba(16,185,129,0.04)' font-size='48' font-family='sans-serif' font-weight='900' transform='rotate(-45 125 125)' letter-spacing='6'%3EDELIVERED%3C/text%3E%3C/svg%3E")`,
-          backgroundRepeat: 'repeat',
-          pointerEvents: 'none', userSelect: 'none', zIndex: 0
-        }} />
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-15deg)',
+          color: 'rgba(220, 38, 38, 0.08)',
+          borderTop: '12px solid rgba(220, 38, 38, 0.08)',
+          borderBottom: '12px solid rgba(220, 38, 38, 0.08)',
+          padding: '20px 80px',
+          fontSize: '12rem', fontWeight: 900, fontFamily: 'serif',
+          pointerEvents: 'none', userSelect: 'none', zIndex: 0,
+          whiteSpace: 'nowrap', letterSpacing: '20px'
+        }}>
+          DELIVERED
+        </div>
       )}
       {/* SCOPED CSS */}
       <style>{`
