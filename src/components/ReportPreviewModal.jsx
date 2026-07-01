@@ -139,8 +139,8 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
   const sex       = fullAppointment?.patientGender || fullAppointment?.gender || '—';
   const study     = _matchedService?.serviceName || fullAppointment?.service || fullAppointment?.modality || '—';
   const modality  = _matchedService?.modality    || fullAppointment?.modality || '—'; // used by the thank-you line
+  const refByName  = fullAppointment?.referredBy || 'Self';
   const refDegSpec = [fullAppointment?.referrerDegree, fullAppointment?.referrerSpecialty].filter(Boolean).join(', ');
-  const refBy     = (fullAppointment?.referredBy || 'Self') + (refDegSpec && fullAppointment?.referredBy ? ` (${refDegSpec})` : '');
   const repDate   = savedMetadata?.finalizedAt
     ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
     : new Date().toLocaleDateString();
@@ -230,8 +230,16 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
               <span style={{ color: '#94a3b8', fontWeight: 700 }}>Study:</span> <strong style={{ color: '#0f52ba' }}>{study}</strong>
             </span>
             <span style={{ color: '#cbd5e1' }}>·</span>
-            <span>
-              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Prescribed By:</span> <strong style={{ color: '#0f172a' }}>{refBy}</strong>
+            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '1px' }}>
+              <span>
+                <span style={{ color: '#94a3b8', fontWeight: 700 }}>Prescribed By:</span>{' '}
+                <strong style={{ color: '#0f172a' }}>{refByName}</strong>
+              </span>
+              {refDegSpec && (
+                <span style={{ fontSize: '9.5px', color: '#64748b', fontStyle: 'italic', fontWeight: 500 }}>
+                  {refDegSpec}
+                </span>
+              )}
             </span>
           </div>
         </div>
