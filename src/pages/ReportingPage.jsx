@@ -1709,6 +1709,7 @@ const ReportingPage = () => {
   // findings are pulled back into the editor and saved to the cloud (round-trip).
   const [openingWord, setOpeningWord] = useState(false);
   const wordSyncRef = useRef({ path: null, unsub: null, busy: false });
+  const wordSaveTimeoutRef = useRef(null);
 
   // Pull the saved Word bytes back into the editor and persist to cloud.
   const importFromWordBytes = async (base64) => {
@@ -1719,7 +1720,9 @@ const ReportingPage = () => {
       if (findings && findings.trim()) {
         applyEditorContent(findings);
         // Let the editor commit the new content, then save a draft to cloud.
-        setTimeout(() => { try { handleSaveReport(false); } catch (_) {} }, 250);
+        // Debounced to 1000ms because Word often writes to the file twice in rapid succession.
+        if (wordSaveTimeoutRef.current) clearTimeout(wordSaveTimeoutRef.current);
+        wordSaveTimeoutRef.current = setTimeout(() => { try { handleSaveReport(false); } catch (_) {} }, 1000);
         showNotif('success', 'IMPORTED FROM WORD', 'Your Word edits were pulled in and saved as a draft.');
       }
     } catch (e) {

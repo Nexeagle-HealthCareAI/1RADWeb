@@ -239,11 +239,15 @@ async function assertDicomBlob(blob, httpsUrl) {
 // previously waited forever (no AbortController) and a single transient
 // CDN/origin hiccup surfaced as a decode error.
 const SLICE_FETCH_TIMEOUT_MS = 30000;
-async function fetchSliceWithRetry(httpsUrl) {
+async function fetchSliceWithRetry(httpsUrl, priorityHint = 'auto') {
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(httpsUrl, { signal: AbortSignal.timeout(SLICE_FETCH_TIMEOUT_MS) });
+      const fetchOpts = { signal: AbortSignal.timeout(SLICE_FETCH_TIMEOUT_MS) };
+      if (priorityHint && priorityHint !== 'auto') {
+        fetchOpts.priority = priorityHint; // 'high' or 'low' natively guides the browser's HTTP/1.1 queue
+      }
+      const res = await fetch(httpsUrl, fetchOpts);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       // Fast-fail on non-DICOM payloads (HTML/JSON from a misconfigured CDN)
@@ -263,6 +267,12 @@ async function fetchSliceWithRetry(httpsUrl) {
 
 // Load one manifest slice with the IndexedDB compressed cache in front.
 async function loadManifestSliceCached(httpsUrl, options) {
+  // Infer browser network priority from Cornerstone's internal queue priority.
+  // Cornerstone sets high values (1000+) for background prefetches, and low/negative
+  // values for the visible interaction slice.
+  const isPrefetch = options && options.priority !== undefined && options.priority >= 1000;
+  const priorityHint = isPrefetch ? 'low' : 'high';
+
   let blob = null;
   try { blob = await DicomCache.getSlice(httpsUrl); } catch { blob = null; }
   if (blob) {
@@ -279,7 +289,7 @@ async function loadManifestSliceCached(httpsUrl, options) {
     }
   }
   if (!blob) {
-    blob = await fetchSliceWithRetry(httpsUrl);
+    blob = await fetchSliceWithRetry(httpsUrl, priorityHint);
     queueSlicePersist(httpsUrl, blob);
   }
   // Hand cornerstone a LOCAL object URL so its wadouri loader worker-decodes
@@ -370,9 +380,12 @@ async function initCornerstone() {
     requestPoolManager.maxRequestsPerOrigin = {
       interaction: 20,  // visible/active slice — must be near-instant
       thumbnail: 10,
-      prefetch: poolTier === 'slow' ? 4
-              : poolTier === 'medium' ? 10
-              : (isMobileDevice ? 10 : 24), // background slice decode
+      // Cap at 4 so we never saturate the browser's HTTP/1.1 6-connection limit
+      // with background prefetches. This guarantees 2 connections are ALWAYS free
+      // for interaction requests (scrolling) to punch through instantly.
+      prefetch: poolTier === 'slow' ? 2
+              : poolTier === 'medium' ? 3
+              : 4, 
     };
 
     // Pre-warm the first codec worker so the very first slice decode doesn't
