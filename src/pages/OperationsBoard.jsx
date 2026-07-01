@@ -25,7 +25,7 @@ const T = {
   textLow: '#94a3b8', // Light slate
   filterBg: '#f1f5f9', // soft filter backdrop
   font: 'system-ui, -apple-system, sans-serif', // Exact RevenueHub font family
-  
+
   // Clean Status Badges
   slate: { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' },
   blue: { bg: '#eff6ff', text: '#0f52ba', border: '#bfdbfe' },
@@ -83,17 +83,17 @@ export default function OperationsBoard() {
       return next;
     });
   };
-  
+
   // Pagination State Matrix
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  
+
   // Stateful custom local toasts
   const [toasts, setToasts] = useState([]);
-  
+
   // Selected date matrix - defaults to today
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  
+
   // Modal override states
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -206,11 +206,11 @@ export default function OperationsBoard() {
       const services = (row.services || []).map(svc =>
         svc.id === serviceId
           ? {
-              ...svc,
-              status:          nextStatus,
-              scanCompletedAt: nextStatus === 'SCANNED'   ? (svc.scanCompletedAt || now) : svc.scanCompletedAt,
-              deliveredAt:     nextStatus === 'DELIVERED' ? (svc.deliveredAt || now)     : svc.deliveredAt,
-            }
+            ...svc,
+            status: nextStatus,
+            scanCompletedAt: nextStatus === 'SCANNED' ? (svc.scanCompletedAt || now) : svc.scanCompletedAt,
+            deliveredAt: nextStatus === 'DELIVERED' ? (svc.deliveredAt || now) : svc.deliveredAt,
+          }
           : svc
       );
       const allSame = services.length > 0 && services.every(s => (s.status || '').toUpperCase() === nextStatus.toUpperCase());
@@ -280,12 +280,12 @@ export default function OperationsBoard() {
     const rect = e.currentTarget.getBoundingClientRect();
     setServicePopover({
       appointmentId: appt.appointmentId,
-      serviceId:     line.id,
-      modality:      line.modality,
-      serviceName:   line.serviceName,
-      status:        String(line.status || 'NOT_STARTED').toUpperCase(),
-      notes:         line.notes || '',
-      anchorRect:    { top: rect.top, left: rect.left, width: rect.width, height: rect.height, bottom: rect.bottom, right: rect.right },
+      serviceId: line.id,
+      modality: line.modality,
+      serviceName: line.serviceName,
+      status: String(line.status || 'NOT_STARTED').toUpperCase(),
+      notes: line.notes || '',
+      anchorRect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height, bottom: rect.bottom, right: rect.right },
     });
   };
   const closeServicePopover = () => setServicePopover(null);
@@ -391,7 +391,7 @@ export default function OperationsBoard() {
       // lines (getServiceLines synthesises a single line then).
       const progressMatch = statusFilter === 'ALL'
         || getServiceLines(appt).some(l => String(l.status || 'NOT_STARTED').toUpperCase() === statusFilter);
-      
+
       return dateMatch && searchMatch && modalityMatch && progressMatch;
     }).sort((a, b) => {
       // Worklist order: STAT → URGENT → ROUTINE, then daily token ascending.
@@ -438,9 +438,9 @@ export default function OperationsBoard() {
   const getMetrics = () => {
     const todayAppts = Array.isArray(appointments)
       ? appointments.filter(a =>
-          (a.dateTime ? a.dateTime.split('T')[0] : '') === selectedDate &&
-          // Cancelled visits are excluded from every KPI tile, not just the list.
-          String(a.status || '').toUpperCase() !== 'CANCELLED')
+        (a.dateTime ? a.dateTime.split('T')[0] : '') === selectedDate &&
+        // Cancelled visits are excluded from every KPI tile, not just the list.
+        String(a.status || '').toUpperCase() !== 'CANCELLED')
       : [];
 
     // Count appointments separately so the "Total Today" tile still
@@ -455,10 +455,10 @@ export default function OperationsBoard() {
         const status = String(line.status || 'NOT_STARTED').toUpperCase();
         if (status === 'CANCELLED') continue;
         buckets.totalLines += 1;
-        if      (status === 'DELIVERED') buckets.delivered  += 1;
-        else if (status === 'REPORTED')  buckets.reported   += 1;
-        else if (status === 'SCANNED')   buckets.scanned    += 1;
-        else                             buckets.notStarted += 1;
+        if (status === 'DELIVERED') buckets.delivered += 1;
+        else if (status === 'REPORTED') buckets.reported += 1;
+        else if (status === 'SCANNED') buckets.scanned += 1;
+        else buckets.notStarted += 1;
       }
     }
 
@@ -466,9 +466,9 @@ export default function OperationsBoard() {
       total: totalAppointments,     // patients on the worklist today
       totalLines: buckets.totalLines, // scans on the worklist today
       notStarted: buckets.notStarted,
-      scanned:    buckets.scanned,
-      reported:   buckets.reported,
-      delivered:  buckets.delivered,
+      scanned: buckets.scanned,
+      reported: buckets.reported,
+      delivered: buckets.delivered,
     };
   };
 
@@ -517,7 +517,7 @@ export default function OperationsBoard() {
     if (totalPages <= 1) return null;
 
     const itemStart = (currentPage - 1) * itemsPerPage + 1;
-    const itemEnd   = Math.min(currentPage * itemsPerPage, filteredAppointments.length);
+    const itemEnd = Math.min(currentPage * itemsPerPage, filteredAppointments.length);
 
     const getPageNumbers = () => {
       if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -613,7 +613,7 @@ export default function OperationsBoard() {
     const statusLabel = (s) => {
       const u = String(s || 'NOT_STARTED').toUpperCase();
       if (u === 'IN_PROGRESS') return 'In Progress';
-      if (u === 'IN_MID')      return 'Half Way';
+      if (u === 'IN_MID') return 'Half Way';
       return u.charAt(0) + u.slice(1).toLowerCase().replace(/_/g, ' ');
     };
 
@@ -632,17 +632,17 @@ export default function OperationsBoard() {
       const tally = { notStarted: 0, inProgress: 0, scanned: 0, reported: 0, delivered: 0 };
       for (const l of live) {
         const s = String(l.status || 'NOT_STARTED').toUpperCase();
-        if (s === 'DELIVERED')                          tally.delivered++;
-        else if (s === 'REPORTED')                      tally.reported++;
-        else if (s === 'SCANNED')                       tally.scanned++;
+        if (s === 'DELIVERED') tally.delivered++;
+        else if (s === 'REPORTED') tally.reported++;
+        else if (s === 'SCANNED') tally.scanned++;
         else if (s === 'IN_PROGRESS' || s === 'IN_MID') tally.inProgress++;
-        else                                             tally.notStarted++;
+        else tally.notStarted++;
       }
       const modalitiesFlat = [...new Set(lines.map(l => l.modality).filter(Boolean))].join(' | ');
-      const servicesFlat   = lines.map(l => l.serviceName).filter(Boolean).join(' | ');
-      const statusesFlat   = lines.map(l => `${l.modality || 'OT'}:${statusLabel(l.status)}`).join(' | ');
-      const onPremises     = a.arrivedAt ? formatElapsed(a.arrivedAt, a.deliveredAt) : '';
-      const scanToDeliv    = (a.scanStartedAt && a.deliveredAt) ? formatElapsed(a.scanStartedAt, a.deliveredAt) : '';
+      const servicesFlat = lines.map(l => l.serviceName).filter(Boolean).join(' | ');
+      const statusesFlat = lines.map(l => `${l.modality || 'OT'}:${statusLabel(l.status)}`).join(' | ');
+      const onPremises = a.arrivedAt ? formatElapsed(a.arrivedAt, a.deliveredAt) : '';
+      const scanToDeliv = (a.scanStartedAt && a.deliveredAt) ? formatElapsed(a.scanStartedAt, a.deliveredAt) : '';
 
       return {
         Token: a.dailyTokenNumber ?? '',
@@ -657,7 +657,7 @@ export default function OperationsBoard() {
         Priority: a.priority ?? 'ROUTINE',
         'Service Count': lines.length,
         'Modalities (all)': modalitiesFlat,
-        'Services (all)':   servicesFlat,
+        'Services (all)': servicesFlat,
         'Per-Service Status': statusesFlat,
         'Pending': tally.notStarted,
         'In Progress / Half Way': tally.inProgress,
@@ -670,7 +670,7 @@ export default function OperationsBoard() {
         'Scan → Delivered': scanToDeliv,
         'Arrived At': fmtDateTime(a.arrivedAt),
         'Scan Started': fmtDateTime(a.scanStartedAt),
-        'Scanned At':   fmtDateTime(a.scannedAt),
+        'Scanned At': fmtDateTime(a.scannedAt),
         'Delivered At': fmtDateTime(a.deliveredAt),
         'Latest Comment': a.delayReason ?? '',
         'Latest Comment By': a.latestCommentAuthorName ?? '',
@@ -685,10 +685,10 @@ export default function OperationsBoard() {
     const ws = XLSX.utils.json_to_sheet(rows);
     // Per-column widths. Order must match the keys above.
     ws['!cols'] = [
-      { wch: 6 },  { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 4 },  // Token, Display ID, Patient ID, Name, Age
-      { wch: 6 },  { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 8 },  // Gender, Mobile, Doctor, Ref, Priority
-      { wch: 8 },  { wch: 22 }, { wch: 36 }, { wch: 40 },               // Service Count, Modalities, Services, Per-Svc
-      { wch: 8 },  { wch: 14 }, { wch: 8 },  { wch: 8 },  { wch: 8 },  // tally cols
+      { wch: 6 }, { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 4 },  // Token, Display ID, Patient ID, Name, Age
+      { wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 8 },  // Gender, Mobile, Doctor, Ref, Priority
+      { wch: 8 }, { wch: 22 }, { wch: 36 }, { wch: 40 },               // Service Count, Modalities, Services, Per-Svc
+      { wch: 8 }, { wch: 14 }, { wch: 8 }, { wch: 8 }, { wch: 8 },  // tally cols
       { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 },               // Visit/Progress Status, On Premises, S→D
       { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 22 },               // 4 timestamps
       { wch: 36 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 60 },  // Comment columns
@@ -716,11 +716,11 @@ export default function OperationsBoard() {
           Service: l.serviceName ?? '',
           Status: statusLabel(l.status),
           'Stage Elapsed': fmtElapsed(l, a),
-          'Scan Started':     fmtDateTime(l.scanStartedAt),
-          'Scan Completed':   fmtDateTime(l.scanCompletedAt),
-          'Reported At':      fmtDateTime(l.reportedAt),
-          'Delivered At':     fmtDateTime(l.deliveredAt),
-          'Cancelled At':     fmtDateTime(l.cancelledAt),
+          'Scan Started': fmtDateTime(l.scanStartedAt),
+          'Scan Completed': fmtDateTime(l.scanCompletedAt),
+          'Reported At': fmtDateTime(l.reportedAt),
+          'Delivered At': fmtDateTime(l.deliveredAt),
+          'Cancelled At': fmtDateTime(l.cancelledAt),
           'Technician Notes': l.notes ?? '',
           'Visit Date': a.dateTime ? a.dateTime.split('T')[0] : '',
         });
@@ -729,8 +729,8 @@ export default function OperationsBoard() {
     if (serviceRows.length > 0) {
       const sws = XLSX.utils.json_to_sheet(serviceRows);
       sws['!cols'] = [
-        { wch: 6 },  { wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 14 },  // Token..Mobile
-        { wch: 18 }, { wch: 18 }, { wch: 8 },  { wch: 12 }, { wch: 30 },  // Doctor..Service
+        { wch: 6 }, { wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 14 },  // Token..Mobile
+        { wch: 18 }, { wch: 18 }, { wch: 8 }, { wch: 12 }, { wch: 30 },  // Doctor..Service
         { wch: 14 }, { wch: 12 },                                          // Status, Elapsed
         { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 22 },  // 5 timestamps
         { wch: 50 }, { wch: 12 },                                          // Notes, Date
@@ -795,21 +795,21 @@ export default function OperationsBoard() {
     };
     const stepRank = (status) => {
       const s = String(status || '').toUpperCase();
-      if (s === 'DELIVERED')   return 6;
-      if (s === 'REPORTED')    return 5;
-      if (s === 'SCANNED')     return 4;
-      if (s === 'IN_MID')      return 3;
+      if (s === 'DELIVERED') return 6;
+      if (s === 'REPORTED') return 5;
+      if (s === 'SCANNED') return 4;
+      if (s === 'IN_MID') return 3;
       if (s === 'IN_PROGRESS') return 2;
       return 1;
     };
     const stepPill = (status) => {
       const s = String(status || '').toUpperCase();
-      if (s === 'DELIVERED')   return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
-      if (s === 'REPORTED')    return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
-      if (s === 'IN_MID')      return { label: 'Half Way',    color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
+      if (s === 'DELIVERED') return { label: 'Delivered', color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+      if (s === 'REPORTED') return { label: 'Reported', color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+      if (s === 'IN_MID') return { label: 'Half Way', color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
       if (s === 'IN_PROGRESS') return { label: 'In Progress', color: '#a16207', bg: '#fef9c3', border: '#fde68a' };
-      if (s === 'SCANNED')   return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
-      return                       { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+      if (s === 'SCANNED') return { label: 'Scanned', color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+      return { label: 'Not Started', color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
     };
 
     // Flatten all service lines from the filtered appointments and
@@ -944,19 +944,19 @@ export default function OperationsBoard() {
                     // place this transition happens. SCANNED → REPORTED
                     // is owned by the doctor's save on ReportingPage.
                     let nextAction = null;
-                    if (step === 1)      nextAction = { status: 'IN_PROGRESS', label: '▶ Start scan',                  tint: 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)', shadow: 'rgba(202, 138, 4, 0.45)' };
-                    else if (step === 2) nextAction = { status: 'SCANNED',     label: '✓ Mark scanned',               tint: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', shadow: 'rgba(234, 88, 12, 0.45)' };
-                    else if (step === 4) nextAction = { status: 'DELIVERED',   label: '✓ Mark delivered to patient',  tint: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', shadow: 'rgba(4, 120, 87, 0.55)' };
+                    if (step === 1) nextAction = { status: 'IN_PROGRESS', label: '▶ Start scan', tint: 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)', shadow: 'rgba(202, 138, 4, 0.45)' };
+                    else if (step === 2) nextAction = { status: 'SCANNED', label: '✓ Mark scanned', tint: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', shadow: 'rgba(234, 88, 12, 0.45)' };
+                    else if (step === 4) nextAction = { status: 'DELIVERED', label: '✓ Mark delivered to patient', tint: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', shadow: 'rgba(4, 120, 87, 0.55)' };
                     // Per-stage TAT chip. Anchored to the moment this
                     // line entered its current stage so a line that
                     // was scanned 2 minutes ago doesn't inherit the
                     // visit's hour-long booking age.
                     const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
-                    const slaBucket  = getStageSlaBucket(line, elapsedMin);
+                    const slaBucket = getStageSlaBucket(line, elapsedMin);
                     const tatStyle = (
                       slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
-                      slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
-                                               { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+                        slaBucket === 'warn' ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                          { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
                     );
                     const tatLabel = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
                     return (
@@ -1037,35 +1037,35 @@ export default function OperationsBoard() {
                             nothing — the work on the row is done. */}
                         {nextAction && line.id && (
                           isPatientArrived(appt) ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAdvanceServiceStatus(appt.appointmentId, line.id, nextAction.status)}
-                            style={{
-                              padding: '6px 10px',
-                              borderRadius: '8px',
-                              border: 'none',
-                              background: nextAction.tint,
-                              color: 'white',
-                              fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                              boxShadow: `0 3px 8px -3px ${nextAction.shadow}`,
-                              transition: 'transform 0.12s ease',
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                          >
-                            {nextAction.label}
-                          </button>
-                          ) : (
-                          // Patient not arrived — show the action disabled + a note.
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                            <button type="button" disabled title="Patient not arrived — work disabled"
-                              style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', background: '#e2e8f0', color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px', cursor: 'not-allowed', fontFamily: 'inherit' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleAdvanceServiceStatus(appt.appointmentId, line.id, nextAction.status)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: nextAction.tint,
+                                color: 'white',
+                                fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                                boxShadow: `0 3px 8px -3px ${nextAction.shadow}`,
+                                transition: 'transform 0.12s ease',
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                            >
                               {nextAction.label}
                             </button>
-                            <span style={{ fontSize: '9px', fontWeight: 800, color: '#b45309' }}>⏳ Patient not arrived — work disabled</span>
-                          </div>
+                          ) : (
+                            // Patient not arrived — show the action disabled + a note.
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                              <button type="button" disabled title="Patient not arrived — work disabled"
+                                style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', background: '#e2e8f0', color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px', cursor: 'not-allowed', fontFamily: 'inherit' }}>
+                                {nextAction.label}
+                              </button>
+                              <span style={{ fontSize: '9px', fontWeight: 800, color: '#b45309' }}>⏳ Patient not arrived — work disabled</span>
+                            </div>
                           )
                         )}
                       </div>
@@ -1288,14 +1288,14 @@ export default function OperationsBoard() {
                 alignItems: 'start',
               }}>
                 {paginatedAppointments.map((appt) => {
-                  const progress   = getProgressBadge(appt.reportProgressStatus);
+                  const progress = getProgressBadge(appt.reportProgressStatus);
                   const coreStatus = getCoreStatusStyle(appt.status);
                   const isApptOverdue = isOverdue(appt.appointmentId);
                   // STAT + overdue share the same red heartbeat. URGENT gets
                   // the softer amber. Matches AppointmentBoard / Tech / Doctor.
                   const overdueRowClass = (isApptOverdue || appt.priority === 'STAT') ? 'priority-row-stat'
-                                        : appt.priority === 'URGENT'                  ? 'priority-row-urgent'
-                                        : '';
+                    : appt.priority === 'URGENT' ? 'priority-row-urgent'
+                      : '';
                   const onPremisesElapsed = appt.arrivedAt ? formatElapsed(appt.arrivedAt, appt.deliveredAt) : null;
                   const premisesSev = premisesSeverity(appt.arrivedAt, appt.deliveredAt);
                   const premisesStyle = premisesPillStyle(premisesSev);
@@ -1319,7 +1319,7 @@ export default function OperationsBoard() {
                               color: '#fff', background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
                               boxShadow: '0 2px 4px rgba(168, 85, 247, 0.3)', whiteSpace: 'nowrap'
                             }}>
-                              ✨ Report Delivered to Patient
+                              Report Delivered to Patient
                             </span>
                           )}
                           <span className="status-badge" style={{ background: coreStatus.style.bg, color: coreStatus.style.text, border: `1px solid ${coreStatus.style.border}` }}>
@@ -1395,48 +1395,48 @@ export default function OperationsBoard() {
                       {(() => {
                         const lines = getServiceLines(appt);
                         if (lines.length === 0) return null;
-                        const apptKey  = appt.appointmentId;
+                        const apptKey = appt.appointmentId;
                         const expanded = expandedLedgers.has(apptKey);
                         const modTint = (m) => {
                           const k = String(m || '').toUpperCase();
                           return ({
-                            'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
-                            CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
-                            MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
-                            ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
-                            USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                            'X-RAY': { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                            CT: { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                            MRI: { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                            ULTRASOUND: { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                            USG: { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
                             MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
-                            MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
-                            DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
-                            PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                            MG: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                            DEXA: { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                            PET: { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
                           }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
                         };
                         const stepStyle = (s) => {
                           const u = String(s || '').toUpperCase();
-                          if (u === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
-                          if (u === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
-                          if (u === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
-                          if (u === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
+                          if (u === 'DELIVERED') return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
+                          if (u === 'REPORTED') return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
+                          if (u === 'SCANNED') return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
+                          if (u === 'IN_MID') return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
                           if (u === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a', label: 'In Progress' };
-                          if (u === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
-                          return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
+                          if (u === 'CANCELLED') return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
+                          return { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
                         };
 
                         // Tappable mobile-friendly service row.
                         const renderServiceRow = (line, idx) => {
                           const tint = modTint(line.modality);
-                          const st   = stepStyle(line.status);
+                          const st = stepStyle(line.status);
                           const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
-                          const slaBucket  = getStageSlaBucket(line, elapsedMin);
+                          const slaBucket = getStageSlaBucket(line, elapsedMin);
                           const tatStyle = (
                             slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
-                            slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
-                                                     { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+                              slaBucket === 'warn' ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                                { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
                           );
-                          const tatLabel  = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+                          const tatLabel = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
                           const cancelled = String(line.status || '').toUpperCase() === 'CANCELLED';
-                          const editable  = Boolean(line.id);
-                          const hasNotes  = Boolean(line.notes && String(line.notes).trim());
+                          const editable = Boolean(line.id);
+                          const hasNotes = Boolean(line.notes && String(line.notes).trim());
                           return (
                             <div
                               key={line.id || `mcard-${idx}`}
@@ -1550,20 +1550,20 @@ export default function OperationsBoard() {
                         const summary = { notStarted: 0, inProgress: 0, scanned: 0, reported: 0, delivered: 0, cancelled: 0 };
                         for (const l of lines) {
                           const s = String(l.status || 'NOT_STARTED').toUpperCase();
-                          if (s === 'DELIVERED')                          summary.delivered++;
-                          else if (s === 'REPORTED')                      summary.reported++;
-                          else if (s === 'SCANNED')                       summary.scanned++;
+                          if (s === 'DELIVERED') summary.delivered++;
+                          else if (s === 'REPORTED') summary.reported++;
+                          else if (s === 'SCANNED') summary.scanned++;
                           else if (s === 'IN_PROGRESS' || s === 'IN_MID') summary.inProgress++;
-                          else if (s === 'CANCELLED')                     summary.cancelled++;
-                          else                                             summary.notStarted++;
+                          else if (s === 'CANCELLED') summary.cancelled++;
+                          else summary.notStarted++;
                         }
                         const summaryChips = [
-                          summary.notStarted && { label: `${summary.notStarted} pending`,    bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
-                          summary.inProgress && { label: `${summary.inProgress} in progress`,bg: '#fef9c3', color: '#a16207', border: '#fde68a' },
-                          summary.scanned    && { label: `${summary.scanned} scanned`,       bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
-                          summary.reported   && { label: `${summary.reported} reported`,     bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
-                          summary.delivered  && { label: `${summary.delivered} delivered`,   bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
-                          summary.cancelled  && { label: `${summary.cancelled} cancelled`,   bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
+                          summary.notStarted && { label: `${summary.notStarted} pending`, bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+                          summary.inProgress && { label: `${summary.inProgress} in progress`, bg: '#fef9c3', color: '#a16207', border: '#fde68a' },
+                          summary.scanned && { label: `${summary.scanned} scanned`, bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
+                          summary.reported && { label: `${summary.reported} reported`, bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+                          summary.delivered && { label: `${summary.delivered} delivered`, bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
+                          summary.cancelled && { label: `${summary.cancelled} cancelled`, bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
                         ].filter(Boolean);
 
                         return (
@@ -1688,45 +1688,45 @@ export default function OperationsBoard() {
                   <span style={{ textAlign: 'right' }}>Actions</span>
                 </div>
                 {paginatedAppointments.map((appt) => {
-                    const progress   = getProgressBadge(appt.reportProgressStatus);
-                    const coreStatus = getCoreStatusStyle(appt.status);
-                    const isApptOverdue = isOverdue(appt.appointmentId);
-                    const overdueTrClass = (isApptOverdue || appt.priority === 'STAT') ? 'priority-tr-stat'
-                                         : appt.priority === 'URGENT'                  ? 'priority-tr-urgent'
-                                         : '';
-                    const onPremisesElapsed = appt.arrivedAt ? formatElapsed(appt.arrivedAt, appt.deliveredAt) : null;
-                    const premisesSev = premisesSeverity(appt.arrivedAt, appt.deliveredAt);
-                    const premisesStyle = premisesPillStyle(premisesSev);
-                    const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
+                  const progress = getProgressBadge(appt.reportProgressStatus);
+                  const coreStatus = getCoreStatusStyle(appt.status);
+                  const isApptOverdue = isOverdue(appt.appointmentId);
+                  const overdueTrClass = (isApptOverdue || appt.priority === 'STAT') ? 'priority-tr-stat'
+                    : appt.priority === 'URGENT' ? 'priority-tr-urgent'
+                      : '';
+                  const onPremisesElapsed = appt.arrivedAt ? formatElapsed(appt.arrivedAt, appt.deliveredAt) : null;
+                  const premisesSev = premisesSeverity(appt.arrivedAt, appt.deliveredAt);
+                  const premisesStyle = premisesPillStyle(premisesSev);
+                  const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
 
-                    // Only show the expanded ledger for multi-service visits.
-                    // Single-service visits render inline in column 2 with no
-                    // toggle, so there's nothing to expand into.
-                    const apptServiceCount = getServiceLines(appt).length;
-                    const isLedgerExpanded = apptServiceCount > 1 && expandedLedgers.has(appt.appointmentId);
-                    const isStat   = (isApptOverdue || appt.priority === 'STAT');
-                    const isUrgent = appt.priority === 'URGENT';
-                    return (
-                      <div
-                        key={appt.appointmentId}
-                        className={overdueTrClass}
-                        style={{
-                          background: 'white',
-                          border: `1px solid ${isStat ? '#fecaca' : isUrgent ? '#fde68a' : '#e8eef7'}`,
-                          borderRadius: '14px',
-                          overflow: 'hidden',
-                          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-                          transition: 'box-shadow 0.15s, transform 0.15s',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.boxShadow = '0 6px 18px -6px rgba(15, 23, 42, 0.12)';
-                          e.currentTarget.style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.04)';
-                          e.currentTarget.style.transform = 'translateY(0)';
-                        }}
-                      >
+                  // Only show the expanded ledger for multi-service visits.
+                  // Single-service visits render inline in column 2 with no
+                  // toggle, so there's nothing to expand into.
+                  const apptServiceCount = getServiceLines(appt).length;
+                  const isLedgerExpanded = apptServiceCount > 1 && expandedLedgers.has(appt.appointmentId);
+                  const isStat = (isApptOverdue || appt.priority === 'STAT');
+                  const isUrgent = appt.priority === 'URGENT';
+                  return (
+                    <div
+                      key={appt.appointmentId}
+                      className={overdueTrClass}
+                      style={{
+                        background: 'white',
+                        border: `1px solid ${isStat ? '#fecaca' : isUrgent ? '#fde68a' : '#e8eef7'}`,
+                        borderRadius: '14px',
+                        overflow: 'hidden',
+                        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+                        transition: 'box-shadow 0.15s, transform 0.15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.boxShadow = '0 6px 18px -6px rgba(15, 23, 42, 0.12)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.04)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}
+                    >
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'minmax(220px, 1.3fr) minmax(200px, 1.2fr) minmax(150px, 0.9fr) minmax(180px, 1.1fr) minmax(160px, 1fr)',
@@ -1857,15 +1857,15 @@ export default function OperationsBoard() {
                             const modTint = (m) => {
                               const k = String(m || '').toUpperCase();
                               return ({
-                                'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
-                                CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
-                                MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
-                                ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
-                                USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                                'X-RAY': { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                                CT: { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                                MRI: { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                                ULTRASOUND: { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                                USG: { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
                                 MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
-                                MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
-                                DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
-                                PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                                MG: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                                DEXA: { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                                PET: { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
                               }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
                             };
 
@@ -1877,7 +1877,7 @@ export default function OperationsBoard() {
                             // buttons and is easy to find.
                             if (lines.length === 1) {
                               const only = lines[0];
-                              const t    = modTint(only.modality);
+                              const t = modTint(only.modality);
                               return (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                   <span style={{
@@ -1887,8 +1887,10 @@ export default function OperationsBoard() {
                                     padding: '3px 9px', borderRadius: '6px',
                                   }}>{only.modality || 'OT'}</span>
                                   <span
-                                    style={{ fontSize: '13px', color: '#0f172a', fontWeight: 900,
-                                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}
+                                    style={{
+                                      fontSize: '13px', color: '#0f172a', fontWeight: 900,
+                                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px'
+                                    }}
                                     title={only.serviceName || ''}
                                   >{only.serviceName || '—'}</span>
                                 </div>
@@ -1900,8 +1902,8 @@ export default function OperationsBoard() {
                             // chips and View-all toggle live at the bottom
                             // of the card.
                             const modalities = getUniqueModalities(appt);
-                            const primary    = lines[0]?.serviceName || appt.service || '';
-                            const extra      = lines.length - 1;
+                            const primary = lines[0]?.serviceName || appt.service || '';
+                            const extra = lines.length - 1;
                             return (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
@@ -1956,23 +1958,23 @@ export default function OperationsBoard() {
                             // pill the same way the queue cards do.
                             const stepStyle = (status) => {
                               const s = String(status || '').toUpperCase();
-                              if (s === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
-                              if (s === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
-                              if (s === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
-                              if (s === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
+                              if (s === 'DELIVERED') return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+                              if (s === 'REPORTED') return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+                              if (s === 'SCANNED') return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+                              if (s === 'IN_MID') return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
                               if (s === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a' };
-                              if (s === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
-                              return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+                              if (s === 'CANCELLED') return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
+                              return { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
                             };
                             const statusLabel = (status) => {
                               const s = String(status || '').toUpperCase();
-                              if (s === 'DELIVERED')   return 'Delivered';
-                              if (s === 'REPORTED')    return 'Reported';
-                              if (s === 'SCANNED')     return 'Scanned';
-                              if (s === 'IN_MID')      return 'Half Way';
+                              if (s === 'DELIVERED') return 'Delivered';
+                              if (s === 'REPORTED') return 'Reported';
+                              if (s === 'SCANNED') return 'Scanned';
+                              if (s === 'IN_MID') return 'Half Way';
                               if (s === 'IN_PROGRESS') return 'In Progress';
-                              if (s === 'CANCELLED')   return 'Cancelled';
-                              return                         'Not Started';
+                              if (s === 'CANCELLED') return 'Cancelled';
+                              return 'Not Started';
                             };
                             // Short modality code so a 3-service visit
                             // still fits in the column without wrapping.
@@ -2004,13 +2006,13 @@ export default function OperationsBoard() {
                                 )}
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '220px' }}>
                                   {lines.map((line, idx) => {
-                                    const st  = stepStyle(line.status);
+                                    const st = stepStyle(line.status);
                                     const lbl = statusLabel(line.status);
                                     const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
-                                    const tatLabel   = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
-                                    const hasNotes   = Boolean(line.notes && String(line.notes).trim());
-                                    const tooltip    = `${line.modality || 'OT'} · ${line.serviceName || ''} — ${lbl}${tatLabel ? ` · ${tatLabel}` : ''}${hasNotes ? `\n📝 ${line.notes}` : ''}\n\nClick to edit status or notes`;
-                                    const clickable  = Boolean(line.id);
+                                    const tatLabel = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+                                    const hasNotes = Boolean(line.notes && String(line.notes).trim());
+                                    const tooltip = `${line.modality || 'OT'} · ${line.serviceName || ''} — ${lbl}${tatLabel ? ` · ${tatLabel}` : ''}${hasNotes ? `\n📝 ${line.notes}` : ''}\n\nClick to edit status or notes`;
+                                    const clickable = Boolean(line.id);
                                     return (
                                       <span
                                         key={line.id || `${appt.appointmentId}-${idx}`}
@@ -2172,26 +2174,26 @@ export default function OperationsBoard() {
                           renders for multi-service visits; single-
                           service rows don't need a hide/show. */}
                       {apptServiceCount > 1 && (() => {
-                        const lines    = getServiceLines(appt);
-                        const apptKey  = appt.appointmentId;
+                        const lines = getServiceLines(appt);
+                        const apptKey = appt.appointmentId;
                         const expanded = expandedLedgers.has(apptKey);
                         const summary = { notStarted: 0, inProgress: 0, scanned: 0, reported: 0, delivered: 0, cancelled: 0 };
                         for (const l of lines) {
                           const s = String(l.status || 'NOT_STARTED').toUpperCase();
-                          if (s === 'DELIVERED')                          summary.delivered++;
-                          else if (s === 'REPORTED')                      summary.reported++;
-                          else if (s === 'SCANNED')                       summary.scanned++;
+                          if (s === 'DELIVERED') summary.delivered++;
+                          else if (s === 'REPORTED') summary.reported++;
+                          else if (s === 'SCANNED') summary.scanned++;
                           else if (s === 'IN_PROGRESS' || s === 'IN_MID') summary.inProgress++;
-                          else if (s === 'CANCELLED')                     summary.cancelled++;
-                          else                                             summary.notStarted++;
+                          else if (s === 'CANCELLED') summary.cancelled++;
+                          else summary.notStarted++;
                         }
                         const summaryChips = [
-                          summary.notStarted && { label: `${summary.notStarted} pending`,    bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
-                          summary.inProgress && { label: `${summary.inProgress} in progress`,bg: '#fef9c3', color: '#a16207', border: '#fde68a' },
-                          summary.scanned    && { label: `${summary.scanned} scanned`,       bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
-                          summary.reported   && { label: `${summary.reported} reported`,     bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
-                          summary.delivered  && { label: `${summary.delivered} delivered`,   bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
-                          summary.cancelled  && { label: `${summary.cancelled} cancelled`,   bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
+                          summary.notStarted && { label: `${summary.notStarted} pending`, bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+                          summary.inProgress && { label: `${summary.inProgress} in progress`, bg: '#fef9c3', color: '#a16207', border: '#fde68a' },
+                          summary.scanned && { label: `${summary.scanned} scanned`, bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
+                          summary.reported && { label: `${summary.reported} reported`, bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+                          summary.delivered && { label: `${summary.delivered} delivered`, bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
+                          summary.cancelled && { label: `${summary.cancelled} cancelled`, bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
                         ].filter(Boolean);
                         return (
                           <div
@@ -2308,10 +2310,10 @@ export default function OperationsBoard() {
                           </div>
                         </div>
                       )}
-                      </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
             {renderPagination()}
           </div>
@@ -2518,8 +2520,8 @@ function formatCommentTime(iso) {
   const ms = new Date(hasTz ? iso : iso + 'Z').getTime();
   if (Number.isNaN(ms)) return '';
   const diffMin = Math.max(0, Math.round((Date.now() - ms) / 60000));
-  if (diffMin < 1)   return 'just now';
-  if (diffMin < 60)  return `${diffMin}m ago`;
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
   if (diffMin < 1440) {
     const h = Math.floor(diffMin / 60);
     const m = diffMin % 60;
@@ -2549,7 +2551,7 @@ function CommentTimelineItem({ comment, isLatest }) {
       <div style={{
         width: '34px', height: '34px', borderRadius: '50%',
         background: isLatest ? '#dbeafe' : '#f1f5f9',
-        color:      isLatest ? '#0f52ba' : '#64748b',
+        color: isLatest ? '#0f52ba' : '#64748b',
         fontWeight: 900, fontSize: '13px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
@@ -2592,44 +2594,44 @@ function LedgerRowEditor({
   onOpenEditor,
 }) {
   const status = String(line.status || 'NOT_STARTED').toUpperCase();
-  const notes  = line.notes || '';
+  const notes = line.notes || '';
 
   const modTint = (m) => {
     const k = String(m || '').toUpperCase();
     return ({
-      'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
-      CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
-      MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
-      ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
-      USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+      'X-RAY': { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+      CT: { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+      MRI: { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+      ULTRASOUND: { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+      USG: { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
       MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
-      MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
-      DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
-      PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+      MG: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+      DEXA: { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+      PET: { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
     }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
   };
   const stepStyle = (s) => {
-    if (s === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
-    if (s === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
-    if (s === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
-    if (s === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
+    if (s === 'DELIVERED') return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
+    if (s === 'REPORTED') return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
+    if (s === 'SCANNED') return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
+    if (s === 'IN_MID') return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
     if (s === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a', label: 'In Progress' };
-    if (s === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
-    return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
+    if (s === 'CANCELLED') return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
+    return { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
   };
   const tint = modTint(line.modality);
-  const st   = stepStyle(status);
+  const st = stepStyle(status);
 
   const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
-  const slaBucket  = getStageSlaBucket(line, elapsedMin);
+  const slaBucket = getStageSlaBucket(line, elapsedMin);
   const tatStyle = (
     slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
-    slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
-                             { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+      slaBucket === 'warn' ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+        { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
   );
-  const tatLabel  = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+  const tatLabel = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
   const cancelled = status === 'CANCELLED';
-  const editable  = Boolean(line.id);
+  const editable = Boolean(line.id);
 
   const openEditor = (e) => {
     if (!editable) return;
@@ -2768,7 +2770,7 @@ function LedgerRowEditor({
 function ServicePillPopover({ state, onClose, onSave }) {
   const { modality, serviceName, status: initialStatus, notes: initialNotes, anchorRect } = state;
   const [status, setStatus] = React.useState(initialStatus);
-  const [notes,  setNotes]  = React.useState(initialNotes || '');
+  const [notes, setNotes] = React.useState(initialNotes || '');
   const ref = React.useRef(null);
 
   // Click-outside + Escape to dismiss without saving. The popover
@@ -2792,18 +2794,18 @@ function ServicePillPopover({ state, onClose, onSave }) {
   // ideal 420×520. Park below the pill by default; flip above if it
   // would clip the bottom; clamp horizontally to the viewport.
   const gutter = 12;
-  const viewportW = (typeof window !== 'undefined') ? window.innerWidth  : 1024;
+  const viewportW = (typeof window !== 'undefined') ? window.innerWidth : 1024;
   const viewportH = (typeof window !== 'undefined') ? window.innerHeight : 768;
   const isPhone = viewportW < 520;
-  const popoverWidth  = Math.min(420, viewportW - gutter * 2);
+  const popoverWidth = Math.min(420, viewportW - gutter * 2);
   const popoverHeight = Math.min(520, viewportH - gutter * 2);
-  let top  = anchorRect.bottom + 6;
+  let top = anchorRect.bottom + 6;
   let left = anchorRect.left;
   if (isPhone) {
     // Centre on the screen — anchoring to a tiny pill on a phone is
     // unhelpful since the popover is nearly full width anyway.
     left = Math.max(gutter, Math.round((viewportW - popoverWidth) / 2));
-    top  = Math.max(gutter, Math.round((viewportH - popoverHeight) / 2));
+    top = Math.max(gutter, Math.round((viewportH - popoverHeight) / 2));
   } else {
     if (top + popoverHeight > viewportH - gutter) {
       top = Math.max(gutter, anchorRect.top - popoverHeight - 6);
@@ -2893,10 +2895,10 @@ function ServicePillPopover({ state, onClose, onSave }) {
             const steps = [
               { value: 'NOT_STARTED', label: 'Not started', dot: '⚪', color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', desc: 'Booked, waiting' },
               { value: 'IN_PROGRESS', label: 'In progress', dot: '🟡', color: '#a16207', bg: '#fef9c3', border: '#fde68a', desc: 'Scan started, just begun' },
-              { value: 'IN_MID',      label: 'Half way',    dot: '🟧', color: '#b45309', bg: '#fef3c7', border: '#fcd34d', desc: 'Scan is half-way done' },
-              { value: 'SCANNED',     label: 'Scanned',     dot: '🟠', color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', desc: 'Acquisition complete' },
-              { value: 'REPORTED',    label: 'Reported',    dot: '🔵', color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', desc: 'Doctor signed off' },
-              { value: 'DELIVERED',   label: 'Delivered',   dot: '🟢', color: '#047857', bg: '#d1fae5', border: '#a7f3d0', desc: 'Handed to patient' },
+              { value: 'IN_MID', label: 'Half way', dot: '🟧', color: '#b45309', bg: '#fef3c7', border: '#fcd34d', desc: 'Scan is half-way done' },
+              { value: 'SCANNED', label: 'Scanned', dot: '🟠', color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', desc: 'Acquisition complete' },
+              { value: 'REPORTED', label: 'Reported', dot: '🔵', color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', desc: 'Doctor signed off' },
+              { value: 'DELIVERED', label: 'Delivered', dot: '🟢', color: '#047857', bg: '#d1fae5', border: '#a7f3d0', desc: 'Handed to patient' },
             ];
             return (
               <>
