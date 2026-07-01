@@ -11,6 +11,9 @@ const isDev = !app.isPackaged;
 const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 
+// Ignore certificate errors for self-signed production IPs
+app.commandLine.appendSwitch('ignore-certificate-errors');
+
 // Initialize Electron Store
 const store = new Store();
 
@@ -66,6 +69,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false, // Bypass CORS for file:// protocol requests to Prod API
       preload: path.join(__dirname, 'preload.js')
     }
   });
