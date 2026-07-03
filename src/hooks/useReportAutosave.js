@@ -220,7 +220,8 @@ export default function useReportAutosave({
       }
       console.info(`[AUTOSAVE] Triggering background cloud sync...`);
       let releaseLock;
-      inFlightSaveRef.current = new Promise(r => { releaseLock = r; });
+      const nextLock = new Promise(r => { releaseLock = r; });
+      inFlightSaveRef.current = nextLock;
       setIsCloudSyncing(true);
       setSaveStatus('SAVING');
       // Only show "Saving…" if the save lasts longer than 500ms. Fast saves
@@ -309,9 +310,10 @@ export default function useReportAutosave({
         }
       } finally {
         setIsCloudSyncing(false);
-        // Release the save lock so a queued manual save / next autosave can run.
         if (releaseLock) releaseLock();
-        inFlightSaveRef.current = null;
+        if (inFlightSaveRef.current === nextLock) {
+          inFlightSaveRef.current = null;
+        }
         // Cancel the deferred "Saving…" label and hide it regardless of
         // success/failure — the next paint either shows "Saved just now"
         // or an error banner, both of which supersede the saving label.
@@ -389,11 +391,14 @@ export default function useReportAutosave({
       return;
     }
 
-    // Wait out any background autosave that's mid-flight, so we read the OCC
-    // token AFTER it has advanced rowVersionRef. Skipping this is what made a
-    // single user hit "updated by another user": the manual save raced the
-    // autosave and sent the now-stale token.
-    if (inFlightSaveRef.current) { try { await inFlightSaveRef.current; } catch { /* ignore */ } }
+    // Atomically join the save queue so multiple rapid calls (like Word syncs)
+    // process one at a time, reading the freshly-advanced OCC token each time.
+    let releaseLock;
+    const nextLock = new Promise((r) => { releaseLock = r; });
+    const prevLock = inFlightSaveRef.current;
+    inFlightSaveRef.current = nextLock;
+
+    if (prevLock) { try { await prevLock; } catch { /* ignore */ } }
 
     // Flush any pending editor changes (debounce is 300ms) so all content is saved
     let currentFindings = editorText;
@@ -427,11 +432,6 @@ export default function useReportAutosave({
     }
 
     setIsSaving(true);
-    // Hold the shared lock for the duration of this save so a background
-    // autosave tick that fires mid-flight skips itself instead of racing us
-    // with the same (about-to-be-stale) token.
-    let releaseLock;
-    inFlightSaveRef.current = new Promise((r) => { releaseLock = r; });
     try {
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
@@ -500,7 +500,9 @@ export default function useReportAutosave({
     } finally {
       setIsSaving(false);
       if (releaseLock) releaseLock();
-      inFlightSaveRef.current = null;
+      if (inFlightSaveRef.current === nextLock) {
+        inFlightSaveRef.current = null;
+      }
     }
   }, [appointmentId, imagingStudyId, activeServiceId, selectedTemplateId, editorText, impression, advice, isOnline, editorRef, applyContent, addToOutbox, notify, logEvent, onFinalized]);
 
