@@ -69,17 +69,57 @@ export const StructuredField = Node.create({
 
       update(node);
 
-      // Click to inline-edit the value
+      let isEditing = false;
       dom.addEventListener('click', () => {
-        if (!editor.isEditable) return;
-        const newValue = window.prompt(`Enter value for "${node.attrs.label}":`, node.attrs.value || '');
-        if (newValue === null) return; // cancelled
-        const pos = typeof getPos === 'function' ? getPos() : null;
-        if (pos == null) return;
-        editor.chain().focus().command(({ tr }) => {
-          tr.setNodeMarkup(pos, undefined, { ...node.attrs, value: newValue });
-          return true;
-        }).run();
+        if (!editor.isEditable || isEditing) return;
+        isEditing = true;
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'premium-input-light';
+        input.style.padding = '0px 6px';
+        input.style.margin = '0';
+        input.style.height = '20px';
+        input.style.fontSize = 'inherit';
+        input.style.fontFamily = 'inherit';
+        input.style.width = Math.max(100, (node.attrs.value?.length || 10) * 8 + 40) + 'px';
+        input.value = node.attrs.value || '';
+        input.placeholder = node.attrs.label;
+        
+        input.addEventListener('click', (e) => e.stopPropagation());
+        
+        const commit = () => {
+          if (!isEditing) return;
+          isEditing = false;
+          const newValue = input.value.trim();
+          const pos = typeof getPos === 'function' ? getPos() : null;
+          if (pos != null) {
+            editor.chain().focus().command(({ tr }) => {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, value: newValue });
+              return true;
+            }).run();
+          } else {
+            // fallback if node view is stale
+            update(node);
+          }
+        };
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            isEditing = false;
+            update(node);
+            editor.commands.focus();
+          }
+        });
+
+        dom.innerHTML = '';
+        dom.appendChild(input);
+        input.focus();
       });
 
       return { dom, update };

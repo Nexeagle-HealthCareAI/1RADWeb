@@ -11,6 +11,27 @@
 		},
 		{
 			"path": "../../../nexegale-dicom-bridge"
+		},
+		{
+			"path": "../../../../EasyHMS/CMS"
+		},
+		{
+			"path": "../../../../EasyHMS/CMSAPI"
+		},
+		{
+			"path": "../../../../EasyHMS/CMSDatabase"
+		},
+		{
+			"path": "../../../../EasyHMS/easyHMSAPI"
+		},
+		{
+			"path": "../../../../EasyHMS/easyHMSDatabase"
+		},
+		{
+			"path": "../../../../EasyHMS/easyHMSNightJob"
+		},
+		{
+			"path": "../../../../EasyHMS/easyHMSWeb"
 		}
 	]
 }

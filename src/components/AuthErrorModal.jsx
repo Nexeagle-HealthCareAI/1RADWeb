@@ -62,8 +62,8 @@ export default function AuthErrorModal({
         onClick={e => e.stopPropagation()}
         style={{
           width: '100%', maxWidth: '440px',
-          background: 'linear-gradient(160deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
-          border: '1px solid rgba(255,255,255,0.10)',
+          background: 'linear-gradient(160deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)',
+          border: '1px solid rgba(255,255,255,0.25)',
           borderRadius: '20px',
           padding: '34px 30px 28px',
           boxShadow:
@@ -116,7 +116,7 @@ export default function AuthErrorModal({
 
         {message && (
           <p style={{
-            fontSize: '13px', color: 'rgba(255,255,255,0.62)',
+            fontSize: '14px', color: 'rgba(255,255,255,0.95)',
             margin: '0 0 18px', textAlign: 'center', lineHeight: 1.55,
           }}>
             {message}
@@ -133,14 +133,14 @@ export default function AuthErrorModal({
             display: 'flex', flexDirection: 'column', gap: '4px',
           }}>
             {identifiers.email && (
-              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)' }}>
-                <span style={{ color: 'rgba(255,255,255,0.45)' }}>Email: </span>
+              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.9)' }}>
+                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Email: </span>
                 <strong style={{ color: accent.chipText }}>{identifiers.email}</strong>
               </div>
             )}
             {identifiers.mobile && (
-              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)' }}>
-                <span style={{ color: 'rgba(255,255,255,0.45)' }}>Mobile: </span>
+              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.9)' }}>
+                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Mobile: </span>
                 <strong style={{ color: accent.chipText }}>{identifiers.mobile}</strong>
               </div>
             )}
@@ -170,12 +170,12 @@ export default function AuthErrorModal({
             type="button"
             onClick={secondaryAction.onClick}
             style={{
-              width: '100%', padding: '11px',
-              background: 'transparent',
-              color: 'rgba(255,255,255,0.75)',
-              border: '1px solid rgba(255,255,255,0.12)',
+              width: '100%', padding: '12px',
+              background: 'rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.95)',
+              border: '1px solid rgba(255,255,255,0.25)',
               borderRadius: '10px',
-              fontSize: '12px', fontWeight: 600,
+              fontSize: '13px', fontWeight: 600,
               cursor: 'pointer', marginBottom: '10px',
               fontFamily: 'inherit',
             }}
@@ -191,9 +191,9 @@ export default function AuthErrorModal({
             style={{
               width: '100%', padding: '11px',
               background: 'transparent',
-              color: 'rgba(255,255,255,0.45)',
+              color: 'rgba(255,255,255,0.75)',
               border: 'none',
-              fontSize: '11px', fontWeight: 600,
+              fontSize: '12px', fontWeight: 600,
               cursor: 'pointer', textDecoration: 'underline',
               fontFamily: 'inherit',
             }}

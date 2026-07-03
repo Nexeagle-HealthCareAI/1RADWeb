@@ -1656,8 +1656,43 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           } catch { return false; }
         };
 
+        const findNextField = (from, backwards) => {
+          let best = null;
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === 'structuredField') {
+              const nodePos = { from: pos, to: pos + node.nodeSize };
+              // if not backwards, must be strictly after cursor (so we don't just stay on the same field)
+              if (backwards ? nodePos.from < from : nodePos.from > from) {
+                if (!best || (backwards ? nodePos.from > best.from : nodePos.from < best.from)) best = nodePos;
+              }
+            }
+            if (node.isText) {
+              const regex = /\[[^\]]+\]/g;
+              let m;
+              while ((m = regex.exec(node.text)) !== null) {
+                const matchFrom = pos + m.index;
+                const matchTo = matchFrom + m[0].length;
+                if (backwards ? matchFrom < from : matchFrom > from) {
+                  if (!best || (backwards ? matchFrom > best.from : matchFrom < best.from)) {
+                    best = { from: matchFrom, to: matchTo };
+                  }
+                }
+              }
+            }
+          });
+          return best;
+        };
+
         try {
           const { $from } = state.selection;
+          
+          // Field jumping feature: prioritize jumping to structured fields or [placeholders]
+          const nextField = findNextField(state.selection.from, e.shiftKey);
+          if (nextField) {
+            editor.chain().focus().setTextSelection(nextField).run();
+            return;
+          }
+
           const blockType = $from.parent.type.name;
           const isAlignable = blockType === 'paragraph' || blockType === 'heading';
           if (e.shiftKey) {

@@ -159,60 +159,10 @@ const RadiologyWorkflowBG = () => {
 
   return (
     <div className="workflow-bg-overlay">
-      {/* DICOM Upload and Viewer removed for cleaner login interface */}
-      {/* ...existing SVG workflow code... */}
+      {/* Animated grid background */}
+      <div className="animated-grid-bg"></div>
+
       <svg className="workflow-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
-        {/* Connection Paths */}
-        <path d="M100,200 L300,400" className="workflow-line" />
-        <path d="M300,400 L500,300" className="workflow-line" />
-        <path d="M500,300 L700,500" className="workflow-line" />
-        <path d="M700,500 L900,400" className="workflow-line" />
-        <path d="M500,300 L500,700" className="workflow-line" />
-        <path d="M500,700 L300,850" className="workflow-line" />
-        <path d="M500,700 L700,850" className="workflow-line" />
-
-        {/* Workflow Nodes */}
-        <g className="workflow-node" transform="translate(100, 200)">
-          <circle r="8" fill="#2563eb" />
-          <text x="15" y="5" className="node-label">REGISTRATION</text>
-        </g>
-        
-        <g className="workflow-node" transform="translate(300, 400)">
-          <circle r="8" fill="#2563eb" />
-          <text x="15" y="5" className="node-label">TRIAGE/VITALS</text>
-        </g>
-
-        <g className="workflow-node" transform="translate(500, 300)">
-          <circle r="12" fill="#2563eb" filter="url(#glow)" />
-          <text x="20" y="5" className="node-label highlight">MODALITY SCAN (CT/MRI)</text>
-        </g>
-
-        <g className="workflow-node" transform="translate(700, 500)">
-          <circle r="8" fill="#2563eb" />
-          <text x="15" y="5" className="node-label">PACS SYNC</text>
-        </g>
-
-        <g className="workflow-node" transform="translate(900, 400)">
-          <circle r="8" fill="#2563eb" />
-          <text x="15" y="5" className="node-label">CLOUD ARCHIVE</text>
-        </g>
-
-        <g className="workflow-node" transform="translate(500, 700)">
-          <circle r="10" fill="#2563eb" />
-          <text x="20" y="5" className="node-label highlight">AI ANALYSIS</text>
-        </g>
-
-        <g className="workflow-node" transform="translate(300, 850)">
-          <circle r="8" fill="#2563eb" />
-          <text x="15" y="5" className="node-label">RADIOLOGIST REVIEW</text>
-        </g>
-
-        <g className="workflow-node" transform="translate(700, 850)">
-          <circle r="8" fill="#2563eb" />
-          <text x="15" y="5" className="node-label">REPORT SIGNED</text>
-        </g>
-
-        {/* Filters */}
         <defs>
           <filter id="glow">
             <feGaussianBlur stdDeviation="3.5" result="coloredBlur" />
@@ -221,7 +171,96 @@ const RadiologyWorkflowBG = () => {
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          <filter id="glow-intense">
+            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="rgba(37, 99, 235, 0.1)" />
+            <stop offset="50%" stopColor="rgba(37, 99, 235, 0.4)" />
+            <stop offset="100%" stopColor="rgba(37, 99, 235, 0.1)" />
+          </linearGradient>
         </defs>
+
+        {/* Base Connection Paths */}
+        <g className="workflow-lines">
+          <path d="M100,200 L300,400" className="workflow-line" />
+          <path d="M300,400 L500,300" className="workflow-line" />
+          <path d="M500,300 L700,500" className="workflow-line" />
+          <path d="M700,500 L900,400" className="workflow-line" />
+          <path d="M500,300 L500,700" className="workflow-line" />
+          <path d="M500,700 L300,850" className="workflow-line" />
+          <path d="M500,700 L700,850" className="workflow-line" />
+        </g>
+
+        {/* Animated Data Packets (flowing along the same lines) */}
+        <g className="workflow-packets">
+          <path d="M100,200 L300,400" className="workflow-packet" pathLength="100" style={{ animationDelay: '0s' }} />
+          <path d="M300,400 L500,300" className="workflow-packet" pathLength="100" style={{ animationDelay: '1.2s' }} />
+          
+          {/* Send to both PACS and AI simultaneously */}
+          <path d="M500,300 L700,500" className="workflow-packet" pathLength="100" style={{ animationDelay: '2.5s' }} />
+          <path d="M500,300 L500,700" className="workflow-packet" pathLength="100" style={{ animationDelay: '2.5s', stroke: '#0ea5e9' }} />
+          
+          <path d="M700,500 L900,400" className="workflow-packet" pathLength="100" style={{ animationDelay: '4s' }} />
+          
+          <path d="M500,700 L300,850" className="workflow-packet" pathLength="100" style={{ animationDelay: '4.5s', stroke: '#0ea5e9' }} />
+          <path d="M500,700 L700,850" className="workflow-packet" pathLength="100" style={{ animationDelay: '4.8s' }} />
+          
+          {/* Secondary loop for continuous action */}
+          <path d="M100,200 L300,400" className="workflow-packet" pathLength="100" style={{ animationDelay: '3s' }} />
+          <path d="M300,400 L500,300" className="workflow-packet" pathLength="100" style={{ animationDelay: '4.2s' }} />
+        </g>
+
+        {/* Workflow Nodes */}
+        <g className="workflow-node" transform="translate(100, 200)" style={{ animationDelay: '0s' }}>
+          <circle r="8" fill="#2563eb" />
+          <circle r="16" fill="none" stroke="#2563eb" strokeWidth="1" className="node-ripple" />
+          <text x="20" y="5" className="node-label">REGISTRATION</text>
+        </g>
+        
+        <g className="workflow-node" transform="translate(300, 400)" style={{ animationDelay: '1s' }}>
+          <circle r="8" fill="#2563eb" />
+          <circle r="16" fill="none" stroke="#2563eb" strokeWidth="1" className="node-ripple" />
+          <text x="20" y="5" className="node-label">TRIAGE / VITALS</text>
+        </g>
+
+        <g className="workflow-node highlight-node" transform="translate(500, 300)" style={{ animationDelay: '2s' }}>
+          <circle r="14" fill="#3b82f6" filter="url(#glow-intense)" />
+          <circle r="24" fill="none" stroke="#3b82f6" strokeWidth="1.5" className="node-ripple" />
+          <text x="25" y="5" className="node-label highlight">MODALITY SCAN (CT/MRI)</text>
+        </g>
+
+        <g className="workflow-node" transform="translate(700, 500)" style={{ animationDelay: '3.5s' }}>
+          <circle r="8" fill="#2563eb" />
+          <text x="20" y="5" className="node-label">PACS SYNC</text>
+        </g>
+
+        <g className="workflow-node" transform="translate(900, 400)" style={{ animationDelay: '4.5s' }}>
+          <circle r="8" fill="#2563eb" />
+          <circle r="16" fill="none" stroke="#2563eb" strokeWidth="1" className="node-ripple" />
+          <text x="-15" y="5" className="node-label" textAnchor="end">CLOUD ARCHIVE</text>
+        </g>
+
+        <g className="workflow-node highlight-node-ai" transform="translate(500, 700)" style={{ animationDelay: '3.5s' }}>
+          <circle r="12" fill="#0ea5e9" filter="url(#glow-intense)" />
+          <circle r="20" fill="none" stroke="#0ea5e9" strokeWidth="1.5" className="node-ripple" />
+          <text x="25" y="5" className="node-label highlight-ai">AI ANALYSIS</text>
+        </g>
+
+        <g className="workflow-node" transform="translate(300, 850)" style={{ animationDelay: '5s' }}>
+          <circle r="8" fill="#2563eb" />
+          <text x="-15" y="5" className="node-label" textAnchor="end">RADIOLOGIST REVIEW</text>
+        </g>
+
+        <g className="workflow-node" transform="translate(700, 850)" style={{ animationDelay: '5.5s' }}>
+          <circle r="10" fill="#22c55e" filter="url(#glow)" />
+          <circle r="18" fill="none" stroke="#22c55e" strokeWidth="1" className="node-ripple" />
+          <text x="20" y="5" className="node-label" style={{ fill: '#16a34a' }}>REPORT SIGNED</text>
+        </g>
       </svg>
     </div>
   );

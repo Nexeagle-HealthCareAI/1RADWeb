@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
-import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
 
 export default function ForgotPassword() {
@@ -19,11 +18,6 @@ export default function ForgotPassword() {
   const [countdown, setCountdown] = useState(0);
   const [timerId, setTimerId] = useState(null);
 
-  // Detect whether the identifier the user typed is an email or a mobile.
-  // We use this to render the step-2 confirmation ("code sent to your
-  // email" vs "to your mobile") without trusting the server response,
-  // since /auth/forgot-password is intentionally vague to prevent
-  // account enumeration.
   const isEmailIdentifier = identifier.includes('@');
   const maskedDestination = (() => {
     if (!identifier) return '';
@@ -61,7 +55,7 @@ export default function ForgotPassword() {
 
   const handleIdentify = async (e) => {
     e.preventDefault();
-    if (!identifier) return setError('Please enter your identity code');
+    if (!identifier) return setError('Please enter your email or mobile number.');
     setLoading(true);
     setError(null);
     const result = await forgotPassword(identifier);
@@ -76,7 +70,7 @@ export default function ForgotPassword() {
 
   const handleVerify = async (e) => {
     e.preventDefault();
-    if (!code) return setError('Please enter the verification code');
+    if (!code) return setError('Please enter the verification code.');
     setLoading(true);
     setError(null);
     const result = await verifyResetCode(identifier, code);
@@ -90,7 +84,7 @@ export default function ForgotPassword() {
 
   const handleReset = async (e) => {
     e.preventDefault();
-    if (newPassword !== confirmPassword) return setError('Passwords do not match');
+    if (newPassword !== confirmPassword) return setError('Passwords do not match.');
     setLoading(true);
     setError(null);
     const result = await resetPassword(newPassword);
@@ -105,64 +99,87 @@ export default function ForgotPassword() {
   return (
     <div className="auth-immersive-container">
       <RadiologyWorkflowBG />
+      
       <div className="immersive-brand">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '5px' }}>
-          <div className="immersive-logo" style={{ 
-            background: 'linear-gradient(135deg, #00f2fe 0%, #0f52ba 100%)',
-            boxShadow: '0 0 20px rgba(0, 242, 254, 0.4)', 
-            height: '32px', width: '32px', 
-            marginRight: '15px', 
-            display: 'flex', 
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            color: 'white',
-            fontWeight: 950,
-            fontSize: '14px'
-          }}>
-            1R
-          </div>
-          <div className="immersive-logo-text" style={{ fontSize: '26px', fontWeight: 950, color: 'white', letterSpacing: '3px', lineHeight: 1 }}>
-            1<span style={{ color: '#00f2fe' }}>RAD</span>
+        {/* Brand Top */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
+          <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle" style={{
+            width: '40px', height: '40px', objectFit: 'contain',
+          }} />
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+            <span style={{ fontSize: '26px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>NexEagle</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD</span>
           </div>
         </div>
-        <div className="immersive-tagline">1Rad Access Recovery</div>
-        <TacticalWorkflow />
+        <div style={{ fontSize: '10px', fontWeight: 800, color: 'rgba(15,23,42,0.65)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>
+          Account Recovery
+        </div>
+
+        {/* Informational Hero */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingTop: '8px', paddingBottom: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ position: 'relative', paddingLeft: '18px' }}>
+              <div style={{
+                position: 'absolute', left: 0, top: '4px', bottom: '4px',
+                width: '3px', borderRadius: '2px',
+                background: 'linear-gradient(to bottom, #2563eb, rgba(37,99,235,0.2))',
+              }} />
+              <p style={{
+                fontSize: '16px', fontWeight: 500,
+                color: 'rgba(15,23,42,0.95)', lineHeight: 1.7,
+                margin: 0,
+              }}>
+                Securely recover access to your account and get back to managing your radiology workflow.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="glass-card">
-        <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>RECOVERY GRID</h2>
-          <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', letterSpacing: '1px' }}>
-            PHASE {step}: {step === 1 ? 'IDENTIFY AGENT' : step === 2 ? 'SECURITY DECRYPT' : 'RESTORE ACCESS KEY'}
+        <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img
+            src={`${import.meta.env.BASE_URL}Logo.png`}
+            alt="NexEagle"
+            style={{ width: '40px', height: '40px', objectFit: 'contain', marginBottom: '16px' }}
+          />
+          <h2 className="auth-title" style={{ color: '#0f172a', fontSize: '24px', fontWeight: 900 }}>Reset Password</h2>
+          <p className="auth-subtitle" style={{ color: 'rgba(15,23,42,0.75)', fontSize: '13px', fontWeight: 500 }}>
+            {step === 1 ? "Enter your details to receive a code" : step === 2 ? "Verify your identity" : "Create a new password"}
           </p>
         </div>
 
         {step === 1 && (
           <form onSubmit={handleIdentify} className="auth-form animate-in">
-            <div className="form-group">
-              <label>REGISTERED IDENT (EMAIL/MOBILE)</label>
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label className="premium-label-light">Email or Mobile Number</label>
               <input
                 type="text"
+                className="premium-input-light"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="e.g. admin@1rad.com"
                 required
               />
             </div>
-            {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c' }}>{error}</div>}
-            <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
-              {loading ? 'ANALYZING...' : 'INITIALIZE RECOVERY'}
+            {error && (
+              <div style={{ marginBottom: '16px', padding: '10px 12px', background: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(220, 38, 38, 0.2)', borderRadius: '8px', color: '#dc2626', fontSize: '12px', fontWeight: 600 }}>
+                {error}
+              </div>
+            )}
+            <button type="submit" className="premium-btn-light" disabled={loading} style={{ marginTop: '10px' }}>
+              {loading ? 'Sending...' : 'Send Verification Code'}
             </button>
           </form>
         )}
 
         {step === 2 && (
           <form onSubmit={handleVerify} className="auth-form animate-in">
-            <div className="form-group">
-              <label>DECRYPTION CODE</label>
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label className="premium-label-light">Verification Code</label>
               <input
                 type="text"
+                className="premium-input-light"
                 maxLength="6"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
@@ -170,116 +187,110 @@ export default function ForgotPassword() {
                 style={{ letterSpacing: '8px', textAlign: 'center', fontWeight: 900, fontSize: '18px' }}
                 required
               />
-              <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '12px', textAlign: 'center' }}>
-                CODE SENT TO YOUR {isEmailIdentifier ? 'EMAIL' : 'MOBILE'}
+              <p style={{ fontSize: '11px', color: 'rgba(15,23,42,0.75)', marginTop: '12px', textAlign: 'center', fontWeight: 500 }}>
+                Code sent to your {isEmailIdentifier ? 'email' : 'mobile'}
                 {maskedDestination && (
-                  <> &mdash; <span style={{ color: '#00f2fe', fontWeight: 800 }}>{maskedDestination}</span></>
+                  <> &mdash; <strong style={{ color: '#0f172a' }}>{maskedDestination}</strong></>
                 )}
                 .{' '}
                 {countdown > 0 ? (
-                  <span style={{ color: '#00f2fe', fontWeight: 800 }}>RESEND IN 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
+                  <span style={{ color: '#2563eb', fontWeight: 700 }}>Resend in 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
                 ) : (
-                  <button type="button" onClick={handleIdentify} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>RESEND NOW</button>
+                  <button type="button" onClick={handleIdentify} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontWeight: 700, fontSize: '11px', textDecoration: 'underline' }}>Resend now</button>
                 )}
               </p>
             </div>
-            {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c' }}>{error}</div>}
-            <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading}>
-              {loading ? 'VERIFYING...' : 'VERIFY & CONTINUE'}
+            {error && (
+              <div style={{ marginBottom: '16px', padding: '10px 12px', background: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(220, 38, 38, 0.2)', borderRadius: '8px', color: '#dc2626', fontSize: '12px', fontWeight: 600 }}>
+                {error}
+              </div>
+            )}
+            <button type="submit" className="premium-btn-light" disabled={loading}>
+              {loading ? 'Verifying...' : 'Verify Code'}
             </button>
-            <button type="button" onClick={() => setStep(1)} style={{ width: '100%', marginTop: '15px', color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 800 }}>
-              INCORRECT IDENT? RE-INITIALIZE
-            </button>
+            <div style={{ textAlign: 'center', marginTop: '16px' }}>
+              <button type="button" onClick={() => setStep(1)} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}>
+                Use a different email/mobile
+              </button>
+            </div>
           </form>
         )}
 
         {step === 3 && (
           <form onSubmit={handleReset} className="auth-form animate-in">
-            <div className="form-group">
-              <label>NEW SECURE KEY (PASSWORD)</label>
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label className="premium-label-light">New Password</label>
               <input
                 type="password"
+                className="premium-input-light"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 required
               />
             </div>
-            <div className="form-group">
-              <label>VERIFY NEW KEY</label>
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label className="premium-label-light">Confirm New Password</label>
               <input
                 type="password"
+                className="premium-input-light"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="••••••••"
                 required
               />
             </div>
-            {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c' }}>{error}</div>}
-            <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
-              {loading ? 'RESTORING...' : 'UPDATE SECURE KEY'}
+            {error && (
+              <div style={{ marginBottom: '16px', padding: '10px 12px', background: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(220, 38, 38, 0.2)', borderRadius: '8px', color: '#dc2626', fontSize: '12px', fontWeight: 600 }}>
+                {error}
+              </div>
+            )}
+            <button type="submit" className="premium-btn-light" disabled={loading} style={{ marginTop: '10px' }}>
+              {loading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
         )}
 
-        <div className="neon-divider"></div>
-
-        <div className="auth-footer" style={{ textAlign: 'center' }}>
-          <Link to="/login" style={{ color: '#00f2fe', textDecoration: 'none', fontSize: '13px', fontWeight: 800, borderBottom: '1px solid #00f2fe' }}>
-            RETURN TO COMMAND PORTAL
+        <div style={{ marginTop: '24px', textAlign: 'center', borderTop: '1px solid rgba(15,23,42,0.1)', paddingTop: '16px' }}>
+          <Link to="/login" style={{ color: '#2563eb', textDecoration: 'none', fontSize: '12px', fontWeight: 700 }}>
+            Return to Sign In
           </Link>
         </div>
       </div>
 
       {showSuccess && (
         <div className="success-overlay animate-in" style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(11, 17, 32, 0.95)',
+          position: 'fixed', inset: 0,
+          background: 'rgba(15,23,42,0.85)',
           backdropFilter: 'blur(10px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 1000,
-          animation: 'fade-in 0.5s ease-out'
         }}>
-          <div className="success-card glass-card" style={{
-            textAlign: 'center',
-            padding: '40px',
-            maxWidth: '400px',
-            border: '1px solid rgba(0, 242, 254, 0.3)',
-            boxShadow: '0 0 30px rgba(0, 242, 254, 0.2)'
+          <div style={{
+            textAlign: 'center', padding: '40px', maxWidth: '400px', width: '90%',
+            background: '#ffffff', borderRadius: '24px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)'
           }}>
-            <div className="success-icon" style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '50%',
-              background: 'rgba(0, 242, 254, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 20px',
-              border: '2px solid #00f2fe',
-              boxShadow: '0 0 20px rgba(0, 242, 254, 0.3)'
+            <div style={{
+              width: '64px', height: '64px', borderRadius: '50%',
+              background: 'rgba(37,99,235,0.1)', display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 20px', color: '#2563eb'
             }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
               </svg>
             </div>
-            <h2 style={{ color: 'white', fontWeight: 950, letterSpacing: '2px', marginBottom: '10px' }}>ACCESS RESTORED</h2>
-            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', lineHeight: 1.6, marginBottom: '30px' }}>
-              Your secure access keys have been updated. You can now login with your new credentials.
+            <h2 style={{ color: '#0f172a', fontWeight: 900, fontSize: '20px', marginBottom: '10px' }}>Password Updated</h2>
+            <p style={{ color: 'rgba(15,23,42,0.7)', fontSize: '14px', lineHeight: 1.6, marginBottom: '30px' }}>
+              Your password has been successfully reset. You can now sign in using your new credentials.
             </p>
             <button 
               onClick={() => navigate('/login')}
-              className="btn-primary btn-block gamified-btn"
-              style={{ padding: '15px' }}
+              className="premium-btn-light"
             >
-              PROCEED TO COMMAND PORTAL
+              Go to Sign In
             </button>
           </div>
         </div>
