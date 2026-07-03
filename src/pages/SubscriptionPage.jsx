@@ -66,10 +66,11 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, on
     }
   }, [isOpen, currentUser]);
 
-  const priceMap = { monthly: 4999, yearly: 53988 };
-  // Server-computed amount due (base + metered storage overage) when available;
-  // else the legacy full-product price.
-  const amount = estimate?.total ?? (priceMap[billingCycle] || priceMap.monthly);
+  // We now fetch the plans from CMS (via 1RadAPI) which are simplified
+  // The server-computed amount due takes precedence if available
+  const activeSelectedPlan = planId ? plans.find(p => p.planId === planId) : null;
+  const planPrice = activeSelectedPlan ? (activeSelectedPlan.discountPrice > 0 ? activeSelectedPlan.discountPrice : activeSelectedPlan.price) : (priceMap[billingCycle] || priceMap.monthly);
+  const amount = estimate?.total ?? planPrice;
 
   const validate = () => {
     const e = {};
@@ -338,41 +339,24 @@ const SubscriptionPage = () => {
   const pendingStatus = subscription?.pendingRequestStatus ?? null;
   const isPaidPlan = !isTrial && (subStatus === 'Active' || subStatus === 'Expiring');
 
-  // ── Edition-aware pricing (per-SKU tiers + metered storage + PAYG) ─────────
   const [plans, setPlans] = useState([]);
   const [estimate, setEstimate] = useState(null);
-  // Selection is BY TIER (not plan id) so it survives cycle/edition switches.
-  const [selectedTier, setSelectedTier] = useState(null); // 'Starter'|'Growth'|'Clinic'|'PAYG'
+  const [selectedPlanId, setSelectedPlanId] = useState(null);
+  
   useEffect(() => {
     apiClient.get('/subscriptions/plans').then(r => setPlans(r?.data?.data || [])).catch(() => {});
   }, []);
 
-  // Default to the center's current edition; the user can pick a different
-  // edition/tier/PAYG via the selector.
-  const currentEdition = (() => {
-    const m = (subscription?.modules || []).map(x => String(x).toUpperCase());
-    const hasR = m.includes('RIS'), hasP = m.includes('PACS');
-    if (hasR && hasP) return 'RIS+PACS';
-    if (hasR) return 'RIS';
-    if (hasP) return 'PACS';
-    return 'RIS+PACS';
-  })();
-  const [selectedEdition, setSelectedEdition] = useState(null);
-  const editionInView = selectedEdition || currentEdition;
   const cycleName = billingCycle === 'yearly' ? 'Yearly' : 'Monthly';
-  // Subscription tier cards for the edition+cycle in view (Starter→Clinic, asc).
-  const editionTiers = plans
-    .filter(p => p.edition === editionInView && p.billingMode !== 'PerStudy' && !p.isCustom && p.name === cycleName)
-    .sort((a, b) => a.price - b.price);
-  // PAYG + Chain plans for the edition in view (cycle-independent).
-  const editionPayg = plans.find(p => p.edition === editionInView && p.billingMode === 'PerStudy');
-  const editionChain = plans.find(p => p.edition === editionInView && p.isCustom);
-  // Default highlight = the middle tier (most popular); selection follows the
-  // TIER across cycle/edition switches instead of resetting.
-  const defaultPlan = editionTiers[1] || editionTiers[0] || null;
-  const activePlan = selectedTier === 'PAYG'
-    ? (editionPayg || defaultPlan)
-    : (editionTiers.find(p => p.tier === selectedTier) || defaultPlan);
+  // Filter plans based on cycle name mapped from CMS (assume CMS plans have DurationInDays correctly set or Name matching)
+  // Our backend map set DurationInDays = 365 for Yearly and 30 for Monthly.
+  const cycleDays = billingCycle === 'yearly' ? 365 : 30;
+  const currentCyclePlans = plans.filter(p => p.durationInDays === cycleDays).sort((a, b) => a.price - b.price);
+  
+  const defaultPlan = currentCyclePlans[0] || null;
+  const activePlan = selectedPlanId 
+    ? (currentCyclePlans.find(p => p.planId === selectedPlanId) || defaultPlan)
+    : defaultPlan;
 
   // Metered amount-due estimate for the active plan (base + storage overage, or
   // PAYG studies × rate).
@@ -406,11 +390,7 @@ const SubscriptionPage = () => {
     } catch (e) {}
   };
 
-  const premiumPlan = {
-    name: '1Rad Premium',
-    price: billingCycle === 'monthly' ? '4,999' : '53,988',
-    priceMonthly: billingCycle === 'yearly' ? '4,499' : '4,999',
-    features: [
+  const premiumFeatures = [
       'Unlimited DICOM Studies & Storage', 
       'Advanced Diagnostic Viewer', 
       'AI-Powered Reporting', 
@@ -420,8 +400,7 @@ const SubscriptionPage = () => {
       'Custom Roles & Permissions',
       'Payroll & Leave Management',
       'Priority 24/7 Support'
-    ],
-  };
+  ];
 
   const statusColor = {
     Active: '#10b981', Expiring: '#f59e0b', Expired: '#ef4444',
@@ -541,13 +520,14 @@ const SubscriptionPage = () => {
 
       <PaymentRequestDrawer
         isOpen={!!paymentModal}
-        plan={premiumPlan}
+        plan={{ name: activePlan?.name || '1Rad Premium' }}
         billingCycle={paymentModal || 'monthly'}
         planId={activePlan?.planId}
         estimate={estimate}
         currentUser={currentUser}
         onClose={() => setPaymentModal(null)}
         onSuccess={onPaymentSuccess}
+        plans={plans}
       />
 
       {/* ── Header ── */}
@@ -684,7 +664,7 @@ const SubscriptionPage = () => {
                 <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                   <p style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 16px' }}>Current Features</p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
-                    {premiumPlan.features.map(f => (
+                    {premiumFeatures.map(f => (
                       <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ color: '#10b981', flexShrink: 0 }}><Icons.Check /></div>
                         <span style={{ fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>{f}</span>
@@ -849,15 +829,7 @@ const SubscriptionPage = () => {
             <p>Simple pricing that scales with your centre. Pay offline, activated within 24 hours of review.</p>
             <div className="up-controls">
               <div className="up-seg">
-                {[{ k: 'RIS', label: 'RIS' }, { k: 'PACS', label: 'Cloud PACS' }, { k: 'RIS+PACS', label: 'RIS + Cloud PACS' }].map(e => (
-                  <button key={e.k} className={editionInView === e.k ? 'on' : ''} onClick={() => setSelectedEdition(e.k)}>
-                    {e.label}
-                    {e.k === currentEdition && <span className="up-current-dot" title="Your current edition" />}
-                  </button>
-                ))}
-              </div>
-              <div className="up-seg">
-                {[{ key: 'monthly', label: 'Monthly' }, { key: 'yearly', label: 'Yearly', badge: 'Save 10%' }].map(c => (
+                {[{ key: 'monthly', label: 'Monthly' }, { key: 'yearly', label: 'Yearly', badge: 'Save up to 10%' }].map(c => (
                   <button key={c.key} className={billingCycle === c.key ? 'on' : ''} onClick={() => handleBillingCycle(c.key)}>
                     {c.label}
                     {c.badge && <span className="up-save-chip">{c.badge}</span>}
@@ -867,90 +839,45 @@ const SubscriptionPage = () => {
             </div>
           </div>
 
-          {/* Tier cards */}
-          <div className="up-tiers">
-            {editionTiers.map((p, i) => {
+          {/* Plan cards */}
+          <div className="up-tiers" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', justifyContent: 'center' }}>
+            {currentCyclePlans.length === 0 ? (
+              <div style={{ textAlign: 'center', gridColumn: '1 / -1', padding: '40px', color: '#64748b' }}>No {cycleName} plans configured at the moment.</div>
+            ) : currentCyclePlans.map((p, i) => {
               const on = activePlan?.planId === p.planId;
-              const popular = i === 1 && editionTiers.length > 2;
+              const popular = p.discountPrice > 0; // Highlight discounted plans
               const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
-              const monthlyTwin = plans.find(x => x.edition === p.edition && x.tier === p.tier && x.name === 'Monthly' && x.billingMode !== 'PerStudy' && !x.isCustom);
-              const yearlySave = cycleName === 'Yearly' && monthlyTwin ? Math.max(0, monthlyTwin.price * 12 - p.price) : 0;
-              const tagline = { Starter: 'For solo practices getting started', Growth: 'For busy single-centre clinics', Clinic: 'For high-volume, multi-room centres' }[p.tier] || '';
+              const displayPrice = p.discountPrice > 0 ? p.discountPrice : p.price;
+              
               return (
-                <div key={p.planId} className={`up-tier${on ? ' on' : ''}${popular ? ' popular' : ''}`} onClick={() => setSelectedTier(p.tier)}>
-                  {popular && <div className="up-ribbon">Most popular</div>}
-                  <p className="up-tier-name">{p.tier}</p>
-                  <p className="up-tagline">{tagline}</p>
+                <div key={p.planId} className={`up-tier${on ? ' on' : ''}${popular ? ' popular' : ''}`} onClick={() => setSelectedPlanId(p.planId)}>
+                  {popular && <div className="up-ribbon">Special Offer</div>}
+                  <p className="up-tier-name">{p.name}</p>
+                  <p className="up-tagline">Complete radiology suite for your center.</p>
                   <div className="up-price-row">
-                    <span className="up-price">{fmt(p.price)}</span>
+                    <span className="up-price">{fmt(displayPrice)}</span>
                     <span className="up-cycle">/ {cycleName === 'Yearly' ? 'year' : 'month'}</span>
                   </div>
                   <div className="up-price-note">
-                    {cycleName === 'Yearly'
-                      ? <>≈ {fmt(Math.round(p.price / 12))}/mo{yearlySave > 0 && <em> · save {fmt(yearlySave)}</em>}</>
-                      : <>billed monthly</>}
+                    {p.discountPrice > 0 && p.price > p.discountPrice && (
+                      <>Regular price: <span style={{ textDecoration: 'line-through' }}>{fmt(p.price)}</span></>
+                    )}
                   </div>
                   <div className="up-features">
-                    {[
-                      `${p.maxUsers == null ? 'Unlimited' : `Up to ${p.maxUsers}`} staff users`,
-                      `${p.maxSites == null ? 'Unlimited' : p.maxSites} site${p.maxSites === 1 ? '' : 's'}`,
-                      p.includedStorageGb > 0 ? `${p.includedStorageGb >= 1024 ? `${Math.round(p.includedStorageGb / 1024)} TB` : `${p.includedStorageGb} GB`} cloud DICOM storage` : (p.edition === 'RIS' ? 'PDF / JPG attachments' : 'Storage included'),
-                      'Diagnostic reporting included',
-                    ].map(f => (
+                    {premiumFeatures.slice(0, 5).map(f => (
                       <div key={f} className="up-feature">
                         <span className="up-tick"><Icons.Check /></span>
                         <span>{f}</span>
                       </div>
                     ))}
                   </div>
-                  <button className={`up-cta${on ? ' on' : ''}`} onClick={(ev) => { ev.stopPropagation(); setSelectedTier(p.tier); }}>
-                    {on ? '✓ Selected' : `Choose ${p.tier}`}
+                  <button className={`up-cta${on ? ' on' : ''}`} onClick={(ev) => { ev.stopPropagation(); setSelectedPlanId(p.planId); }}>
+                    {on ? '✓ Selected' : `Choose ${p.name}`}
                   </button>
                 </div>
               );
             })}
           </div>
-
-          {/* Flexible options — PAYG + Chain */}
-          {(editionPayg || editionChain) && (
-            <>
-              <div className="up-divider"><span>Flexible options</span></div>
-              <div className="up-flex">
-                {editionPayg && (() => {
-                  const on = activePlan?.planId === editionPayg.planId;
-                  return (
-                    <div className={`up-flex-card${on ? ' on' : ''}`} onClick={() => setSelectedTier('PAYG')}>
-                      <div className="up-flex-body">
-                        <p className="up-tier-name">Pay per study</p>
-                        <p className="up-flex-text">No monthly commitment — billed monthly in arrears for every finalized report. Ideal for low or variable volume.</p>
-                      </div>
-                      <div className="up-flex-side">
-                        <div className="up-price-row">
-                          <span className="up-price" style={{ fontSize: 26 }}>₹{Number(editionPayg.perStudyPrice || 0).toLocaleString('en-IN')}</span>
-                          <span className="up-cycle">/ study</span>
-                        </div>
-                        <button className={`up-cta${on ? ' on' : ''}`} onClick={(ev) => { ev.stopPropagation(); setSelectedTier('PAYG'); }}>
-                          {on ? '✓ Selected' : 'Choose PAYG'}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-                {editionChain && (
-                  <div className="up-flex-card chain">
-                    <div className="up-flex-body">
-                      <p className="up-tier-name">Chain / Enterprise</p>
-                      <p className="up-flex-text">Unlimited users, multi-site and bespoke storage for hospital chains. Tailored quote and onboarding.</p>
-                    </div>
-                    <div className="up-flex-side">
-                      <div className="up-price-row"><span className="up-price" style={{ fontSize: 26 }}>Custom</span></div>
-                      <button className="up-cta" disabled style={{ cursor: 'default', opacity: 0.7 }}>Contact us</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
 
           {/* Selected-plan summary + submit */}
           {activePlan && (
@@ -958,21 +885,12 @@ const SubscriptionPage = () => {
               <div>
                 <div className="up-summary-label">You selected</div>
                 <div className="up-summary-title">
-                  {editionInView === 'PACS' ? 'Cloud PACS' : editionInView} · {activePlan.billingMode === 'PerStudy' ? 'Pay per study' : `${activePlan.tier} · ${cycleName}`}
+                  {activePlan.name} · {cycleName}
                 </div>
-                {activePlan.billingMode === 'PerStudy' ? (
-                  <div className="up-summary-sub">
-                    {estimate?.studiesCount != null
-                      ? `${estimate.studiesCount} finalized ${estimate.studiesCount === 1 ? 'study' : 'studies'} this cycle × ₹${Number(activePlan.perStudyPrice).toLocaleString('en-IN')} = ₹${Number(estimate.total || 0).toLocaleString('en-IN')} due`
-                      : `₹${Number(activePlan.perStudyPrice).toLocaleString('en-IN')} per finalized study, billed monthly`}
-                  </div>
-                ) : (
-                  <div className="up-summary-sub">
-                    ₹{Number(estimate?.total ?? activePlan.price).toLocaleString('en-IN')} due
-                    {estimate && estimate.overageAmount > 0 && ` (incl. ₹${Number(estimate.overageAmount).toLocaleString('en-IN')} storage overage)`}
-                    {' '}· per {cycleName === 'Yearly' ? 'year' : 'month'}
-                  </div>
-                )}
+                <div className="up-summary-sub">
+                  ₹{Number(estimate?.total ?? (activePlan.discountPrice > 0 ? activePlan.discountPrice : activePlan.price)).toLocaleString('en-IN')} due
+                  {' '}· per {cycleName === 'Yearly' ? 'year' : 'month'}
+                </div>
               </div>
               {hasPending ? (
                 <div className="pending-badge" style={{ alignSelf: 'center' }}>⏳ Payment Under Review</div>
