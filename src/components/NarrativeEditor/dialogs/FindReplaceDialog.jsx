@@ -114,22 +114,18 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
 
   return (
     <div
+      className="glass-card"
       onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeAndRestore(); } }}
       style={{
         position: 'absolute',
         top: '8px',
         right: '20px',
         zIndex: 12000,
-        background: 'white',
-        border: '1px solid #c8c8c8',
-        borderRadius: '6px',
-        padding: '10px 12px',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        padding: '12px 14px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
+        gap: '8px',
         minWidth: '320px',
-        fontFamily: '"Segoe UI", system-ui, sans-serif',
       }}
       onMouseDown={e => e.stopPropagation()}
     >
@@ -149,7 +145,8 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
             if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? onPrev() : onNext(); }
             if (e.key === 'Escape') { e.preventDefault(); closeAndRestore(); }
           }}
-          style={{ flex: 1, height: '28px', padding: '0 8px', border: '1px solid #c8c8c8', borderRadius: '3px', fontSize: '13px', outline: 'none' }}
+          className="premium-input-light"
+          style={{ flex: 1, padding: '6px 8px', fontSize: '13px' }}
         />
         <span style={{ fontSize: '11px', color: regexError ? '#c00' : '#666', minWidth: '60px', textAlign: 'right' }}
               title={regexError || (matches.length === 0 ? 'No matches' : `${activeIdx + 1} of ${matches.length}`)}>
@@ -172,7 +169,8 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
             }
             if (e.key === 'Escape') { e.preventDefault(); closeAndRestore(); }
           }}
-          style={{ flex: 1, height: '28px', padding: '0 8px', border: '1px solid #c8c8c8', borderRadius: '3px', fontSize: '13px', outline: 'none' }}
+          className="premium-input-light"
+          style={{ flex: 1, padding: '6px 8px', fontSize: '13px' }}
         />
       </div>
 

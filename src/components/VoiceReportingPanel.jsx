@@ -16,13 +16,13 @@ import { useVoiceDictation, isVoiceSupported } from './NarrativeEditor/hooks/use
  */
 
 const THEME = {
-  grad: 'linear-gradient(135deg,#7c3aed 0%,#2563eb 100%)',
-  gradSoft: 'linear-gradient(135deg,#f5f3ff 0%,#eff6ff 100%)',
+  grad: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+  gradSoft: 'linear-gradient(135deg, #f0fdf4 0%, #dbeafe 100%)',
   ink: '#0f172a',
   sub: '#64748b',
-  line: '#e8edf2',
+  line: '#e2e8f0',
   card: '#ffffff',
-  bg: '#f1f5f9',
+  bg: '#f8fafc',
 };
 
 const StepBadge = ({ n, done }) => (
@@ -253,7 +253,7 @@ export default function VoiceReportingPanel({
                     border: 'none', cursor: supported && !loading ? 'pointer' : 'not-allowed',
                     color: 'white', fontSize: '22px',
                     background: voice.active ? 'linear-gradient(135deg,#ef4444,#dc2626)' : THEME.grad,
-                    boxShadow: voice.active ? '0 0 0 6px rgba(239,68,68,0.18)' : '0 8px 20px rgba(124,58,237,0.35)',
+                    boxShadow: voice.active ? '0 0 0 6px rgba(239,68,68,0.18)' : '0 8px 20px rgba(37,99,235,0.35)',
                     opacity: supported && !loading ? 1 : 0.45,
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     transition: 'all 0.18s',
@@ -363,7 +363,7 @@ export default function VoiceReportingPanel({
                   cursor: loading || !transcript.trim() ? 'not-allowed' : 'pointer',
                   fontWeight: 800, fontSize: '14.5px', letterSpacing: '0.3px', color: 'white',
                   background: loading || !transcript.trim() ? '#94a3b8' : THEME.grad,
-                  boxShadow: loading || !transcript.trim() ? 'none' : '0 8px 22px rgba(124,58,237,0.32)',
+                  boxShadow: loading || !transcript.trim() ? 'none' : '0 8px 22px rgba(37,99,235,0.32)',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
                   transition: 'all 0.16s',
                 }}

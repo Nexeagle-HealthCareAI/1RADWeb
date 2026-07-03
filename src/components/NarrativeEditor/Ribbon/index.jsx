@@ -23,9 +23,9 @@ const COLOR = {
   text:         '#0f172a',
   textMute:     '#64748b',
   textSoft:     '#94a3b8',
-  accent:       '#334155',
-  accentDeep:   '#1e293b',
-  accentSoft:   '#f1f5f9',
+  accent:       '#2563eb',
+  accentDeep:   '#1d4ed8',
+  accentSoft:   '#eff6ff',
   danger:       '#dc2626',
   dangerSoft:   '#fee2e2',
 };

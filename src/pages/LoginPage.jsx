@@ -402,7 +402,7 @@ export default function LoginPage() {
             <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD</span>
           </div>
         </div>
-        <div style={{ fontSize: '9px', fontWeight: 700, color: 'rgba(15,23,42,0.25)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>
+        <div style={{ fontSize: '10px', fontWeight: 800, color: 'rgba(15,23,42,0.65)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>
           Radiology Management System
         </div>
 
@@ -442,8 +442,8 @@ export default function LoginPage() {
                   {INDUSTRY_QUOTES[quoteIndex].title}
                 </span>
               </div>
-              <span style={{ fontSize: '9px', color: 'rgba(0,242,254,0.35)', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                tap for next <span style={{ fontSize: '13px' }}>›</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#2563eb', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.8 }}>
+                tap for next <span style={{ fontSize: '14px' }}>›</span>
               </span>
             </div>
 
@@ -453,20 +453,20 @@ export default function LoginPage() {
               <span style={{
                 position: 'absolute', top: '-18px', left: '-4px',
                 fontSize: '72px', fontFamily: 'Georgia, serif',
-                color: 'rgba(0,242,254,0.12)', lineHeight: 1,
+                color: 'rgba(37,99,235,0.15)', lineHeight: 1,
                 userSelect: 'none', pointerEvents: 'none',
               }}>&ldquo;</span>
 
               {/* Left accent line */}
               <div style={{
                 position: 'absolute', left: 0, top: '4px', bottom: '4px',
-                width: '2px', borderRadius: '2px',
-                background: 'linear-gradient(to bottom, #2563eb, rgba(0,242,254,0.1))',
+                width: '3px', borderRadius: '2px',
+                background: 'linear-gradient(to bottom, #2563eb, rgba(37,99,235,0.2))',
               }} />
 
               <p style={{
-                fontSize: '15px', fontStyle: 'italic', fontWeight: 400,
-                color: 'rgba(15,23,42,0.82)', lineHeight: 1.7,
+                fontSize: '16px', fontStyle: 'italic', fontWeight: 500,
+                color: 'rgba(15,23,42,0.95)', lineHeight: 1.7,
                 margin: 0,
               }}>
                 {INDUSTRY_QUOTES[quoteIndex].problem}
@@ -475,18 +475,18 @@ export default function LoginPage() {
 
             {/* Solution — highlighted box */}
             <div style={{
-              background: 'rgba(0,242,254,0.06)',
-              border: '1px solid rgba(0,242,254,0.15)',
+              background: 'rgba(37,99,235,0.08)',
+              border: '1px solid rgba(37,99,235,0.3)',
               borderRadius: '10px',
-              padding: '14px 16px',
+              padding: '16px 18px',
               display: 'flex',
               gap: '10px',
               alignItems: 'flex-start',
             }}>
-              <span style={{ color: '#2563eb', fontSize: '15px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
+              <span style={{ color: '#2563eb', fontSize: '16px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
               <p style={{
-                fontSize: '12px', color: 'rgba(15,23,42,0.7)',
-                lineHeight: 1.65, margin: 0, fontWeight: 400,
+                fontSize: '13px', color: 'rgba(15,23,42,0.9)',
+                lineHeight: 1.65, margin: 0, fontWeight: 500,
               }}>
                 {INDUSTRY_QUOTES[quoteIndex].solution}
               </p>
@@ -503,15 +503,15 @@ export default function LoginPage() {
                     setTimeout(() => { setQuoteIndex(i); setQuoteFading(false); }, 300);
                   }}
                   style={{
-                    width: i === quoteIndex ? '22px' : '5px',
-                    height: '4px', borderRadius: '2px',
-                    background: i === quoteIndex ? '#2563eb' : 'rgba(0,242,254,0.18)',
+                    width: i === quoteIndex ? '22px' : '6px',
+                    height: '5px', borderRadius: '3px',
+                    background: i === quoteIndex ? '#2563eb' : 'rgba(37,99,235,0.25)',
                     transition: 'all 0.4s ease', cursor: 'pointer',
-                    boxShadow: i === quoteIndex ? '0 0 8px rgba(0,242,254,0.5)' : 'none',
+                    boxShadow: i === quoteIndex ? '0 0 8px rgba(37,99,235,0.4)' : 'none',
                   }}
                 />
               ))}
-              <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(15,23,42,0.2)', fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.6)', fontVariantNumeric: 'tabular-nums' }}>
                 {quoteIndex + 1} / {INDUSTRY_QUOTES.length}
               </span>
             </div>
@@ -534,7 +534,7 @@ export default function LoginPage() {
             }}
           />
           <h2 className="auth-title" style={{ color: '#0f172a', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
-          <p className="auth-subtitle" style={{ color: 'rgba(15,23,42,0.5)', fontSize: '12px' }}>Sign in to your account to continue</p>
+          <p className="auth-subtitle" style={{ color: 'rgba(15,23,42,0.75)', fontSize: '13px', fontWeight: 500 }}>Sign in to your account to continue</p>
         </div>
 
         {/* ── Offline-ready highlight — reassures users the app keeps working
@@ -581,59 +581,20 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => { setLoginMode('pin'); setError(null); setPinError(''); }}
-              className={`toggle-btn ${loginMode === 'pin' ? 'active' : ''}`}
-              style={{
-                flex: 1,
-                padding: '12px',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '11px',
-                fontWeight: 800,
-                transition: 'all 0.3s',
-                background: loginMode === 'pin' ? '#2563eb' : 'transparent',
-                color: loginMode === 'pin' ? '#ffffff' : '#0f172a',
-                boxShadow: loginMode === 'pin' ? '0 0 15px rgba(37, 99, 235, 0.4)' : 'none',
-              }}
+              className={`auth-toggle-btn ${loginMode === 'pin' ? 'active' : ''}`}
             >PIN</button>
           )}
           <button
             type="button"
             onClick={() => { setLoginMode('password'); setError(null); }}
-            className={`toggle-btn ${loginMode === 'password' ? 'active' : ''}`}
-            style={{ 
-              flex: 1, 
-              padding: '12px', 
-              border: 'none', 
-              borderRadius: '8px', 
-              cursor: 'pointer', 
-              fontSize: '11px', 
-              fontWeight: 800, 
-              transition: 'all 0.3s', 
-              background: loginMode === 'password' ? '#2563eb' : 'transparent', 
-              color: loginMode === 'password' ? '#ffffff' : '#0f172a',
-              boxShadow: loginMode === 'password' ? '0 0 15px rgba(37, 99, 235, 0.4)' : 'none'
-            }}
+            className={`auth-toggle-btn ${loginMode === 'password' ? 'active' : ''}`}
           >
             Password
           </button>
           <button 
             type="button"
             onClick={() => { setLoginMode('otp'); setError(null); }}
-            className={`toggle-btn ${loginMode === 'otp' ? 'active' : ''}`}
-            style={{ 
-              flex: 1, 
-              padding: '12px', 
-              border: 'none', 
-              borderRadius: '8px', 
-              cursor: 'pointer', 
-              fontSize: '11px', 
-              fontWeight: 800, 
-              transition: 'all 0.3s', 
-              background: loginMode === 'otp' ? '#2563eb' : 'transparent', 
-              color: loginMode === 'otp' ? '#ffffff' : '#0f172a',
-              boxShadow: loginMode === 'otp' ? '0 0 15px rgba(37, 99, 235, 0.4)' : 'none'
-            }}
+            className={`auth-toggle-btn ${loginMode === 'otp' ? 'active' : ''}`}
           >
             OTP / SMS Code
           </button>
@@ -662,7 +623,7 @@ export default function LoginPage() {
           <form onSubmit={handlePinSubmit} className="auth-form" autoComplete="off">
             {pinUsers.length > 1 && (
               <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: 'rgba(15,23,42,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: 'rgba(15,23,42,0.85)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
                   Saved account
                 </label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -692,9 +653,10 @@ export default function LoginPage() {
               </div>
             )}
             <div className="form-group" style={{ marginBottom: '6px' }}>
-              <label>Quick-Unlock PIN</label>
+              <label className="premium-label-light">Quick-Unlock PIN</label>
               <input
                 type="password"
+                className="premium-input-light"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={4}
@@ -704,19 +666,7 @@ export default function LoginPage() {
                 onChange={e => { setPinValue(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError(''); }}
                 placeholder="• • • •"
                 disabled={pinLockedSecondsLeft > 0 || loading}
-                style={{
-                  letterSpacing: '14px',
-                  textAlign: 'center',
-                  fontSize: '20px',
-                  background: 'rgba(0, 0, 0, 0.35)',
-                  color: '#0f172a',
-                  border: '1px solid rgba(15, 23, 42, 0.15)',
-                  borderRadius: '10px',
-                  padding: '14px',
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  outline: 'none',
-                }}
+                style={{ letterSpacing: '14px', textAlign: 'center', fontSize: '20px' }}
               />
             </div>
             {pinLockedSecondsLeft > 0 && (
@@ -732,7 +682,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || pinLockedSecondsLeft > 0 || pinValue.length < 4 || !selectedPinUserId}
-              className="auth-submit"
+              className="premium-btn-light"
               style={{ marginTop: '16px' }}
             >
               {loading ? 'Unlocking…' : 'Unlock'}
@@ -749,10 +699,11 @@ export default function LoginPage() {
 
         {loginMode !== 'pin' && (
         <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label>Email or Mobile Number</label>
+          <div className="form-group" style={{ marginBottom: '16px' }}>
+            <label className="premium-label-light">Email or Mobile Number</label>
             <input
               type="text"
+              className="premium-input-light"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder="e.g. admin@1rad.com"
@@ -762,14 +713,15 @@ export default function LoginPage() {
           </div>
           
           {loginMode === 'password' ? (
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label>Password</label>
+                <label className="premium-label-light" style={{ marginBottom: 0 }}>Password</label>
                 <Link to="/forgot-password" style={{ fontSize: '10px', color: '#2563eb', textDecoration: 'none', fontWeight: 800 }}>Forgot Password?</Link>
               </div>
               <div style={{ position: 'relative' }}>
                 <input
                   type={showPassword ? "text" : "password"}
+                  className="premium-input-light"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -786,10 +738,11 @@ export default function LoginPage() {
             </div>
           ) : (
             otpStep === 'verify' && (
-              <div className="form-group animate-in">
-                <label>Enter the 6-digit OTP sent to you</label>
+              <div className="form-group animate-in" style={{ marginBottom: '16px' }}>
+                <label className="premium-label-light">Enter the 6-digit OTP sent to you</label>
                 <input
                   type="text"
+                  className="premium-input-light"
                   maxLength="6"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
@@ -797,7 +750,7 @@ export default function LoginPage() {
                   style={{ letterSpacing: '8px', textAlign: 'center', fontWeight: 900, fontSize: '18px' }}
                   required
                 />
-                <p style={{ fontSize: '10px', color: 'rgba(15,23,42,0.4)', marginTop: '8px', textAlign: 'center' }}>
+                <p style={{ fontSize: '11px', color: 'rgba(15,23,42,0.75)', marginTop: '8px', textAlign: 'center', fontWeight: 500 }}>
                   Didn't receive the code? {countdown > 0 ? (
                     <span style={{ color: '#2563eb', fontWeight: 800 }}>Resend in 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
                   ) : (
@@ -871,7 +824,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
+          <button type="submit" className="premium-btn-light" disabled={loading} style={{ marginTop: '10px' }}>
             {loading ? 'Signing In...' : (
               loginMode === 'password' ? 'Sign In' :
               (otpStep === 'request' ? 'Send OTP' : 'Verify & Sign In')
@@ -880,9 +833,7 @@ export default function LoginPage() {
         </form>
         )}
 
-        <div className="neon-divider"></div>
-        
-        <div className="auth-footer" style={{ textAlign: 'center' }}>
+        <div className="auth-footer" style={{ marginTop: '24px', textAlign: 'center', borderTop: '1px solid rgba(15,23,42,0.1)', paddingTop: '16px' }}>
            <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(15,23,42,0.7)' }}>
               New centre? <Link to="/register" style={{ color: '#2563eb', textDecoration: 'none', borderBottom: '1px solid #2563eb' }}>Register here</Link>
            </p>

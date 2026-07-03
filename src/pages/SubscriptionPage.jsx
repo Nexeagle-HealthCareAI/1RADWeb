@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
+import { notifyToast } from '../utils/toast';
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 const Icons = {
@@ -326,6 +327,8 @@ const SubscriptionPage = () => {
     fetchTransactions();
   }, []);
 
+
+
   const daysLeft = subscription?.daysRemaining ?? 0;
   const isActive = subscription?.isActive ?? false;
   const isTrial = subscription?.isTrial ?? false;
@@ -553,7 +556,11 @@ const SubscriptionPage = () => {
           <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0, marginBottom: '4px' }}>Subscription</h1>
           <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>Manage your plan and billing</div>
           <div className="sub-tabs">
-            {[{ key: 'status', label: 'Current Plan' }, { key: 'upgrade', label: 'Upgrade Plan' }].map(t => (
+            {[
+              { key: 'status', label: 'Current Plan' }, 
+              { key: 'upgrade', label: 'Upgrade Plan' },
+              ...(currentUser?.roles?.includes('admindoctor') || currentUser?.roles?.includes('admin') ? [{ key: 'admin', label: 'Admin Approvals' }] : [])
+            ].map(t => (
               <button key={t.key} className="sub-tab-btn" onClick={() => setActiveTab(t.key)}
                 style={{ background: activeTab === t.key ? '#0a1628' : 'white', color: activeTab === t.key ? 'white' : '#6b7280' }}>
                 {t.label}
@@ -986,6 +993,11 @@ const SubscriptionPage = () => {
           </div>
         </div>
       )}
+
+
+
+
+
     </div>
   );
 };

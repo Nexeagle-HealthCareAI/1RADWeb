@@ -239,11 +239,12 @@ export default function TopNav({ currentTime }) {
       <header className="top-nav top-nav-header" style={{ 
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
         height: '64px', padding: '0 40px', 
-        background: 'rgba(255, 255, 255, 0.8)', 
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid #eef2f6', 
+        background: 'rgba(255, 255, 255, 0.75)', 
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.3)', 
         position: 'sticky', top: 0, zIndex: 1000,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.02)'
+        boxShadow: 'var(--shadow-sm)'
       }}>
         
         <div style={{ display: 'flex', alignItems: 'center' }}>

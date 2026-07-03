@@ -7,11 +7,11 @@ import '../styles/global.css';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
-  bg: '#0a1628',
+  bg: 'rgba(10, 22, 40, 0.85)',
   surface: 'rgba(255,255,255,0.05)',
   hover: 'rgba(255,255,255,0.11)',
-  active: 'rgba(96,165,250,0.22)',
-  activeBorder: '#60a5fa',
+  active: 'rgba(56, 189, 248, 0.22)',
+  activeBorder: '#38bdf8',
   border: 'rgba(255,255,255,0.12)',
   borderStrong: '#1e3a5f',
   accent: '#60a5fa',
@@ -384,6 +384,8 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
         width: sidebarW, minWidth: sidebarW,
         height: '100%',
         background: T.bg,
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         borderRight: `1px solid ${T.borderStrong}`,
         display: 'flex', flexDirection: 'column',
         overflow: 'visible', flexShrink: 0,

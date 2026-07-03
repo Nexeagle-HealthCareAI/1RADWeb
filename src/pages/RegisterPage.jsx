@@ -7,52 +7,25 @@ import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
 
 // ── Shared field styles ───────────────────────────────────────────────────────
-const inputBase = {
-  width: '100%',
-  padding: '11px 14px',
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(255,255,255,0.10)',
-  borderRadius: '10px',
-  color: 'white',
-  fontSize: '13px',
-  outline: 'none',
-  fontFamily: '"Segoe UI", system-ui, sans-serif',
-  boxSizing: 'border-box',
-  transition: 'border-color 0.2s',
-};
-
-const labelBase = {
-  display: 'block',
-  fontSize: '11px',
-  fontWeight: 600,
-  color: 'rgba(255,255,255,0.50)',
-  marginBottom: '6px',
-  letterSpacing: '0.3px',
-  fontFamily: '"Segoe UI", system-ui, sans-serif',
-};
+// We now use global CSS classes (.premium-input, .premium-label, .premium-btn)
+// to ensure consistency across the auth forms.
 
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: '14px' }}>
-      {label && <label style={labelBase}>{label}</label>}
+      {label && <label className="premium-label">{label}</label>}
       {children}
     </div>
   );
 }
 
 function Input({ label, ...props }) {
-  const [focused, setFocused] = useState(false);
   return (
     <Field label={label}>
       <input
         {...props}
-        style={{
-          ...inputBase,
-          borderColor: focused ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.10)',
-          ...(props.style || {}),
-        }}
-        onFocus={e => { setFocused(true); props.onFocus?.(e); }}
-        onBlur={e => { setFocused(false); props.onBlur?.(e); }}
+        className="premium-input"
+        style={props.style || {}}
       />
     </Field>
   );
@@ -126,15 +99,7 @@ function PrimaryBtn({ children, disabled, ...props }) {
     <button
       {...props}
       disabled={disabled}
-      style={{
-        width: '100%', padding: '13px',
-        background: disabled ? 'rgba(59,130,246,0.5)' : '#3b82f6',
-        border: 'none', borderRadius: '10px',
-        color: 'white', fontSize: '13px', fontWeight: 700,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontFamily: '"Segoe UI", system-ui, sans-serif',
-        transition: 'background 0.15s',
-      }}
+      className="premium-btn"
     >{children}</button>
   );
 }
@@ -322,7 +287,7 @@ export default function RegisterPage() {
   const overallPct = Math.round(((stepIndex) / stepSeq.length) * 100);
 
   return (
-    <div className="auth-immersive-container" style={{ display: 'block', overflowY: 'auto', padding: '0', background: 'radial-gradient(ellipse at 20% 10%, #0b1530 0%, #060a12 45%), radial-gradient(ellipse at 85% 90%, #131a3a 0%, transparent 50%)' }}>
+    <div className="auth-immersive-container" style={{ display: 'block', overflowY: 'auto', padding: '0', background: '#f1f5f9' }}>
       <RadiologyWorkflowBG />
 
       {/* Premium animated background — soft brand-coloured glow orbs drifting
@@ -346,10 +311,10 @@ export default function RegisterPage() {
       }}>
         <div style={{
           width: '100%', maxWidth: '900px',
-          background: 'rgba(10,15,28,0.74)',
-          backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid rgba(255,255,255,0.08)', borderRadius: '26px',
-          boxShadow: '0 40px 100px -20px rgba(0,0,0,0.6)',
+          background: 'rgba(15,23,42,0.85)',
+          backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.15)', borderRadius: '26px',
+          boxShadow: '0 40px 100px -20px rgba(0,0,0,0.8)',
           padding: 'clamp(24px, 4vw, 48px)', boxSizing: 'border-box',
         }}>
           {/* Brand header + live step counter */}
@@ -395,7 +360,7 @@ export default function RegisterPage() {
              step === 3 ? 'Clinical information' :
              step === 4 ? 'Centre details' : 'Choose your plan'}
           </h2>
-          <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', margin: 0, fontFamily: '"Segoe UI", sans-serif' }}>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.85)', margin: 0, fontFamily: '"Segoe UI", sans-serif' }}>
             Step {stepIndex + 1} of {stepSeq.length} — {STEP_LABELS[step - 1]}
           </p>
         </div>
@@ -441,7 +406,7 @@ export default function RegisterPage() {
               {isOtpSent && (
                 <div style={{ marginBottom: '14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <label style={labelBase}>Verification code</label>
+                    <label className="premium-label">Verification code</label>
                     {countdown > 0 ? (
                       <span style={{ fontSize: '11px', color: '#60a5fa', fontWeight: 600 }}>
                         Resend in {countdown}s
@@ -454,10 +419,11 @@ export default function RegisterPage() {
                   </div>
                   <input
                     type="text" required maxLength="6" autoFocus
+                    className="premium-input"
                     value={formData.otp}
                     onChange={e => set('otp', e.target.value)}
                     placeholder="6-digit code"
-                    style={{ ...inputBase, textAlign: 'center', letterSpacing: '10px', fontSize: '20px', fontWeight: 700 }}
+                    style={{ textAlign: 'center', letterSpacing: '10px', fontSize: '20px', fontWeight: 700 }}
                   />
                 </div>
               )}
@@ -478,14 +444,15 @@ export default function RegisterPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ marginBottom: '14px' }}>
-                  <label style={labelBase}>Password</label>
+                  <label className="premium-label">Password</label>
                   <div style={{ position: 'relative' }}>
                     <input
                       type={showPassword ? 'text' : 'password'} required
+                      className="premium-input"
                       value={formData.password}
                       onChange={e => set('password', e.target.value)}
                       placeholder="Min. 6 characters"
-                      style={{ ...inputBase, paddingRight: '40px' }}
+                      style={{ paddingRight: '40px' }}
                     />
                     <button type="button" onClick={() => setShowPassword(v => !v)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: '14px' }}>
                       {showPassword ? '👁️' : '🔒'}
@@ -502,8 +469,8 @@ export default function RegisterPage() {
           {/* ── Step 3: Clinical ── */}
           {step === 3 && (
             <div>
-              <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 700, color: '#60a5fa', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.6px', fontFamily: '"Segoe UI", sans-serif' }}>Clinical credentials</p>
+              <div style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '13px', fontWeight: 700, color: '#93c5fd', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.6px', fontFamily: '"Segoe UI", sans-serif' }}>Clinical credentials</p>
                 <Input label="Primary specialization" type="text" required value={formData.specialization} onChange={e => set('specialization', e.target.value)} placeholder="e.g. Neuroradiologist" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <Input label="Medical reg. no." type="text" required value={formData.licenseNo} onChange={e => set('licenseNo', e.target.value)} placeholder="Reg-894-0" />
@@ -512,7 +479,7 @@ export default function RegisterPage() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={() => setStep(2)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>
+                <button type="button" onClick={() => setStep(2)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.9)', cursor: 'pointer', fontSize: '14px', fontWeight: 600, fontFamily: '"Segoe UI", sans-serif' }}>
                   Back
                 </button>
                 <div style={{ flex: 2 }}><PrimaryBtn type="submit">Continue</PrimaryBtn></div>
@@ -528,14 +495,15 @@ export default function RegisterPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ marginBottom: '14px' }}>
-                  <label style={labelBase}>GSTIN <span style={{ opacity: 0.5, fontWeight: 400 }}>(optional)</span></label>
+                  <label className="premium-label">GSTIN <span style={{ opacity: 0.5, fontWeight: 400 }}>(optional)</span></label>
                   <div style={{ position: 'relative' }}>
                     <input
                       type="text" value={formData.gstinNumber} maxLength={15}
+                      className="premium-input"
                       onChange={e => set('gstinNumber', e.target.value.toUpperCase())}
                       placeholder="22AAAAA0000A1Z5"
                       style={{
-                        ...inputBase, textTransform: 'uppercase',
+                        textTransform: 'uppercase',
                         borderColor: formData.gstinNumber
                           ? (validateGSTIN(formData.gstinNumber) ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)')
                           : 'rgba(255,255,255,0.10)',
@@ -553,14 +521,15 @@ export default function RegisterPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ marginBottom: '14px' }}>
-                  <label style={labelBase}>PAN <span style={{ opacity: 0.5, fontWeight: 400 }}>(optional)</span></label>
+                  <label className="premium-label">PAN <span style={{ opacity: 0.5, fontWeight: 400 }}>(optional)</span></label>
                   <div style={{ position: 'relative' }}>
                     <input
                       type="text" value={formData.panNumber} maxLength={10}
+                      className="premium-input"
                       onChange={e => set('panNumber', e.target.value.toUpperCase())}
                       placeholder="ABCDE1234F"
                       style={{
-                        ...inputBase, textTransform: 'uppercase',
+                        textTransform: 'uppercase',
                         borderColor: formData.panNumber
                           ? (validatePAN(formData.panNumber) ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)')
                           : 'rgba(255,255,255,0.10)',
@@ -579,12 +548,11 @@ export default function RegisterPage() {
               <Field label="Centre address">
                 <textarea
                   required rows={3}
+                  className="premium-input"
                   value={formData.centerAddress}
                   onChange={e => set('centerAddress', e.target.value)}
                   placeholder="Full physical address of the facility"
-                  style={{ ...inputBase, resize: 'none', lineHeight: '1.6' }}
-                  onFocus={e => { e.target.style.borderColor = 'rgba(96,165,250,0.5)'; }}
-                  onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.10)'; }}
+                  style={{ resize: 'none', lineHeight: '1.6' }}
                 />
               </Field>
 
