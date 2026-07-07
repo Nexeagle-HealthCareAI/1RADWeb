@@ -73,7 +73,7 @@ const AnalyticsHub = ({
     });
 
     // Check if backend monthly trends exist
-    if (matrix && matrix.monthly && matrix.monthly.length > 0) {
+    if (matrix && Array.isArray(matrix.monthly)) {
       const chartTrend = matrix.monthly.map(item => ({
         label: item.label,
         billed: item.invoiced,
@@ -252,7 +252,7 @@ const AnalyticsHub = ({
   // TAB 3: SERVICE PERFORMANCE CALCULATIONS
   // ==========================================
   const servicePerformanceData = useMemo(() => {
-    if (matrix && matrix.modalityProfitability && matrix.modalityProfitability.length > 0) {
+    if (matrix && Array.isArray(matrix.modalityProfitability)) {
       return matrix.modalityProfitability.map(m => ({
         modality: m.modality,
         gross: m.grossRevenue,
@@ -337,7 +337,7 @@ const AnalyticsHub = ({
   // TAB 4: PATIENT & REFERRAL TRENDS CALCULATIONS
   // ==========================================
   const patientReferralTrends = useMemo(() => {
-    if (matrix && matrix.patientAcquisitionBreakdown && matrix.patientAcquisitionBreakdown.length > 0) {
+    if (matrix && Array.isArray(matrix.patientAcquisitionBreakdown)) {
       const patientBreakdown = matrix.patientAcquisitionBreakdown.map(cohort => ({
         month: cohort.monthLabel,
         newPatients: cohort.newPatientsCount,
