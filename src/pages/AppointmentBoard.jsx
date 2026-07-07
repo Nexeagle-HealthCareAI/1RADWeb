@@ -38,6 +38,12 @@ const MODALITIES = ['ULTRASOUND', 'X-RAY', 'CT', 'MRI', 'DEXA', 'ANGIOGRAPHY', '
 // but we'll keep a base constant for initial state.
 const getTodayString = () => new Date().toLocaleDateString('en-CA');
 const TODAY = getTodayString();
+const getYesterdayString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString('en-CA');
+};
+const YESTERDAY = getYesterdayString();
 
 // --- CONSTANTS ---
 
@@ -140,10 +146,10 @@ export default function AppointmentBoard() {
 
   const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
   const [pastDateRange, setPastDateRange] = useState({ 
-    start: TODAY, 
-    end: TODAY 
+    start: YESTERDAY, 
+    end: YESTERDAY 
   });
-  const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
+  const [archiveFilterMode, setArchiveFilterMode] = useState('YESTERDAY'); // 'ALL', 'YESTERDAY', or 'RANGE'
   const [appointments, setAppointments] = useState([]);
   // ALL cached appointments (not the active-tab slice) — drives the historical
   // "most used services per modality" quick-picks in the booking modal.
@@ -404,11 +410,12 @@ export default function AppointmentBoard() {
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const listTopRef = useRef(null);
+  const [pinnedDate, setPinnedDate] = useState(() => localStorage.getItem('pinnedBookingDate') || null);
   const [newBooking, setNewBooking] = useState({
     patientId: '',
     service: '',
     modality: 'ULTRASOUND',
-    date: getTodayString(),
+    date: pinnedDate || getTodayString(),
     doctor: '',
     notes: '',
     amount: '',
@@ -533,7 +540,7 @@ export default function AppointmentBoard() {
 
   const [newPatient, setNewPatient] = useState({
     name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female',
-    village: '', district: '', address: '', sourceOfInfo: '', referrerId: null,
+    village: '', block: '', district: '', address: '', sourceOfInfo: '', referrerId: null,
     // Inline referral-source capture for a brand-new (free-typed) referrer.
     referrerContact: '', referrerAddress: ''
   });
@@ -588,7 +595,10 @@ export default function AppointmentBoard() {
       params.startDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
     } else {
       params.isArchive = true;
-      if (archiveFilterMode === 'RANGE') {
+      if (archiveFilterMode === 'YESTERDAY') {
+        params.startDate = YESTERDAY;
+        params.endDate = YESTERDAY;
+      } else if (archiveFilterMode === 'RANGE') {
         params.startDate = pastDateRange.start;
         params.endDate = pastDateRange.end;
       }
@@ -811,9 +821,12 @@ export default function AppointmentBoard() {
     } else if (activeTab === 'FUTURE') {
       watchArgs = { mode: 'future', status: filters.status };
     } else { // PAST (the legacy archive tab)
-      const range = (archiveFilterMode === 'RANGE')
-        ? { startIso: pastDateRange.start, endIso: pastDateRange.end }
-        : {};
+      let range = {};
+      if (archiveFilterMode === 'YESTERDAY') {
+        range = { startIso: YESTERDAY, endIso: YESTERDAY };
+      } else if (archiveFilterMode === 'RANGE') {
+        range = { startIso: pastDateRange.start, endIso: pastDateRange.end };
+      }
       watchArgs = { mode: 'past', ...range, status: filters.status };
     }
 
@@ -971,7 +984,9 @@ export default function AppointmentBoard() {
         return !appDate || appDate > currentToday;
       } else {
         if (appDate >= currentToday && activeTab === 'PAST') return false;
-        if (archiveFilterMode === 'RANGE') {
+        if (archiveFilterMode === 'YESTERDAY') {
+          return appDate === YESTERDAY;
+        } else if (archiveFilterMode === 'RANGE') {
           return appDate && appDate >= pastDateRange.start && appDate <= pastDateRange.end;
         }
         return true;
@@ -1231,6 +1246,7 @@ export default function AppointmentBoard() {
       age: buildPatientAge(newPatient.age, newPatient.ageUnit),
       gender: newPatient.gender,
       village: newPatient.village,
+      block: newPatient.block,
       district: newPatient.district,
       address: newPatient.address,
       sourceOfInfo: newPatient.sourceOfInfo
@@ -1253,7 +1269,7 @@ export default function AppointmentBoard() {
       const response = await apiClient.post('/patients', payload, { headers: { 'Idempotency-Key': idemKey } });
       const patientId = response.data.patientId;
       setIsAddPatientOpen(false);
-      setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
+      setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', block: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
       setNewBooking(prev => ({ ...prev, patientId }));
       fetchPatients('');
     } catch (error) {
@@ -1498,7 +1514,7 @@ export default function AppointmentBoard() {
       service: '',
       modality: 'ULTRASOUND',
       addedServices: [],
-      date: getTodayString(),
+      date: pinnedDate || getTodayString(),
       doctor: doctors && doctors.length > 0 ? doctors[0] : '',
       notes: '',
       amount: '',
@@ -1512,7 +1528,7 @@ export default function AppointmentBoard() {
     // conscious choice each time, never a sticky carry-over from a previous
     // booking (e.g. a baby's appointment leaving M selected for the next
     // adult patient by accident).
-    setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
+    setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', block: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
     setShowBookingValidation(false);
@@ -2474,9 +2490,9 @@ export default function AppointmentBoard() {
                   <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
                     {app.patientGender || 'U'} · {formatPatientAge(app.patientAge)}
                   </span>
-                  {[app.village, app.district].filter(Boolean).length > 0 && (
-                    <span title={[app.address, app.village, app.district].filter(Boolean).join(', ')} style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#f8fafc', padding: '1px 5px', borderRadius: '4px' }}>
-                      📍 {[app.village, app.district].filter(Boolean).join(', ')}
+                  {[app.village, app.block, app.district].filter(Boolean).length > 0 && (
+                    <span title={[app.address, app.village, app.block, app.district].filter(Boolean).join(', ')} style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#f8fafc', padding: '1px 5px', borderRadius: '4px' }}>
+                      📍 {[app.village, app.block, app.district].filter(Boolean).join(', ')}
                     </span>
                   )}
                   {paidApptIds.has(app.appointmentId || app.id) && (
@@ -3194,6 +3210,7 @@ export default function AppointmentBoard() {
                                           ageUnit: ageUnitVal,
                                           gender: p.gender || 'Female',
                                           village: p.village || '',
+                                          block: p.block || '',
                                           district: p.district || '',
                                           address: p.address || '',
                                           referredBy: p.referredBy || '',
@@ -3337,10 +3354,14 @@ export default function AppointmentBoard() {
                             ))}
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>VILLAGE</label>
                             <input type="text" placeholder="Village" style={{ fontSize: '13px', padding: '8px 10px', borderRadius: '10px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: '4px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>BLOCK</label>
+                            <input type="text" placeholder="Block" style={{ fontSize: '13px', padding: '8px 10px', borderRadius: '10px' }} value={newPatient.block || ''} onChange={e => setNewPatient({...newPatient, block: e.target.value})} />
                           </div>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>DISTRICT</label>
@@ -3811,6 +3832,7 @@ export default function AppointmentBoard() {
                                 age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
                                 gender: newPatient.gender,
                                 village: newPatient.village,
+                                block: newPatient.block,
                                 district: newPatient.district,
                                 address: newPatient.address,
                                 sourceOfInfo: newPatient.sourceOfInfo,
@@ -3869,6 +3891,7 @@ export default function AppointmentBoard() {
                                 age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
                                 gender: newPatient.gender,
                                 village: newPatient.village,
+                                block: newPatient.block,
                                 district: newPatient.district,
                                 address: newPatient.address,
                                 sourceOfInfo: newPatient.sourceOfInfo,
@@ -4439,7 +4462,38 @@ export default function AppointmentBoard() {
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={{ background: 'white', padding: '12px 14px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                       <div style={{ marginBottom: '6px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', margin: 0 }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (pinnedDate === newBooking.date) {
+                                setPinnedDate(null);
+                                localStorage.removeItem('pinnedBookingDate');
+                              } else {
+                                setPinnedDate(newBooking.date);
+                                localStorage.setItem('pinnedBookingDate', newBooking.date);
+                              }
+                            }}
+                            style={{
+                              background: pinnedDate === newBooking.date ? '#fef3c7' : 'transparent',
+                              border: `1px solid ${pinnedDate === newBooking.date ? '#f59e0b' : '#e2e8f0'}`,
+                              color: pinnedDate === newBooking.date ? '#d97706' : '#94a3b8',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '8px',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                            title="Pin this date to use it as the default for back-to-back bookings"
+                          >
+                            {pinnedDate === newBooking.date ? '📌 PINNED' : '📍 PIN DATE'}
+                          </button>
+                        </div>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
                           {[-2, -1, 0, 1, 2, 3].map(offset => {
                             const d = new Date();
@@ -4933,10 +4987,14 @@ export default function AppointmentBoard() {
                     ))}
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                   <div className="form-group">
                     <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>VILLAGE</label>
                     <input type="text" placeholder="Village" style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} value={editingAppointment.village || ''} onChange={e => setEditingAppointment({...editingAppointment, village: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>BLOCK</label>
+                    <input type="text" placeholder="Block" style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} value={editingAppointment.block || ''} onChange={e => setEditingAppointment({...editingAppointment, block: e.target.value})} />
                   </div>
                   <div className="form-group">
                     <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>DISTRICT</label>
@@ -5881,7 +5939,7 @@ export default function AppointmentBoard() {
                 <Field label="Mobile" value={app.mobile} />
                 <Field label="Patient ID" value={app.patientIdentifier || app.ptid || ''} />
                 <Field label="Priority" value={String(app.priority || 'ROUTINE')} />
-                <Field label="Address" value={[app.address, app.village, app.district].filter(Boolean).join(', ')} />
+                <Field label="Address" value={[app.address, app.village, app.block, app.district].filter(Boolean).join(', ')} />
               </div>
             </div>
 
@@ -6335,6 +6393,44 @@ export default function AppointmentBoard() {
         </div>
 
         <div className="filter-select-group">
+          {activeTab === 'PAST' && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select 
+                className="filter-select"
+                value={archiveFilterMode}
+                onChange={e => {
+                  setArchiveFilterMode(e.target.value);
+                }}
+              >
+                <option value="ALL">All Past Data</option>
+                <option value="YESTERDAY">Yesterday</option>
+                <option value="RANGE">Custom Date Range</option>
+              </select>
+              
+              {archiveFilterMode === 'RANGE' && (
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <input 
+                    type="date" 
+                    value={pastDateRange.start}
+                    max={TODAY}
+                    onChange={e => setPastDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    className="filter-select"
+                    style={{ width: 'auto', padding: '0 8px' }}
+                  />
+                  <span style={{color: '#64748b', fontSize: '11px', fontWeight: 700}}>to</span>
+                  <input 
+                    type="date" 
+                    value={pastDateRange.end}
+                    max={TODAY}
+                    onChange={e => setPastDateRange(prev => ({ ...prev, end: e.target.value }))}
+                    className="filter-select"
+                    style={{ width: 'auto', padding: '0 8px' }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           <select
             className="filter-select"
             value={filters.modality}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
 import { isPatientArrived } from '../utils/arrival';
@@ -762,7 +762,14 @@ export default function OperationsBoard() {
       XLSX.utils.book_append_sheet(wb, cws, 'Comments');
     }
 
-    XLSX.writeFile(wb, `operations-${selectedDate}.xlsx`);
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `operations-${selectedDate}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
     setExporting(false);
   };
 

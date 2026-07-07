@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
@@ -1045,11 +1045,15 @@ export default function BillingPage() {
   };
 
   const handleToggleCommissionStatus = async (id, currentStatus) => {
+    // '__SKIP__' is used by the disbursement form which has already sent its own PATCH;
+    // we just need to refresh the data here without sending a duplicate request.
+    if (currentStatus === '__SKIP__') {
+      refreshAllFinancialData();
+      return;
+    }
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
     try {
-      await apiClient.patch(`/referrers/commissions/${id}/status`, `"${newStatus}"`, {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      await apiClient.patch(`/referrers/commissions/${id}/status`, { status: newStatus });
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
@@ -1409,12 +1413,20 @@ export default function BillingPage() {
       const fname = useRange && (start || end)
         ? `1Rad_Financials_${start || 'start'}_to_${end || 'end'}.xlsx`
         : `1Rad_Financials_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fname);
+        
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.click();
+      window.URL.revokeObjectURL(url);
 
       setIsExportDrawerOpen(false);
     } catch (err) {
       console.error('[FINANCE] Export failed', err);
-      notify({ type: 'error', title: 'Export Failed', message: 'Could not export data. Please try again.' });
+      notifyToast('Could not export data. Please try again.', 'error');
     }
   };
 
@@ -2803,7 +2815,7 @@ export default function BillingPage() {
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
-          invoices={invoices}
+          invoices={filteredInvoices}
           expenses={expenses}
           referrers={referrers}
           referralCommissions={referralCommissions}

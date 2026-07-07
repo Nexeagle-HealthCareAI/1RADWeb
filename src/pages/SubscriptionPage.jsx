@@ -47,7 +47,7 @@ const GOLD  = '#d4a017';
 const GOLD2 = '#f5d76e';
 
 // ─── Payment Request Side Drawer ──────────────────────────────────────────────
-const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, onClose, onSuccess, currentUser }) => {
+const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, onClose, onSuccess, currentUser, plans = [] }) => {
   const [step, setStep] = useState('form'); // 'form' | 'submitting' | 'done' | 'error'
   const [form, setForm] = useState({
     payerName: currentUser?.name || '',
@@ -69,7 +69,10 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, on
   // We now fetch the plans from CMS (via 1RadAPI) which are simplified
   // The server-computed amount due takes precedence if available
   const activeSelectedPlan = planId ? plans.find(p => p.planId === planId) : null;
-  const planPrice = activeSelectedPlan ? (activeSelectedPlan.discountPrice > 0 ? activeSelectedPlan.discountPrice : activeSelectedPlan.price) : (priceMap[billingCycle] || priceMap.monthly);
+  const cycleDays = billingCycle === 'yearly' ? 365 : 30;
+  const fallbackPlan = plans.find(p => p.durationInDays === cycleDays);
+  const resolvedPlan = activeSelectedPlan || fallbackPlan;
+  const planPrice = resolvedPlan ? (resolvedPlan.discountPrice > 0 ? resolvedPlan.discountPrice : resolvedPlan.price) : 0;
   const amount = estimate?.total ?? planPrice;
 
   const validate = () => {

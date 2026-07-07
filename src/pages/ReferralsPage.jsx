@@ -15,7 +15,7 @@ import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
 import { celebrate } from '../utils/celebrate';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 
 // --- HELPERS ---
@@ -447,7 +447,14 @@ export default function ReferralsPage() {
     ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Partners');
-    XLSX.writeFile(wb, 'partner_upload_template.xlsx');
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'partner_upload_template.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
     notifyToast('Template download started — check your downloads, fill it in, then choose the file.', 'success');
   };
 
@@ -531,6 +538,16 @@ export default function ReferralsPage() {
   const [editingPatient, setEditingPatient] = useState(null);
   const [isSavingPatient, setIsSavingPatient] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
+
+  // Partner merge state
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [targetReferrerId, setTargetReferrerId] = useState('');
+  const [isMerging, setIsMerging] = useState(false);
+  const [deleteAfterMerge, setDeleteAfterMerge] = useState(false);
+  const [unmergeModalData, setUnmergeModalData] = useState(null);
+  const [isUnmerging, setIsUnmerging] = useState(false);
+  const [deleteModalData, setDeleteModalData] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedLedgerRows, setSelectedLedgerRows] = useState([]);
   const toggleLedgerSelection = (id) => {
     setSelectedLedgerRows(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1057,25 +1074,86 @@ export default function ReferralsPage() {
     }
   };
 
-  const handleDeleteReferrer = async (referrer) => {
+  const handleDeleteReferrer = (referrer) => {
     if (!referrer?.referrerId) return;
     const name = (referrer.name || 'this partner').toUpperCase();
-    if (!window.confirm(`Remove ${name} from the partner network?\n\nHistoric referrals and commissions are kept for reporting; the partner just stops appearing in the roster.`)) {
-      return;
-    }
+    setDeleteModalData({ referrerId: referrer.referrerId, name });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModalData) return;
+    setIsDeleting(true);
     try {
-      await apiClient.delete(`/referrers/${referrer.referrerId}`);
-      notifyToast(`${name} removed from partner network.`, 'success');
+      await apiClient.delete(`/referrers/${deleteModalData.referrerId}`);
+      notifyToast(`${deleteModalData.name} deleted from partner network.`, 'success');
       // Close the edit drawer if we were editing the same partner
-      if (editingReferrer?.referrerId === referrer.referrerId) {
+      if (editingReferrer?.referrerId === deleteModalData.referrerId) {
         setIsReferrerEditDrawerOpen(false);
         setEditingReferrer(null);
       }
       fetchReferralIntelligence();
+      setDeleteModalData(null);
     } catch (err) {
       console.error('[REFERRER] Delete failed', err);
       const backendError = err.response?.data?.error || err.response?.data?.message;
-      notifyToast(backendError || 'Could not remove partner.', 'error');
+      notifyToast(backendError || 'Could not delete partner.', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleMergeReferrer = async (e) => {
+    e.preventDefault();
+    if (!editingReferrer || !targetReferrerId) return;
+    
+    if (editingReferrer.referrerId === targetReferrerId) {
+      notifyToast('Cannot merge a partner into themselves.', 'error');
+      return;
+    }
+
+    try {
+      setIsMerging(true);
+      await apiClient.post('/referrers/merge', {
+        sourceReferrerId: targetReferrerId,
+        targetReferrerId: editingReferrer.referrerId
+      });
+      if (deleteAfterMerge) {
+        await apiClient.delete(`/referrers/${targetReferrerId}`);
+      }
+      notifyToast(deleteAfterMerge ? 'Partner merged and removed successfully.' : 'Partner successfully merged.', 'success');
+      setIsMergeModalOpen(false);
+      setIsReferrerEditDrawerOpen(false);
+      setEditingReferrer(null);
+      setTargetReferrerId('');
+      setDeleteAfterMerge(false);
+      fetchReferralIntelligence();
+    } catch (err) {
+      console.error('[REFERRER] Merge failed', err);
+      const backendError = err.response?.data?.error || err.response?.data?.message;
+      notifyToast(backendError || 'Could not merge partner.', 'error');
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  const handleUnmergeReferrer = (sourceId, sourceName = 'this partner') => {
+    setUnmergeModalData({ sourceId, sourceName });
+  };
+
+  const confirmUnmerge = async () => {
+    if (!unmergeModalData) return;
+    setIsUnmerging(true);
+    try {
+      await apiClient.post(`/referrers/${unmergeModalData.sourceId}/unmerge`);
+      notifyToast('Partner unmerged successfully.', 'success');
+      fetchReferralIntelligence();
+      setUnmergeModalData(null);
+    } catch (err) {
+      console.error('[REFERRER] Unmerge failed', err);
+      const backendError = err.response?.data?.error || err.response?.data?.message;
+      notifyToast(backendError || 'Could not unmerge partner.', 'error');
+    } finally {
+      setIsUnmerging(false);
     }
   };
 
@@ -1498,6 +1576,7 @@ export default function ReferralsPage() {
         specialty: ref.specialty || '',
         degree: ref.degree || '',
         supportedByDoctor: ref.supportedByDoctor || '',
+        mergedIntoId: ref.mergedIntoId,
         hasSentPatients: !!intel && intel.totalPatients > 0,
         patientCount: intel ? intel.totalPatients : 0,
         totalRevenue: intel ? intel.totalRevenue : 0,
@@ -1515,17 +1594,31 @@ export default function ReferralsPage() {
     });
   }, [allReferrers, referralIntelligence, personTypeFilter]);
 
-  // Partner Network (ROSTER) — apply the chosen column sort over the default.
   const sortedRoster = useMemo(() => {
     const arr = [...(caseLedgerList || [])];
     const { key, dir } = rosterSort;
     const numKeys = new Set(['patientCount', 'totalCommission', 'paidCommission', 'unpaidCommission']);
     arr.sort((a, b) => {
-      let r;
-      if (numKeys.has(key)) r = (Number(a[key]) || 0) - (Number(b[key]) || 0);
-      else if (key === 'isDoctor') r = (a.isDoctor ? 1 : 0) - (b.isDoctor ? 1 : 0);
-      else r = String(a[key] || '').toLowerCase().localeCompare(String(b[key] || '').toLowerCase());
-      return dir === 'asc' ? r : -r;
+      // 1. If one is an alias of the other, alias goes right below primary
+      if (a.mergedIntoId === b.referrerId) return 1;
+      if (b.mergedIntoId === a.referrerId) return -1;
+      // 2. If both are aliases of the SAME primary, sort alphabetically
+      if (a.mergedIntoId && a.mergedIntoId === b.mergedIntoId) return a.name.localeCompare(b.name);
+      
+      // 3. Otherwise, use primary stats for sorting so alias blocks move with their primary
+      const aPrimaryId = a.mergedIntoId || a.referrerId;
+      const bPrimaryId = b.mergedIntoId || b.referrerId;
+      
+      if (aPrimaryId !== bPrimaryId) {
+        const aPrimary = arr.find(x => x.referrerId === aPrimaryId) || a;
+        const bPrimary = arr.find(x => x.referrerId === bPrimaryId) || b;
+        let r;
+        if (numKeys.has(key)) r = (Number(aPrimary[key]) || 0) - (Number(bPrimary[key]) || 0);
+        else if (key === 'isDoctor') r = (aPrimary.isDoctor ? 1 : 0) - (bPrimary.isDoctor ? 1 : 0);
+        else r = String(aPrimary[key] || '').toLowerCase().localeCompare(String(bPrimary[key] || '').toLowerCase());
+        return dir === 'asc' ? r : -r;
+      }
+      return 0;
     });
     return arr;
   }, [caseLedgerList, rosterSort]);
@@ -4410,17 +4503,24 @@ export default function ReferralsPage() {
                         <td colSpan="11" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
                       </tr>
                     ) : (
-                      sortedRoster
-                        .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
-                        .map((s, i) => (
-                        <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9' }}
-                            onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
-                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                          <td style={{ padding: '16px 24px' }}>
-                            <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>{i + 1}</div>
-                          </td>
-                          <td style={{ padding: '16px 24px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{s.name || 'Unnamed'}</div>
+                        sortedRoster
+                          .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
+                          .map((s, i) => (
+                          <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9', opacity: s.mergedIntoId ? 0.6 : 1 }}
+                              onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
+                              onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                            <td style={{ padding: '16px 24px', paddingLeft: s.mergedIntoId ? '40px' : '24px' }}>
+                              {s.mergedIntoId ? (
+                                <div style={{ textAlign: 'center', color: '#cbd5e1', fontWeight: 900, fontSize: '16px' }}>↳</div>
+                              ) : (
+                                <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>{i + 1}</div>
+                              )}
+                            </td>
+                            <td style={{ padding: '16px 24px' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {s.name || 'Unnamed'}
+                                {s.mergedIntoId && <span style={{ fontSize: '9px', fontWeight: 800, background: '#fef2f2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>Merged Alias</span>}
+                              </div>
                             {(s.specialty || s.degree || s.supportedByDoctor || getReferrerProfileCompletion(s).pct < 100) && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
                                 {s.isDoctor && (s.specialty || s.degree) && (
@@ -4472,12 +4572,33 @@ export default function ReferralsPage() {
                               >
                                 Edit
                               </button>
+                              {s.mergedIntoId ? (
+                                <button
+                                  onClick={() => handleUnmergeReferrer(s.referrerId, s.name)}
+                                  title="Revert Merge"
+                                  style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #fcd34d', background: '#fffbeb', color: '#d97706', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                                >
+                                  Unmerge
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                     setEditingReferrer(s);
+                                     setIsMergeModalOpen(true);
+                                     setDeleteAfterMerge(false);
+                                  }}
+                                  title="Merge another partner into this one"
+                                  style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                                >
+                                  Merge
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDeleteReferrer(s)}
-                                title="Remove partner"
+                                title="Delete partner"
                                 style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                               >
-                                Remove
+                                Delete
                               </button>
                             </div>
                            </td>
@@ -4491,14 +4612,21 @@ export default function ReferralsPage() {
                     {caseLedgerList.length === 0 ? (
                        <div style={{ padding: '50px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Tap “Add Partner” to add your first referring doctor or person.</div>
                     ) : (
-                       sortedRoster
-                         .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
-                         .map((s, i) => (
-                           <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                                   <div style={{ width: '26px', height: '26px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900, flexShrink: 0 }}>{i + 1}</div>
-                                   <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name || 'Unnamed'}</div>
+                        sortedRoster
+                          .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
+                          .map((s, i) => (
+                            <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', opacity: s.mergedIntoId ? 0.7 : 1, marginLeft: s.mergedIntoId ? '20px' : '0' }}>
+                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                                    {!s.mergedIntoId ? (
+                                      <div style={{ width: '26px', height: '26px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900, flexShrink: 0 }}>{i + 1}</div>
+                                    ) : (
+                                      <div style={{ color: '#cbd5e1', fontWeight: 900, fontSize: '16px', marginLeft: '6px' }}>↳</div>
+                                    )}
+                                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      {s.name || 'Unnamed'}
+                                      {s.mergedIntoId && <span style={{ fontSize: '9px', fontWeight: 800, background: '#fef2f2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>Merged Alias</span>}
+                                    </div>
                                  </div>
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -4538,18 +4666,33 @@ export default function ReferralsPage() {
                                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>Unpaid</div>
                                  </div>
                               </div>
-                              <div style={{ display: 'flex', gap: '8px' }}>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                  <button
                                    onClick={() => { setEditingReferrer(s); setIsReferrerEditDrawerOpen(true); }}
-                                   style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                   style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
                                  >
                                    Edit
                                  </button>
+                                 {s.mergedIntoId ? (
+                                   <button
+                                     onClick={() => handleUnmergeReferrer(s.referrerId, s.name)}
+                                     style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #fcd34d', background: '#fffbeb', color: '#d97706', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
+                                   >
+                                     Unmerge
+                                   </button>
+                                 ) : (
+                                   <button
+                                     onClick={() => { setEditingReferrer(s); setIsMergeModalOpen(true); setDeleteAfterMerge(false); }}
+                                     style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
+                                   >
+                                     Merge
+                                   </button>
+                                 )}
                                  <button
                                    onClick={() => handleDeleteReferrer(s)}
-                                   style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                   style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
                                  >
-                                   Remove
+                                   Delete
                                  </button>
                               </div>
                            </div>
@@ -5758,30 +5901,187 @@ return (
                   onChange={e => setEditingReferrer(prev => ({ ...prev, address: e.target.value }))}
                   style={{ ...fieldStyle, minHeight: '80px', resize: 'vertical' }} />
               </div>
+
+              {/* Aliases / Merged Partners */}
+              {editingReferrer?.referrerId && (() => {
+                const aliases = (allReferrers || []).filter(p => p.mergedIntoId === editingReferrer.referrerId);
+                if (aliases.length === 0) return null;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                    <label style={labelStyle}>MERGED ALIASES</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {aliases.map(a => (
+                        <div key={a.referrerId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{a.name}</span>
+                          <button 
+                            type="button"
+                            onClick={() => handleUnmergeReferrer(a.referrerId, a.name)}
+                            style={{ padding: '6px 12px', borderRadius: '8px', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 800, border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                          >
+                            Unmerge
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             );
           })()}
 
-          <div style={{ marginTop: '50px', display: 'flex', gap: '15px' }}>
-             <button 
-               type="submit" 
-               disabled={isSavingReferrer}
-               style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
-             >
-               {isSavingReferrer ? 'Saving...' : (editingReferrer?.referrerId ? 'Save Changes' : 'Add Partner')}
-             </button>
-             <button 
-               type="button"
-               onClick={() => setIsReferrerEditDrawerOpen(false)}
-               style={{ padding: '16px 25px', borderRadius: '14px', background: '#f8fafc', color: '#64748b', fontWeight: 950, fontSize: '11px', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-             >
-               CANCEL
-             </button>
-          </div>
-        </form>
+              <div style={{ marginTop: '50px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                 <button 
+                   type="submit" 
+                   disabled={isSavingReferrer}
+                   style={{ flex: 1, minWidth: '150px', padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
+                 >
+                   {isSavingReferrer ? 'Saving...' : (editingReferrer?.referrerId ? 'Save Changes' : 'Add Partner')}
+                 </button>
+                 <button 
+                   type="button"
+                   onClick={() => setIsReferrerEditDrawerOpen(false)}
+                   style={{ padding: '16px 25px', borderRadius: '14px', background: '#f8fafc', color: '#64748b', fontWeight: 950, fontSize: '11px', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                 >
+                   CANCEL
+                 </button>
+                 {editingReferrer?.referrerId && (
+                   <button 
+                     type="button"
+                     onClick={() => setIsMergeModalOpen(true)}
+                     style={{ width: '100%', padding: '16px', borderRadius: '14px', background: '#fff5f5', color: '#dc2626', fontWeight: 950, fontSize: '11px', border: '1px solid #fecaca', cursor: 'pointer', letterSpacing: '1px', marginTop: '10px' }}
+                   >
+                     Merge into another partner...
+                   </button>
+                 )}
+              </div>
+            </form>
+        </div>
       </div>
-    </div>
-  );
+    );
+
+    const renderUnmergeModal = () => {
+      if (!unmergeModalData) return null;
+      return (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', boxShadow: '0 30px 60px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '30px', background: '#fcfdfe', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#d97706', letterSpacing: '2px', marginBottom: '8px' }}>PARTNER UNMERGE</div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', margin: 0 }}>Revert Merge</h2>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Are you sure you want to unmerge <strong>{unmergeModalData.sourceName}</strong>? They will reappear as a separate entity in your partner network.
+              </p>
+            </div>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => setUnmergeModalData(null)}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmUnmerge}
+                disabled={isUnmerging}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: '#d97706', border: 'none', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                {isUnmerging ? 'Unmerging...' : 'Confirm Unmerge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const renderDeleteModal = () => {
+      if (!deleteModalData) return null;
+      return (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', boxShadow: '0 30px 60px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '30px', background: '#fcfdfe', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#dc2626', letterSpacing: '2px', marginBottom: '8px' }}>DELETE PARTNER</div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', margin: 0 }}>Confirm Delete</h2>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Are you sure you want to delete <strong>{deleteModalData.name}</strong> from the partner network?<br/><br/>
+                Historic referrals and commissions are kept for reporting, but the partner will no longer appear in the roster.
+              </p>
+            </div>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => setDeleteModalData(null)}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: '#dc2626', border: 'none', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const renderMergeModal = () => {
+      if (!isMergeModalOpen || !editingReferrer) return null;
+      return (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', boxShadow: '0 30px 60px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '30px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#dc2626', letterSpacing: '2px', marginBottom: '8px' }}>PARTNER MERGE</div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', margin: 0 }}>Select Partner to Merge In</h2>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Which partner should be merged into <strong>{editingReferrer.name}</strong>? Their commissions and patients will roll up into {editingReferrer.name}.
+              </p>
+            </div>
+            <div style={{ padding: '30px' }}>
+              <select 
+                value={targetReferrerId}
+                onChange={e => setTargetReferrerId(e.target.value)}
+                style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              >
+                <option value="">-- Choose Partner to Merge In --</option>
+                {(allReferrers || []).filter(p => p.referrerId !== editingReferrer.referrerId && !p.mergedIntoId).map(p => (
+                  <option key={p.referrerId} value={p.referrerId}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ padding: '0 30px 20px 30px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={deleteAfterMerge} 
+                  onChange={e => setDeleteAfterMerge(e.target.checked)} 
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Also delete the merged partner's record
+                  <span style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>They will be permanently removed from the system. (Cannot be unmerged later)</span>
+                </span>
+              </label>
+            </div>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => setIsMergeModalOpen(false)}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleMergeReferrer}
+                disabled={!targetReferrerId || isMerging}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: targetReferrerId ? '#0f52ba' : '#cbd5e1', border: 'none', color: 'white', fontSize: '12px', fontWeight: 900, cursor: targetReferrerId ? 'pointer' : 'not-allowed' }}
+              >
+                {isMerging ? 'Merging...' : 'Confirm Merge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
 
   const renderPatientEditDrawer = () => (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, display: 'flex', justifyContent: 'flex-end' }}>
@@ -5915,6 +6215,9 @@ return (
       {renderReferralIntel()}
 
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
+      {renderMergeModal()}
+      {renderUnmergeModal()}
+      {renderDeleteModal()}
 
       {/* Bulk-add partners modal (#21) — Excel upload only */}
       {bulkOpen && (
