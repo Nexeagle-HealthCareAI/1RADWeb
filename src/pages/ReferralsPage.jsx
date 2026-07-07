@@ -15,7 +15,7 @@ import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
 import { celebrate } from '../utils/celebrate';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 
 // --- HELPERS ---
@@ -447,7 +447,14 @@ export default function ReferralsPage() {
     ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Partners');
-    XLSX.writeFile(wb, 'partner_upload_template.xlsx');
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'partner_upload_template.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
     notifyToast('Template download started — check your downloads, fill it in, then choose the file.', 'success');
   };
 
@@ -531,6 +538,11 @@ export default function ReferralsPage() {
   const [editingPatient, setEditingPatient] = useState(null);
   const [isSavingPatient, setIsSavingPatient] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
+
+  // Partner merge state
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [targetReferrerId, setTargetReferrerId] = useState('');
+  const [isMerging, setIsMerging] = useState(false);
   const [selectedLedgerRows, setSelectedLedgerRows] = useState([]);
   const toggleLedgerSelection = (id) => {
     setSelectedLedgerRows(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1076,6 +1088,48 @@ export default function ReferralsPage() {
       console.error('[REFERRER] Delete failed', err);
       const backendError = err.response?.data?.error || err.response?.data?.message;
       notifyToast(backendError || 'Could not remove partner.', 'error');
+    }
+  };
+
+  const handleMergeReferrer = async (e) => {
+    e.preventDefault();
+    if (!editingReferrer || !targetReferrerId) return;
+    
+    if (editingReferrer.referrerId === targetReferrerId) {
+      notifyToast('Cannot merge a partner into themselves.', 'error');
+      return;
+    }
+
+    try {
+      setIsMerging(true);
+      await apiClient.post('/referrers/merge', {
+        sourceReferrerId: editingReferrer.referrerId,
+        targetReferrerId
+      });
+      notifyToast('Partner successfully merged.', 'success');
+      setIsMergeModalOpen(false);
+      setIsReferrerEditDrawerOpen(false);
+      setEditingReferrer(null);
+      fetchReferralIntelligence();
+    } catch (err) {
+      console.error('[REFERRER] Merge failed', err);
+      const backendError = err.response?.data?.error || err.response?.data?.message;
+      notifyToast(backendError || 'Could not merge partner.', 'error');
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  const handleUnmergeReferrer = async (sourceId) => {
+    if (!window.confirm('Are you sure you want to unmerge this partner? They will reappear as a separate entity.')) return;
+    try {
+      await apiClient.post(`/referrers/${sourceId}/unmerge`);
+      notifyToast('Partner unmerged successfully.', 'success');
+      fetchReferralIntelligence();
+    } catch (err) {
+      console.error('[REFERRER] Unmerge failed', err);
+      const backendError = err.response?.data?.error || err.response?.data?.message;
+      notifyToast(backendError || 'Could not unmerge partner.', 'error');
     }
   };
 
@@ -5758,30 +5812,108 @@ return (
                   onChange={e => setEditingReferrer(prev => ({ ...prev, address: e.target.value }))}
                   style={{ ...fieldStyle, minHeight: '80px', resize: 'vertical' }} />
               </div>
+
+              {/* Aliases / Merged Partners */}
+              {editingReferrer?.referrerId && (() => {
+                const aliases = (allReferrers || []).filter(p => p.mergedIntoId === editingReferrer.referrerId);
+                if (aliases.length === 0) return null;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                    <label style={labelStyle}>MERGED ALIASES</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {aliases.map(a => (
+                        <div key={a.referrerId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{a.name}</span>
+                          <button 
+                            type="button"
+                            onClick={() => handleUnmergeReferrer(a.referrerId)}
+                            style={{ padding: '6px 12px', borderRadius: '8px', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 800, border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                          >
+                            Unmerge
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             );
           })()}
 
-          <div style={{ marginTop: '50px', display: 'flex', gap: '15px' }}>
-             <button 
-               type="submit" 
-               disabled={isSavingReferrer}
-               style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
-             >
-               {isSavingReferrer ? 'Saving...' : (editingReferrer?.referrerId ? 'Save Changes' : 'Add Partner')}
-             </button>
-             <button 
-               type="button"
-               onClick={() => setIsReferrerEditDrawerOpen(false)}
-               style={{ padding: '16px 25px', borderRadius: '14px', background: '#f8fafc', color: '#64748b', fontWeight: 950, fontSize: '11px', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-             >
-               CANCEL
-             </button>
-          </div>
-        </form>
+              <div style={{ marginTop: '50px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                 <button 
+                   type="submit" 
+                   disabled={isSavingReferrer}
+                   style={{ flex: 1, minWidth: '150px', padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
+                 >
+                   {isSavingReferrer ? 'Saving...' : (editingReferrer?.referrerId ? 'Save Changes' : 'Add Partner')}
+                 </button>
+                 <button 
+                   type="button"
+                   onClick={() => setIsReferrerEditDrawerOpen(false)}
+                   style={{ padding: '16px 25px', borderRadius: '14px', background: '#f8fafc', color: '#64748b', fontWeight: 950, fontSize: '11px', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                 >
+                   CANCEL
+                 </button>
+                 {editingReferrer?.referrerId && (
+                   <button 
+                     type="button"
+                     onClick={() => setIsMergeModalOpen(true)}
+                     style={{ width: '100%', padding: '16px', borderRadius: '14px', background: '#fff5f5', color: '#dc2626', fontWeight: 950, fontSize: '11px', border: '1px solid #fecaca', cursor: 'pointer', letterSpacing: '1px', marginTop: '10px' }}
+                   >
+                     Merge into another partner...
+                   </button>
+                 )}
+              </div>
+            </form>
+        </div>
       </div>
-    </div>
-  );
+    );
+
+    const renderMergeModal = () => {
+      if (!isMergeModalOpen || !editingReferrer) return null;
+      return (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', boxShadow: '0 30px 60px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '30px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#dc2626', letterSpacing: '2px', marginBottom: '8px' }}>PARTNER MERGE</div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', margin: 0 }}>Select Primary Partner</h2>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Who should <strong>{editingReferrer.name}</strong> be merged into? All past commissions and patients will roll up under the primary partner.
+              </p>
+            </div>
+            <div style={{ padding: '30px' }}>
+              <select 
+                value={targetReferrerId}
+                onChange={e => setTargetReferrerId(e.target.value)}
+                style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              >
+                <option value="">-- Choose Target Partner --</option>
+                {(allReferrers || []).filter(p => p.referrerId !== editingReferrer.referrerId && !p.mergedIntoId).map(p => (
+                  <option key={p.referrerId} value={p.referrerId}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => setIsMergeModalOpen(false)}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleMergeReferrer}
+                disabled={!targetReferrerId || isMerging}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: targetReferrerId ? '#0f52ba' : '#cbd5e1', border: 'none', color: 'white', fontSize: '12px', fontWeight: 900, cursor: targetReferrerId ? 'pointer' : 'not-allowed' }}
+              >
+                {isMerging ? 'Merging...' : 'Confirm Merge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
 
   const renderPatientEditDrawer = () => (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, display: 'flex', justifyContent: 'flex-end' }}>
@@ -5915,6 +6047,7 @@ return (
       {renderReferralIntel()}
 
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
+      {renderMergeModal()}
 
       {/* Bulk-add partners modal (#21) — Excel upload only */}
       {bulkOpen && (

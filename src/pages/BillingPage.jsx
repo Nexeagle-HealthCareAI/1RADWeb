@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
@@ -1409,12 +1409,20 @@ export default function BillingPage() {
       const fname = useRange && (start || end)
         ? `1Rad_Financials_${start || 'start'}_to_${end || 'end'}.xlsx`
         : `1Rad_Financials_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fname);
+        
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.click();
+      window.URL.revokeObjectURL(url);
 
       setIsExportDrawerOpen(false);
     } catch (err) {
       console.error('[FINANCE] Export failed', err);
-      notify({ type: 'error', title: 'Export Failed', message: 'Could not export data. Please try again.' });
+      notifyToast('Could not export data. Please try again.', 'error');
     }
   };
 
