@@ -410,11 +410,12 @@ export default function AppointmentBoard() {
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const listTopRef = useRef(null);
+  const [pinnedDate, setPinnedDate] = useState(() => localStorage.getItem('pinnedBookingDate') || null);
   const [newBooking, setNewBooking] = useState({
     patientId: '',
     service: '',
     modality: 'ULTRASOUND',
-    date: getTodayString(),
+    date: pinnedDate || getTodayString(),
     doctor: '',
     notes: '',
     amount: '',
@@ -1513,7 +1514,7 @@ export default function AppointmentBoard() {
       service: '',
       modality: 'ULTRASOUND',
       addedServices: [],
-      date: getTodayString(),
+      date: pinnedDate || getTodayString(),
       doctor: doctors && doctors.length > 0 ? doctors[0] : '',
       notes: '',
       amount: '',
@@ -4461,7 +4462,38 @@ export default function AppointmentBoard() {
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={{ background: 'white', padding: '12px 14px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                       <div style={{ marginBottom: '6px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', margin: 0 }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (pinnedDate === newBooking.date) {
+                                setPinnedDate(null);
+                                localStorage.removeItem('pinnedBookingDate');
+                              } else {
+                                setPinnedDate(newBooking.date);
+                                localStorage.setItem('pinnedBookingDate', newBooking.date);
+                              }
+                            }}
+                            style={{
+                              background: pinnedDate === newBooking.date ? '#fef3c7' : 'transparent',
+                              border: `1px solid ${pinnedDate === newBooking.date ? '#f59e0b' : '#e2e8f0'}`,
+                              color: pinnedDate === newBooking.date ? '#d97706' : '#94a3b8',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '8px',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                            title="Pin this date to use it as the default for back-to-back bookings"
+                          >
+                            {pinnedDate === newBooking.date ? '📌 PINNED' : '📍 PIN DATE'}
+                          </button>
+                        </div>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
                           {[-2, -1, 0, 1, 2, 3].map(offset => {
                             const d = new Date();

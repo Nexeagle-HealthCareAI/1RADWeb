@@ -268,7 +268,7 @@ const AnalyticsHub = ({
     // Gross vs net revenue per modality
     const modalities = ['MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'PET', 'MAMMOGRAPHY', 'FLUOROSCOPY'];
     const performanceMap = {};
-    [...modalities, 'OTHER'].forEach(m => performanceMap[m] = { gross: 0, discount: 0, net: 0, count: 0 });
+    [...modalities, 'OTHER'].forEach(m => performanceMap[m] = { gross: 0, discount: 0, net: 0, count: 0, servicesMap: {} });
 
     processedInvoices.forEach(inv => {
       inv.items?.forEach(item => {
@@ -292,6 +292,14 @@ const AnalyticsHub = ({
         performanceMap[matched].discount += itemDisc;
         performanceMap[matched].net += itemNet;
         performanceMap[matched].count += 1;
+
+        if (!performanceMap[matched].servicesMap[desc]) {
+           performanceMap[matched].servicesMap[desc] = { serviceName: desc, grossRevenue: 0, referralCut: 0, netRevenue: 0, scanCount: 0, collectionEfficiency: 100 };
+        }
+        performanceMap[matched].servicesMap[desc].grossRevenue += itemAmt;
+        performanceMap[matched].servicesMap[desc].referralCut += itemDisc;
+        performanceMap[matched].servicesMap[desc].netRevenue += itemNet;
+        performanceMap[matched].servicesMap[desc].scanCount += 1;
       });
     });
 
@@ -303,7 +311,8 @@ const AnalyticsHub = ({
       payout: stats.discount,
       count: stats.count,
       avgRevenue: stats.count > 0 ? stats.gross / stats.count : 0,
-      efficiency: stats.gross > 0 ? (stats.net / stats.gross) * 100 : 0
+      efficiency: stats.gross > 0 ? (stats.net / stats.gross) * 100 : 0,
+      services: Object.values(stats.servicesMap).sort((a,b) => b.grossRevenue - a.grossRevenue)
     })) : [];
 
     return finalPerformance;

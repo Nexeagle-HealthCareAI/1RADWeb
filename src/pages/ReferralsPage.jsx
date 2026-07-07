@@ -543,6 +543,11 @@ export default function ReferralsPage() {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [targetReferrerId, setTargetReferrerId] = useState('');
   const [isMerging, setIsMerging] = useState(false);
+  const [deleteAfterMerge, setDeleteAfterMerge] = useState(false);
+  const [unmergeModalData, setUnmergeModalData] = useState(null);
+  const [isUnmerging, setIsUnmerging] = useState(false);
+  const [deleteModalData, setDeleteModalData] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedLedgerRows, setSelectedLedgerRows] = useState([]);
   const toggleLedgerSelection = (id) => {
     setSelectedLedgerRows(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1069,25 +1074,31 @@ export default function ReferralsPage() {
     }
   };
 
-  const handleDeleteReferrer = async (referrer) => {
+  const handleDeleteReferrer = (referrer) => {
     if (!referrer?.referrerId) return;
     const name = (referrer.name || 'this partner').toUpperCase();
-    if (!window.confirm(`Remove ${name} from the partner network?\n\nHistoric referrals and commissions are kept for reporting; the partner just stops appearing in the roster.`)) {
-      return;
-    }
+    setDeleteModalData({ referrerId: referrer.referrerId, name });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModalData) return;
+    setIsDeleting(true);
     try {
-      await apiClient.delete(`/referrers/${referrer.referrerId}`);
-      notifyToast(`${name} removed from partner network.`, 'success');
+      await apiClient.delete(`/referrers/${deleteModalData.referrerId}`);
+      notifyToast(`${deleteModalData.name} deleted from partner network.`, 'success');
       // Close the edit drawer if we were editing the same partner
-      if (editingReferrer?.referrerId === referrer.referrerId) {
+      if (editingReferrer?.referrerId === deleteModalData.referrerId) {
         setIsReferrerEditDrawerOpen(false);
         setEditingReferrer(null);
       }
       fetchReferralIntelligence();
+      setDeleteModalData(null);
     } catch (err) {
       console.error('[REFERRER] Delete failed', err);
       const backendError = err.response?.data?.error || err.response?.data?.message;
-      notifyToast(backendError || 'Could not remove partner.', 'error');
+      notifyToast(backendError || 'Could not delete partner.', 'error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1106,10 +1117,15 @@ export default function ReferralsPage() {
         sourceReferrerId: targetReferrerId,
         targetReferrerId: editingReferrer.referrerId
       });
-      notifyToast('Partner successfully merged.', 'success');
+      if (deleteAfterMerge) {
+        await apiClient.delete(`/referrers/${targetReferrerId}`);
+      }
+      notifyToast(deleteAfterMerge ? 'Partner merged and removed successfully.' : 'Partner successfully merged.', 'success');
       setIsMergeModalOpen(false);
       setIsReferrerEditDrawerOpen(false);
       setEditingReferrer(null);
+      setTargetReferrerId('');
+      setDeleteAfterMerge(false);
       fetchReferralIntelligence();
     } catch (err) {
       console.error('[REFERRER] Merge failed', err);
@@ -1120,16 +1136,24 @@ export default function ReferralsPage() {
     }
   };
 
-  const handleUnmergeReferrer = async (sourceId) => {
-    if (!window.confirm('Are you sure you want to unmerge this partner? They will reappear as a separate entity.')) return;
+  const handleUnmergeReferrer = (sourceId, sourceName = 'this partner') => {
+    setUnmergeModalData({ sourceId, sourceName });
+  };
+
+  const confirmUnmerge = async () => {
+    if (!unmergeModalData) return;
+    setIsUnmerging(true);
     try {
-      await apiClient.post(`/referrers/${sourceId}/unmerge`);
+      await apiClient.post(`/referrers/${unmergeModalData.sourceId}/unmerge`);
       notifyToast('Partner unmerged successfully.', 'success');
       fetchReferralIntelligence();
+      setUnmergeModalData(null);
     } catch (err) {
       console.error('[REFERRER] Unmerge failed', err);
       const backendError = err.response?.data?.error || err.response?.data?.message;
       notifyToast(backendError || 'Could not unmerge partner.', 'error');
+    } finally {
+      setIsUnmerging(false);
     }
   };
 
@@ -4550,7 +4574,7 @@ export default function ReferralsPage() {
                               </button>
                               {s.mergedIntoId ? (
                                 <button
-                                  onClick={() => handleUnmergeReferrer(s.referrerId)}
+                                  onClick={() => handleUnmergeReferrer(s.referrerId, s.name)}
                                   title="Revert Merge"
                                   style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #fcd34d', background: '#fffbeb', color: '#d97706', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                                 >
@@ -4561,6 +4585,7 @@ export default function ReferralsPage() {
                                   onClick={() => {
                                      setEditingReferrer(s);
                                      setIsMergeModalOpen(true);
+                                     setDeleteAfterMerge(false);
                                   }}
                                   title="Merge another partner into this one"
                                   style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
@@ -4570,10 +4595,10 @@ export default function ReferralsPage() {
                               )}
                               <button
                                 onClick={() => handleDeleteReferrer(s)}
-                                title="Remove partner"
+                                title="Delete partner"
                                 style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                               >
-                                Remove
+                                Delete
                               </button>
                             </div>
                            </td>
@@ -4650,14 +4675,14 @@ export default function ReferralsPage() {
                                  </button>
                                  {s.mergedIntoId ? (
                                    <button
-                                     onClick={() => handleUnmergeReferrer(s.referrerId)}
+                                     onClick={() => handleUnmergeReferrer(s.referrerId, s.name)}
                                      style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #fcd34d', background: '#fffbeb', color: '#d97706', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
                                    >
                                      Unmerge
                                    </button>
                                  ) : (
                                    <button
-                                     onClick={() => { setEditingReferrer(s); setIsMergeModalOpen(true); }}
+                                     onClick={() => { setEditingReferrer(s); setIsMergeModalOpen(true); setDeleteAfterMerge(false); }}
                                      style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
                                    >
                                      Merge
@@ -4667,7 +4692,7 @@ export default function ReferralsPage() {
                                    onClick={() => handleDeleteReferrer(s)}
                                    style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '11px', fontWeight: 800, cursor: 'pointer', minWidth: '60px' }}
                                  >
-                                   Remove
+                                   Delete
                                  </button>
                               </div>
                            </div>
@@ -5890,7 +5915,7 @@ return (
                           <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{a.name}</span>
                           <button 
                             type="button"
-                            onClick={() => handleUnmergeReferrer(a.referrerId)}
+                            onClick={() => handleUnmergeReferrer(a.referrerId, a.name)}
                             style={{ padding: '6px 12px', borderRadius: '8px', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 800, border: '1px solid #cbd5e1', cursor: 'pointer' }}
                           >
                             Unmerge
@@ -5935,6 +5960,71 @@ return (
       </div>
     );
 
+    const renderUnmergeModal = () => {
+      if (!unmergeModalData) return null;
+      return (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', boxShadow: '0 30px 60px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '30px', background: '#fcfdfe', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#d97706', letterSpacing: '2px', marginBottom: '8px' }}>PARTNER UNMERGE</div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', margin: 0 }}>Revert Merge</h2>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Are you sure you want to unmerge <strong>{unmergeModalData.sourceName}</strong>? They will reappear as a separate entity in your partner network.
+              </p>
+            </div>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => setUnmergeModalData(null)}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmUnmerge}
+                disabled={isUnmerging}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: '#d97706', border: 'none', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                {isUnmerging ? 'Unmerging...' : 'Confirm Unmerge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const renderDeleteModal = () => {
+      if (!deleteModalData) return null;
+      return (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', boxShadow: '0 30px 60px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '30px', background: '#fcfdfe', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#dc2626', letterSpacing: '2px', marginBottom: '8px' }}>DELETE PARTNER</div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#0f172a', margin: 0 }}>Confirm Delete</h2>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Are you sure you want to delete <strong>{deleteModalData.name}</strong> from the partner network?<br/><br/>
+                Historic referrals and commissions are kept for reporting, but the partner will no longer appear in the roster.
+              </p>
+            </div>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => setDeleteModalData(null)}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                style={{ flex: 1, padding: '14px', borderRadius: '12px', background: '#dc2626', border: 'none', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const renderMergeModal = () => {
       if (!isMergeModalOpen || !editingReferrer) return null;
       return (
@@ -5958,6 +6048,20 @@ return (
                   <option key={p.referrerId} value={p.referrerId}>{p.name}</option>
                 ))}
               </select>
+            </div>
+            <div style={{ padding: '0 30px 20px 30px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={deleteAfterMerge} 
+                  onChange={e => setDeleteAfterMerge(e.target.checked)} 
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Also delete the merged partner's record
+                  <span style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>They will be permanently removed from the system. (Cannot be unmerged later)</span>
+                </span>
+              </label>
             </div>
             <div style={{ padding: '20px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '15px' }}>
               <button 
@@ -6112,6 +6216,8 @@ return (
 
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
       {renderMergeModal()}
+      {renderUnmergeModal()}
+      {renderDeleteModal()}
 
       {/* Bulk-add partners modal (#21) — Excel upload only */}
       {bulkOpen && (
