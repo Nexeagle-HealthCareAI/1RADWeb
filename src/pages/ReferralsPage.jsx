@@ -1570,17 +1570,31 @@ export default function ReferralsPage() {
     });
   }, [allReferrers, referralIntelligence, personTypeFilter]);
 
-  // Partner Network (ROSTER) — apply the chosen column sort over the default.
   const sortedRoster = useMemo(() => {
     const arr = [...(caseLedgerList || [])];
     const { key, dir } = rosterSort;
     const numKeys = new Set(['patientCount', 'totalCommission', 'paidCommission', 'unpaidCommission']);
     arr.sort((a, b) => {
-      let r;
-      if (numKeys.has(key)) r = (Number(a[key]) || 0) - (Number(b[key]) || 0);
-      else if (key === 'isDoctor') r = (a.isDoctor ? 1 : 0) - (b.isDoctor ? 1 : 0);
-      else r = String(a[key] || '').toLowerCase().localeCompare(String(b[key] || '').toLowerCase());
-      return dir === 'asc' ? r : -r;
+      // 1. If one is an alias of the other, alias goes right below primary
+      if (a.mergedIntoId === b.referrerId) return 1;
+      if (b.mergedIntoId === a.referrerId) return -1;
+      // 2. If both are aliases of the SAME primary, sort alphabetically
+      if (a.mergedIntoId && a.mergedIntoId === b.mergedIntoId) return a.name.localeCompare(b.name);
+      
+      // 3. Otherwise, use primary stats for sorting so alias blocks move with their primary
+      const aPrimaryId = a.mergedIntoId || a.referrerId;
+      const bPrimaryId = b.mergedIntoId || b.referrerId;
+      
+      if (aPrimaryId !== bPrimaryId) {
+        const aPrimary = arr.find(x => x.referrerId === aPrimaryId) || a;
+        const bPrimary = arr.find(x => x.referrerId === bPrimaryId) || b;
+        let r;
+        if (numKeys.has(key)) r = (Number(aPrimary[key]) || 0) - (Number(bPrimary[key]) || 0);
+        else if (key === 'isDoctor') r = (aPrimary.isDoctor ? 1 : 0) - (bPrimary.isDoctor ? 1 : 0);
+        else r = String(aPrimary[key] || '').toLowerCase().localeCompare(String(bPrimary[key] || '').toLowerCase());
+        return dir === 'asc' ? r : -r;
+      }
+      return 0;
     });
     return arr;
   }, [caseLedgerList, rosterSort]);
@@ -4465,17 +4479,24 @@ export default function ReferralsPage() {
                         <td colSpan="11" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
                       </tr>
                     ) : (
-                      sortedRoster
-                        .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
-                        .map((s, i) => (
-                        <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9' }}
-                            onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
-                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                          <td style={{ padding: '16px 24px' }}>
-                            <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>{i + 1}</div>
-                          </td>
-                          <td style={{ padding: '16px 24px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{s.name || 'Unnamed'}</div>
+                        sortedRoster
+                          .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
+                          .map((s, i) => (
+                          <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9', opacity: s.mergedIntoId ? 0.6 : 1 }}
+                              onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
+                              onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                            <td style={{ padding: '16px 24px', paddingLeft: s.mergedIntoId ? '40px' : '24px' }}>
+                              {s.mergedIntoId ? (
+                                <div style={{ textAlign: 'center', color: '#cbd5e1', fontWeight: 900, fontSize: '16px' }}>↳</div>
+                              ) : (
+                                <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>{i + 1}</div>
+                              )}
+                            </td>
+                            <td style={{ padding: '16px 24px' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {s.name || 'Unnamed'}
+                                {s.mergedIntoId && <span style={{ fontSize: '9px', fontWeight: 800, background: '#fef2f2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>Merged Alias</span>}
+                              </div>
                             {(s.specialty || s.degree || s.supportedByDoctor || getReferrerProfileCompletion(s).pct < 100) && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
                                 {s.isDoctor && (s.specialty || s.degree) && (
@@ -4566,14 +4587,21 @@ export default function ReferralsPage() {
                     {caseLedgerList.length === 0 ? (
                        <div style={{ padding: '50px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Tap “Add Partner” to add your first referring doctor or person.</div>
                     ) : (
-                       sortedRoster
-                         .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
-                         .map((s, i) => (
-                           <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                                   <div style={{ width: '26px', height: '26px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900, flexShrink: 0 }}>{i + 1}</div>
-                                   <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name || 'Unnamed'}</div>
+                        sortedRoster
+                          .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
+                          .map((s, i) => (
+                            <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', opacity: s.mergedIntoId ? 0.7 : 1, marginLeft: s.mergedIntoId ? '20px' : '0' }}>
+                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                                    {!s.mergedIntoId ? (
+                                      <div style={{ width: '26px', height: '26px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900, flexShrink: 0 }}>{i + 1}</div>
+                                    ) : (
+                                      <div style={{ color: '#cbd5e1', fontWeight: 900, fontSize: '16px', marginLeft: '6px' }}>↳</div>
+                                    )}
+                                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      {s.name || 'Unnamed'}
+                                      {s.mergedIntoId && <span style={{ fontSize: '9px', fontWeight: 800, background: '#fef2f2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>Merged Alias</span>}
+                                    </div>
                                  </div>
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>

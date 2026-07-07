@@ -162,14 +162,11 @@ jobs:
           key: easyrad-dist-${{ github.run_id }}-${{ github.run_attempt }}
           fail-on-cache-miss: true
 
-      - name: Prepare SSH key
-        run: |
-          echo "${{ secrets.DEV_SSH_KEY_B64 }}" | base64 -d > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-
       - name: Ensure web root exists on VM
+        env:
+          SSHPASS: ${{ secrets.DEV_SSH_PASSWORD }}
         run: |
-          ssh -i /tmp/deploy_key \
+          sshpass -e ssh \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=30 \
@@ -177,16 +174,20 @@ jobs:
               'mkdir -p /var/www/easyrad'
 
       - name: Copy dist to VM
+        env:
+          SSHPASS: ${{ secrets.DEV_SSH_PASSWORD }}
         run: |
-          scp -i /tmp/deploy_key \
+          sshpass -e scp \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
               -r dist/* \
               ${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}:/var/www/easyrad/
 
       - name: Reload nginx
+        env:
+          SSHPASS: ${{ secrets.DEV_SSH_PASSWORD }}
         run: |
-          ssh -i /tmp/deploy_key \
+          sshpass -e ssh \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
               ${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }} \
