@@ -243,6 +243,17 @@ const ReferralHub = ({
     eligibleIds: [],
     partnerName: ''
   });
+  // Disbursement form — filled in before finalizing a bulk mark-as-paid.
+  const [payeeForm, setPayeeForm] = useState({
+    paidBy: '',
+    payeeName: '',
+    payeeContact: '',
+    payeeEmail: '',
+    payeeAddress: '',
+    referrerSearchTerm: '',
+    showReferrerDropdown: false,
+  });
+  const [payeeFormErrors, setPayeeFormErrors] = useState({});
 
   // Clear selections on filter adjustments
   useEffect(() => {
@@ -344,6 +355,19 @@ const ReferralHub = ({
       drawerSelectedIds.has(c.id) && c.type === 'STRATEGIC' && c.status !== 'PAID' && isPatientPaymentReceived(c)
     );
     const total = eligible.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    // Pre-fill Paid To from the active partner's referrer data
+    const partnerRef = referrers?.find(r => r.referrerId === activePartnerId);
+    setPayeeForm(prev => ({
+      ...prev,
+      paidBy: '',
+      payeeName: partnerRef?.name || activePartner.name || '',
+      payeeContact: partnerRef?.mobile || '',
+      payeeEmail: partnerRef?.email || '',
+      payeeAddress: partnerRef?.address || '',
+      referrerSearchTerm: '',
+      showReferrerDropdown: false,
+    }));
+    setPayeeFormErrors({});
     setBulkConfirmModal({
       isOpen: true,
       count: eligible.length,
@@ -353,12 +377,34 @@ const ReferralHub = ({
     });
   };
 
-  const handleBulkMarkPaid = () => {
-    // handleToggleCommissionStatus toggles based on the *current* status, so we
-    // pass 'UNPAID' to flip these into PAID.
-    bulkConfirmModal.eligibleIds.forEach(id => {
-      handleToggleCommissionStatus(id, 'UNPAID');
-    });
+  const handleBulkMarkPaid = async () => {
+    // Validate mandatory fields
+    const errors = {};
+    if (!payeeForm.paidBy.trim()) errors.paidBy = 'Paid By is required';
+    if (!payeeForm.payeeName.trim()) errors.payeeName = 'Paid To (Name) is required';
+    if (Object.keys(errors).length > 0) { setPayeeFormErrors(errors); return; }
+
+    // handleToggleCommissionStatus currently sends a plain string — we need to send
+    // the full payee payload. Call the API directly for each eligible commission.
+    const payload = {
+      status: 'PAID',
+      paidBy: payeeForm.paidBy.trim(),
+      payeeName: payeeForm.payeeName.trim(),
+      payeeContact: payeeForm.payeeContact.trim(),
+      payeeEmail: payeeForm.payeeEmail.trim(),
+      payeeAddress: payeeForm.payeeAddress.trim(),
+    };
+    try {
+      await Promise.all(
+        bulkConfirmModal.eligibleIds.map(id =>
+          apiClient.patch(`/referrers/commissions/${id}/status`, payload)
+        )
+      );
+      // Refresh data via the parent-supplied toggle (which calls refreshAllFinancialData)
+      bulkConfirmModal.eligibleIds.forEach(id => handleToggleCommissionStatus(id, '__SKIP__'));
+    } catch (e) {
+      notifyToast('Some commissions could not be updated. Please retry.', 'error');
+    }
     setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' });
     setDrawerSelectedIds(new Set());
   };
@@ -368,27 +414,38 @@ const ReferralHub = ({
     const selectedCuts = activePartner.cuts.filter(c => drawerSelectedIds.has(c.id));
     if (selectedCuts.length === 0) return;
 
-    const rows = selectedCuts.map(cut => ({
-      'Payout Date': formatDate(cut?.date, true),
-      'Patient ID': cut?.patientId || '',
-      'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
-      'Age': cut?.patientAge || '',
-      'Gender': cut?.patientGender || '',
-      'Mobile': cut?.mobile || cut?.patientMobile || '',
-      'Modality': (cut?.modality || '').toUpperCase(),
-      'Reference ID': cut?.reference || '',
-      'Payout Amount (INR)': Number(cut?.amount) || 0,
-      'Patient Payment': cut?.patientPaymentStatus || '',
-      'Commission Status': cut?.status || 'UNPAID',
-      'Commission Type': cut?.type || '',
-      'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
-      'Payout Eligibility': eligibilityLabel(cut),
-    }));
+    const rows = selectedCuts.map(cut => {
+      const referrerName = (cut?.name || cut?.referrerName || '').toUpperCase();
+      const paidTo = (cut?.payeeName || '').toUpperCase();
+      const referredBySameAsPaidTo = referrerName && paidTo
+        ? (referrerName === paidTo ? 'Yes' : 'No')
+        : '';
+      return {
+        'Payout Date': formatDate(cut?.date, true),
+        'Patient ID': cut?.patientId || '',
+        'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
+        'Age': cut?.patientAge || '',
+        'Gender': cut?.patientGender || '',
+        'Mobile': cut?.mobile || cut?.patientMobile || '',
+        'Modality': (cut?.modality || '').toUpperCase(),
+        'Reference ID': cut?.reference || '',
+        'Payout Amount (INR)': Number(cut?.amount) || 0,
+        'Patient Payment': cut?.patientPaymentStatus || '',
+        'Commission Status': cut?.status || 'UNPAID',
+        'Commission Type': cut?.type || '',
+        'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
+        'Payout Eligibility': eligibilityLabel(cut),
+        'Paid By': cut?.paidBy || '',
+        'Paid To': cut?.payeeName || '',
+        'Referred By Same As Paid To?': referredBySameAsPaidTo,
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = [
       { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
-      { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }, { wch: 16 }
+      { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }, { wch: 16 },
+      { wch: 22 }, { wch: 26 }, { wch: 28 }
     ];
     const wb = XLSX.utils.book_new();
     const sheetName = activePartner.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
@@ -1506,58 +1563,171 @@ const ReferralHub = ({
         </div>
       )}
 
-      {/* Bulk Mark-as-Paid confirmation modal */}
+      {/* Bulk Mark-as-Paid — Disbursement Form Modal */}
       {bulkConfirmModal.isOpen && (
         <div
           style={{
             position: 'fixed', inset: 0,
-            background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
+            background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             display: 'flex', justifyContent: 'center', alignItems: 'center',
-            zIndex: 100000, animation: 'fadeIn 0.2s ease-out forwards'
+            zIndex: 100000, animation: 'fadeIn 0.2s ease-out forwards', padding: '16px'
           }}
           onClick={() => setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' })}
         >
           <div
             style={{
-              width: '90%', maxWidth: '460px',
-              background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-              borderRadius: '24px', border: '1px solid rgba(226, 232, 240, 0.8)',
-              boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.15)',
-              padding: '32px 26px', textAlign: 'center',
-              animation: 'slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
+              width: '100%', maxWidth: '520px',
+              background: 'white',
+              borderRadius: '24px', border: '1px solid #e2e8f0',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.18)',
+              overflow: 'hidden',
+              animation: 'slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+              maxHeight: '90vh', overflowY: 'auto'
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto 20px auto', fontSize: '28px', boxShadow: '0 8px 20px -6px rgba(34, 197, 94, 0.25)' }}>✓</div>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
-              Mark {bulkConfirmModal.count} Payout{bulkConfirmModal.count !== 1 ? 's' : ''} as PAID?
-            </h3>
-            <p style={{ margin: '0 0 24px 0', fontSize: '12px', lineHeight: 1.6, color: '#475569', fontWeight: 700 }}>
-              You're settling <strong style={{ color: '#16a34a' }}>₹{bulkConfirmModal.total.toLocaleString()}</strong> across <strong style={{ color: '#e11d48' }}>{bulkConfirmModal.partnerName}</strong>'s outstanding payouts.
+            {/* Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '24px 28px', color: 'white' }}>
+              <div style={{ fontSize: '9px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', marginBottom: '6px' }}>FISCAL DISBURSEMENT</div>
+              <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>
+                Mark {bulkConfirmModal.count} Payout{bulkConfirmModal.count !== 1 ? 's' : ''} as PAID
+              </div>
+              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                Settling <span style={{ color: '#34d399', fontWeight: 800 }}>₹{bulkConfirmModal.total.toLocaleString()}</span> for <span style={{ color: '#f87171' }}>{bulkConfirmModal.partnerName}</span>
+              </div>
+            </div>
+
+            <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {bulkConfirmModal.count < drawerSelectedIds.size && (
-                <span style={{ display: 'block', marginTop: '8px', fontSize: '10.5px', color: '#92400e', background: '#fef3c7', padding: '8px 12px', borderRadius: '8px', fontWeight: 800 }}>
+                <div style={{ fontSize: '10.5px', color: '#92400e', background: '#fef3c7', padding: '10px 14px', borderRadius: '10px', fontWeight: 800 }}>
                   ⚠ {drawerSelectedIds.size - bulkConfirmModal.count} of your selection are already PAID or legacy entries and will be skipped.
-                </span>
+                </div>
               )}
-            </p>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' })}
-                style={{ flex: 1, padding: '12px 20px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '12px', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}
-              >CANCEL</button>
-              <button
-                onClick={handleBulkMarkPaid}
-                disabled={bulkConfirmModal.count === 0}
-                style={{
-                  flex: 1, padding: '12px 20px',
-                  background: bulkConfirmModal.count === 0 ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                  color: '#fff', border: 'none', borderRadius: '12px',
-                  fontSize: '11px', fontWeight: 950,
-                  cursor: bulkConfirmModal.count === 0 ? 'not-allowed' : 'pointer',
-                  boxShadow: bulkConfirmModal.count === 0 ? 'none' : '0 8px 18px -4px rgba(22, 163, 74, 0.35)'
-                }}
-              >CONFIRM</button>
+
+              {/* Paid By */}
+              <div>
+                <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1.5px', marginBottom: '6px' }}>
+                  PAID BY <span style={{ color: '#e11d48' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Name of staff member making payment..."
+                  value={payeeForm.paidBy}
+                  onChange={e => { setPayeeForm(p => ({ ...p, paidBy: e.target.value })); setPayeeFormErrors(p => ({ ...p, paidBy: '' })); }}
+                  style={{
+                    width: '100%', padding: '11px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 700,
+                    border: `1.5px solid ${payeeFormErrors.paidBy ? '#e11d48' : '#e2e8f0'}`,
+                    outline: 'none', boxSizing: 'border-box', background: '#f8fafc'
+                  }}
+                />
+                {payeeFormErrors.paidBy && <div style={{ fontSize: '10px', color: '#e11d48', marginTop: '4px', fontWeight: 800 }}>{payeeFormErrors.paidBy}</div>}
+              </div>
+
+              {/* Paid To Section */}
+              <div style={{ background: '#f8fafc', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1.5px', marginBottom: '14px' }}>
+                  PAID TO <span style={{ color: '#e11d48' }}>*</span> — AUTO-FILL FROM REFERRER
+                </div>
+
+                {/* Referrer search dropdown */}
+                <div style={{ position: 'relative', marginBottom: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search existing referrer to auto-fill..."
+                    value={payeeForm.referrerSearchTerm}
+                    onChange={e => setPayeeForm(p => ({ ...p, referrerSearchTerm: e.target.value, showReferrerDropdown: true }))}
+                    onFocus={() => setPayeeForm(p => ({ ...p, showReferrerDropdown: true }))}
+                    onBlur={() => setTimeout(() => setPayeeForm(p => ({ ...p, showReferrerDropdown: false })), 200)}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '10px', fontSize: '11px', fontWeight: 700,
+                      border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box', background: 'white'
+                    }}
+                  />
+                  {payeeForm.showReferrerDropdown && (referrers || []).filter(r =>
+                    !payeeForm.referrerSearchTerm || r.name?.toLowerCase().includes(payeeForm.referrerSearchTerm.toLowerCase())
+                  ).slice(0, 8).length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 8px 20px rgba(0,0,0,0.08)', zIndex: 9999, marginTop: '4px', overflow: 'hidden' }}>
+                      {(referrers || []).filter(r =>
+                        !payeeForm.referrerSearchTerm || r.name?.toLowerCase().includes(payeeForm.referrerSearchTerm.toLowerCase())
+                      ).slice(0, 8).map(r => (
+                        <div
+                          key={r.referrerId}
+                          onMouseDown={() => {
+                            setPayeeForm(p => ({
+                              ...p,
+                              payeeName: r.name || '',
+                              payeeContact: r.mobile || '',
+                              payeeEmail: r.email || '',
+                              payeeAddress: r.address || '',
+                              referrerSearchTerm: r.name || '',
+                              showReferrerDropdown: false
+                            }));
+                            setPayeeFormErrors(p => ({ ...p, payeeName: '' }));
+                          }}
+                          style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#1e293b', borderBottom: '1px solid #f1f5f9', transition: 'background 0.1s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                        >
+                          <span style={{ background: '#e0e7ff', color: '#4f46e5', padding: '2px 6px', borderRadius: '6px', fontSize: '9px', marginRight: '8px', fontWeight: 900 }}>REF</span>
+                          {r.name} {r.mobile ? `· ${r.mobile}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>NAME <span style={{ color: '#e11d48' }}>*</span></label>
+                    <input type="text" value={payeeForm.payeeName}
+                      onChange={e => { setPayeeForm(p => ({ ...p, payeeName: e.target.value })); setPayeeFormErrors(p => ({ ...p, payeeName: '' })); }}
+                      placeholder="Full name..."
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, border: `1.5px solid ${payeeFormErrors.payeeName ? '#e11d48' : '#e2e8f0'}`, outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+                    {payeeFormErrors.payeeName && <div style={{ fontSize: '9px', color: '#e11d48', marginTop: '3px', fontWeight: 800 }}>{payeeFormErrors.payeeName}</div>}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>CONTACT</label>
+                    <input type="text" value={payeeForm.payeeContact}
+                      onChange={e => setPayeeForm(p => ({ ...p, payeeContact: e.target.value }))}
+                      placeholder="Phone / Mobile..."
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>EMAIL</label>
+                    <input type="email" value={payeeForm.payeeEmail}
+                      onChange={e => setPayeeForm(p => ({ ...p, payeeEmail: e.target.value }))}
+                      placeholder="email@example.com"
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>ADDRESS</label>
+                    <input type="text" value={payeeForm.payeeAddress}
+                      onChange={e => setPayeeForm(p => ({ ...p, payeeAddress: e.target.value }))}
+                      placeholder="Clinic / Home address..."
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' })}
+                  style={{ flex: 1, padding: '14px 20px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}
+                >CANCEL</button>
+                <button
+                  onClick={handleBulkMarkPaid}
+                  disabled={bulkConfirmModal.count === 0}
+                  style={{
+                    flex: 2, padding: '14px 20px',
+                    background: bulkConfirmModal.count === 0 ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                    color: '#fff', border: 'none', borderRadius: '14px',
+                    fontSize: '11px', fontWeight: 950,
+                    cursor: bulkConfirmModal.count === 0 ? 'not-allowed' : 'pointer',
+                    boxShadow: bulkConfirmModal.count === 0 ? 'none' : '0 8px 18px -4px rgba(22, 163, 74, 0.35)'
+                  }}
+                >✓ AUTHORIZE DISBURSEMENT ({bulkConfirmModal.count} PAYOUT{bulkConfirmModal.count !== 1 ? 'S' : ''})</button>
+              </div>
             </div>
           </div>
         </div>

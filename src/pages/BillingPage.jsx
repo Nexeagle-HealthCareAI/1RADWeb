@@ -1045,11 +1045,15 @@ export default function BillingPage() {
   };
 
   const handleToggleCommissionStatus = async (id, currentStatus) => {
+    // '__SKIP__' is used by the disbursement form which has already sent its own PATCH;
+    // we just need to refresh the data here without sending a duplicate request.
+    if (currentStatus === '__SKIP__') {
+      refreshAllFinancialData();
+      return;
+    }
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
     try {
-      await apiClient.patch(`/referrers/commissions/${id}/status`, `"${newStatus}"`, {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      await apiClient.patch(`/referrers/commissions/${id}/status`, { status: newStatus });
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);

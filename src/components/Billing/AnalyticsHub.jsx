@@ -260,7 +260,8 @@ const AnalyticsHub = ({
         payout: m.referralCut,
         count: m.scanCount,
         avgRevenue: m.scanCount > 0 ? m.grossRevenue / m.scanCount : 0,
-        efficiency: m.collectionEfficiency || m.marginPercentage
+        efficiency: m.collectionEfficiency || m.marginPercentage,
+        services: m.services || []
       }));
     }
 
@@ -307,6 +308,15 @@ const AnalyticsHub = ({
 
     return finalPerformance;
   }, [processedInvoices, matrix]);
+
+  const allServicesData = useMemo(() => {
+    return servicePerformanceData.flatMap(m => 
+      (m.services || []).map(s => ({
+        ...s,
+        parentModality: m.modality
+      }))
+    ).sort((a, b) => b.grossRevenue - a.grossRevenue);
+  }, [servicePerformanceData]);
 
   // ==========================================
   // TAB 4: PATIENT & REFERRAL TRENDS CALCULATIONS
@@ -785,18 +795,12 @@ const AnalyticsHub = ({
       </div>
 
       {/* CORE CLINICAL TAB SWITCHER */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '10px', 
-        marginBottom: '25px', 
-        borderBottom: '1px solid #e2e8f0', 
-        paddingBottom: '12px',
-        overflowX: 'auto'
-      }}>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
         {[
           { id: 'REVENUE', label: '💰 REVENUE & COLLECTIONS' },
           { id: 'DISCOUNTS', label: '🏷️ DISCOUNT & REFERRAL' },
-          { id: 'MODALITIES', label: '🔬 SERVICE PERFORMANCE' },
+          { id: 'MODALITIES', label: '🔬 MODALITY PERFORMANCE' },
+          { id: 'SERVICES', label: '📊 SERVICE PERFORMANCE' },
           { id: 'TRENDS', label: '👥 PATIENT & REFERRAL TRENDS' }
         ].map(tab => (
           <button
@@ -1331,6 +1335,66 @@ const AnalyticsHub = ({
                             </tr>
                           );
                         })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* DASHBOARD 3.5: SERVICES SPECIFIC PERFORMANCE */}
+            {/* ======================================================== */}
+            {activeSection === 'SERVICES' && (
+              <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b', margin: 0, marginBottom: '20px' }}>CLINICAL SERVICE PROFITABILITY MATRIX</h4>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left' }}>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>SERVICE NAME</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textAlign: 'center' }}>SCAN VOL</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>GROSS BILLING (₹)</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>DISCOUNT/COMMISSION (₹)</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>NET CLINIC YIELD (₹)</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>AVG SCAN VALUE (₹)</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textAlign: 'right' }}>COLLECTION EFFICIENCY</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allServicesData.length > 0 ? allServicesData.map((svc, idx) => {
+                          const svcEffColor = svc.collectionEfficiency > 90 ? '#059669' : svc.collectionEfficiency > 80 ? '#d97706' : '#dc2626';
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                              <td style={{ padding: '15px', fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>
+                                <span style={{ background: '#f1f5f9', color: '#4f46e5', padding: '4px 8px', borderRadius: '6px', fontSize: '9px', marginRight: '10px', fontWeight: 900 }}>{svc.parentModality.slice(0,3)}</span>
+                                {svc.serviceName}
+                              </td>
+                              <td style={{ padding: '15px', fontSize: '11px', fontWeight: 900, color: '#475569', textAlign: 'center' }}>{svc.scanCount}</td>
+                              <td style={{ padding: '15px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>₹{svc.grossRevenue.toLocaleString()}</td>
+                              <td style={{ padding: '15px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>-₹{svc.referralCut.toLocaleString()}</td>
+                              <td style={{ padding: '15px', fontSize: '11px', fontWeight: 950, color: '#059669' }}>₹{svc.netRevenue.toLocaleString()}</td>
+                              <td style={{ padding: '15px', fontSize: '11px', fontWeight: 800, color: '#475569' }}>₹{svc.scanCount > 0 ? Math.round(svc.grossRevenue / svc.scanCount).toLocaleString() : 0}</td>
+                              <td style={{ padding: '15px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                  <span style={{ fontSize: '10px', fontWeight: 950, color: svcEffColor }}>{svc.collectionEfficiency.toFixed(1)}%</span>
+                                  <div style={{ width: '90px', height: '4px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${svc.collectionEfficiency}%`, height: '100%', background: svcEffColor, borderRadius: '10px' }} />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }) : (
+                          <tr>
+                            <td colSpan="7" style={{ padding: '30px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>
+                              No detailed service data available for this period.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
