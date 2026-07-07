@@ -1717,14 +1717,15 @@ const ReferralHub = ({
                 >CANCEL</button>
                 <button
                   onClick={handleBulkMarkPaid}
-                  disabled={bulkConfirmModal.count === 0}
+                  disabled={bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()}
                   style={{
                     flex: 2, padding: '14px 20px',
-                    background: bulkConfirmModal.count === 0 ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                    background: (bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()) ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
                     color: '#fff', border: 'none', borderRadius: '14px',
                     fontSize: '11px', fontWeight: 950,
-                    cursor: bulkConfirmModal.count === 0 ? 'not-allowed' : 'pointer',
-                    boxShadow: bulkConfirmModal.count === 0 ? 'none' : '0 8px 18px -4px rgba(22, 163, 74, 0.35)'
+                    cursor: (bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()) ? 'not-allowed' : 'pointer',
+                    boxShadow: (bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()) ? 'none' : '0 8px 18px -4px rgba(22, 163, 74, 0.35)',
+                    transition: 'all 0.2s'
                   }}
                 >✓ AUTHORIZE DISBURSEMENT ({bulkConfirmModal.count} PAYOUT{bulkConfirmModal.count !== 1 ? 'S' : ''})</button>
               </div>
