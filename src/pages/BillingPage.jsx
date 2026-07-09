@@ -675,6 +675,7 @@ export default function BillingPage() {
       gross: inv.grossAmount || 0,
       discount: inv.discountAmount || 0,
       additionalCharges: inv.additionalCharges || 0,
+      additionalChargesReason: inv.additionalChargesReason || '',
       // Partial-payment proof on the slip: amount paid + balance still due.
       paid: Number(inv.paidAmount) || 0,
       balance: Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)),
@@ -749,6 +750,7 @@ export default function BillingPage() {
             <div>REF. NO: ${inv.referrerName || inv.referenceNumber || 'N/A'}</div>
           </div>
           <div class="divider"></div>
+          <div class="center" style="font-size: 10px; font-weight: bold; margin-bottom: 4px;">SERVICES BILLED</div>
           ${itemsHtml}
           ${modalitySummaryHtml}
           <div class="divider"></div>
@@ -2430,7 +2432,7 @@ export default function BillingPage() {
                 </div>
                 ${(inv.additionalCharges || 0) > 0 ? `
                 <div class="summary-row" style="color: #0f52ba;">
-                  <span class="summary-label">Additional Charge</span>
+                  <span class="summary-label">Additional Charge${inv.additionalChargesReason ? ` (${inv.additionalChargesReason})` : ''}</span>
                   <span class="summary-value">+ ₹${(inv.additionalCharges || 0).toLocaleString()}</span>
                 </div>
                 ` : ''}
@@ -2545,6 +2547,12 @@ export default function BillingPage() {
               <div class="content-row">
                 <span class="label">Reference Invoice:</span>
                 <span class="value">${inv.displayId}</span>
+              </div>
+              <div class="content-row">
+                <span class="label">Services Billed:</span>
+                <span class="value" style="font-size: 11px; font-weight: 800; white-space: normal; line-height: 1.4; color: #334155;">
+                  ${(inv.items || []).map(it => it.description || '').filter(Boolean).join(', ')}
+                </span>
               </div>
               <div class="content-row">
                 <span class="label">Payment Instrument:</span>

@@ -549,6 +549,29 @@ export const InvoiceDrawer = ({
                         </div>
                       )}
                     </div>
+                    {/* Additional Charges Input Block (Left Side) */}
+                    {!isPaid && (
+                      <div style={{ marginBottom: '20px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #eef2f7' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.3px' }}>ADDITIONAL CHARGE</span>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 950, color: '#64748b' }}>₹</span>
+                              <input 
+                                type="number" value={additionalCharges === 0 ? '' : additionalCharges} placeholder="0" min="0" onChange={e => setAdditionalCharges(Math.max(0, parseInt(e.target.value) || 0))}
+                                style={{ width: '80px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#0f172a' }}
+                              />
+                           </div>
+                        </div>
+                        {additionalCharges > 0 && (
+                          <div style={{ marginTop: '8px' }}>
+                            <input 
+                              type="text" value={additionalChargesReason} placeholder="Reason (e.g. Night Charge)" onChange={e => setAdditionalChargesReason(e.target.value)}
+                              style={{ width: '100%', boxSizing: 'border-box', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', fontWeight: 600, color: '#334155' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 );
               })()}
@@ -631,27 +654,8 @@ export const InvoiceDrawer = ({
                             />
                          </div>
                       </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
-                         <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>ADDITIONAL CHARGE</span>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b' }}>₹</span>
-                            <input 
-                              type="number" value={additionalCharges === 0 ? '' : additionalCharges} placeholder="0" min="0" onChange={e => setAdditionalCharges(Math.max(0, parseInt(e.target.value) || 0))}
-                              style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#1e293b' }}
-                            />
-                         </div>
-                      </div>
-                      {additionalCharges > 0 && (
-                        <div style={{ marginTop: '5px' }}>
-                          <input 
-                            type="text" value={additionalChargesReason} placeholder="Reason for additional charge (e.g. Night Charge)" onChange={e => setAdditionalChargesReason(e.target.value)}
-                            style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '9px', fontWeight: 600, color: '#475569' }}
-                          />
-                        </div>
-                      )}
-                   </div>
-                 )}
+                       </div>
+                     )}
                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>ADDITIONAL_CHARGES</div>
                     <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>+ ₹{(isPaid ? (selectedInvoice.additionalCharges || 0) : additionalCharges).toLocaleString()}</div>

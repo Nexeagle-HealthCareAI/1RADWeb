@@ -105,6 +105,7 @@ export function buildReceiptBytes(data = {}) {
   if (inv.patientId) p.line('ID  : ' + inv.patientId);
   if (inv.refNo) p.line('REF : ' + inv.refNo);
   p.drawLine();
+  p.bold(true).line('SERVICES BILLED').bold(false);
 
   for (const it of (data.items || [])) {
     const tag = it.code ? `[${it.code}] ` : '';
@@ -125,7 +126,8 @@ export function buildReceiptBytes(data = {}) {
   if ((Number(data.discount) || 0) > 0 || (Number(data.additionalCharges) || 0) > 0) {
     p.leftRight('SUBTOTAL', money(sub));
     if ((Number(data.additionalCharges) || 0) > 0) {
-      p.leftRight('ADDL CHARGE', '+' + money(data.additionalCharges));
+      const reason = data.additionalChargesReason ? ` (${data.additionalChargesReason})` : '';
+      p.leftRight(`ADDL CHARGE${reason}`.slice(0, cols === 32 ? 20 : 30), '+' + money(data.additionalCharges));
     }
     if ((Number(data.discount) || 0) > 0) {
       p.leftRight('DISCOUNT', '-' + money(data.discount));
