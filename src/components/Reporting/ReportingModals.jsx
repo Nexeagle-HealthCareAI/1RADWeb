@@ -103,3 +103,44 @@ export function DraftRecoveryModal({ draftRecoveryModal, resolveDraftRecovery, o
         overlayHost
   );
 }
+
+// Modal to review incoming changes from Microsoft Word before applying them
+export function WordSyncModal({ wordSyncModal, resolveWordSync, overlayHost }) {
+  if (!wordSyncModal || !overlayHost) return null;
+  return createPortal(
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 100003, background: 'rgba(10,22,40,0.7)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'rpNoticeFade 0.2s ease-out' }}
+      onClick={() => resolveWordSync(false)}
+    >
+      <div
+        style={{ width: '90%', maxWidth: '520px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: '1px solid #bfdbfe', boxShadow: '0 24px 60px -12px rgba(15,82,186,0.22), 0 0 0 1px rgba(0,0,0,0.04)', padding: '40px 32px 32px', textAlign: 'center', animation: 'rpNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '30px', boxShadow: '0 12px 28px -8px rgba(15,82,186,0.22)' }}>
+          <span style={{ color: '#0f52ba', fontWeight: 900, lineHeight: 1 }}>📝</span>
+        </div>
+        <h3 style={{ margin: '0 0 14px', fontSize: '22px', fontWeight: 800, color: '#1e40af', letterSpacing: '-0.02em' }}>
+          REVIEW CHANGES
+        </h3>
+        <p style={{ margin: '0 0 32px', fontSize: '15px', color: '#475569', lineHeight: 1.6, fontWeight: 500 }}>
+          New edits have been saved in Microsoft Word. Would you like to sync these changes into the editor?
+        </p>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => resolveWordSync(false)}
+            style={{ flex: 1, padding: '14px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 800, letterSpacing: '1.5px', cursor: 'pointer', fontFamily: 'system-ui,sans-serif' }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#e2e8f0'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#f1f5f9'; }}
+          >IGNORE</button>
+          <button
+            onClick={() => resolveWordSync(true)}
+            style={{ flex: 1.3, padding: '14px', background: 'linear-gradient(135deg,#0f52ba,#1e40af)', color: 'white', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: '0 8px 20px -6px rgba(15,82,186,0.4)', fontFamily: 'system-ui,sans-serif' }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+          >ACCEPT CHANGES</button>
+        </div>
+      </div>
+    </div>,
+    overlayHost
+  );
+}

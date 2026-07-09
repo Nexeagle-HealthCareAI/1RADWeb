@@ -2,14 +2,14 @@
 // src/utils/importWord.js
 //
 // Converts a saved Word .docx back into editor HTML for the auto-sync
-// round-trip. Uses mammoth (docx → HTML), then extracts only the FINDINGS
-// region fenced by the invisible sentinels we wrote on export — so the
-// patient header and impression/advice never leak into the findings.
+// round-trip. Uses DocxWorker (docx → HTML), then extracts the FINDINGS,
+// IMPRESSION, and ADVICE regions fenced by the SDT markers.
 // ════════════════════════════════════════════════════════════════
 
 import mammoth from 'mammoth';
 import DocxWorker from './docxWorker?worker';
 import { FINDINGS_START_TOKEN, FINDINGS_END_TOKEN } from './exportWord';
+import { notifyToast } from './toast';
 
 function base64ToArrayBuffer(b64) {
   const bin = atob(b64);
@@ -19,48 +19,74 @@ function base64ToArrayBuffer(b64) {
   return bytes.buffer;
 }
 
-// Pull just the findings out of the full converted HTML. Primary path: collect
-// every block strictly between the START and END sentinels. Fallback (a user
-// deleted a marker line): drop everything up to and including the header table
-// and keep the rest.
-function extractFindings(html) {
+// Extract sections wrapped in `<rad-sdt-start name="...">` tags.
+function extractSections(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const children = Array.from(doc.body.children);
 
-  let collecting = false;
-  let sawStart = false;
-  const collected = [];
+  const sections = { findingsHtml: '', impressionText: '', adviceText: '' };
+  
+  let currentSection = null;
+  let collected = [];
+
   for (const el of children) {
-    const txt = el.textContent || '';
-    if (!collecting && txt.includes(FINDINGS_START_TOKEN)) { collecting = true; sawStart = true; continue; }
-    if (collecting && txt.includes(FINDINGS_END_TOKEN)) { collecting = false; break; }
-    if (collecting) collected.push(el.outerHTML);
-  }
-  if (sawStart) return collected.join('').trim();
-
-  // Fallback — no fences found. Strip the leading header table, keep the rest.
-  const firstTable = doc.body.querySelector('table');
-  if (firstTable) {
-    const out = [];
-    let passedHeader = false;
-    for (const el of children) {
-      if (!passedHeader) {
-        if (el === firstTable || el.contains(firstTable)) passedHeader = true;
-        continue;
-      }
-      const txt = el.textContent || '';
-      if (txt.includes(FINDINGS_END_TOKEN)) break; // still honour an END fence if present
-      out.push(el.outerHTML);
+    if (el.tagName.toLowerCase() === 'rad-sdt-start') {
+      const name = el.getAttribute('name');
+      if (name === '1RAD-FINDINGS') currentSection = 'findingsHtml';
+      else if (name === '1RAD-IMPRESSION') currentSection = 'impressionText';
+      else if (name === '1RAD-ADVICE') currentSection = 'adviceText';
+      collected = [];
+      continue;
     }
-    return out.join('').trim();
+    
+    if (el.tagName.toLowerCase() === 'rad-sdt-end') {
+      if (currentSection) {
+        if (currentSection === 'findingsHtml') {
+          sections[currentSection] = collected.join('').trim();
+        } else {
+          // For impression and advice, extract plain text.
+          const tmp = document.createElement('div');
+          tmp.innerHTML = collected.join('');
+          sections[currentSection] = tmp.textContent.trim();
+        }
+        currentSection = null;
+      }
+      continue;
+    }
+    
+    if (currentSection) {
+      collected.push(el.outerHTML);
+    }
   }
 
-  return doc.body.innerHTML.trim();
+  // Fallback for Mammoth which strips custom HTML tags.
+  if (!sections.findingsHtml) {
+    // Ultimate fallback: Strip the leading header table, keep the rest.
+    const firstTable = doc.body.querySelector('table');
+    if (firstTable) {
+      const out = [];
+      let passedHeader = false;
+      for (const el of children) {
+        if (!passedHeader) {
+          if (el === firstTable || el.contains(firstTable)) passedHeader = true;
+          continue;
+        }
+        const txt = el.textContent || '';
+        if (typeof FINDINGS_END_TOKEN === 'string' && FINDINGS_END_TOKEN && txt.includes(FINDINGS_END_TOKEN)) break;
+        out.push(el.outerHTML);
+      }
+      sections.findingsHtml = out.join('').trim();
+    } else {
+      sections.findingsHtml = doc.body.innerHTML.trim();
+    }
+  }
+
+  return sections;
 }
 
 /**
- * Convert a .docx (base64 string or ArrayBuffer) to the report's findings HTML.
- * @returns {Promise<string>} findings HTML ready to load into the editor
+ * Convert a .docx (base64 string or ArrayBuffer) to the report's sections.
+ * @returns {Promise<{ findingsHtml: string, impressionText: string, adviceText: string }>} 
  */
 export async function docxToFindingsHtml(input) {
   const arrayBuffer = typeof input === 'string' ? base64ToArrayBuffer(input) : input;
@@ -83,6 +109,7 @@ export async function docxToFindingsHtml(input) {
     console.warn('[Word] faithful reader failed, falling back to mammoth:', e?.message);
     const res = await mammoth.convertToHtml({ arrayBuffer });
     html = res?.value || '';
+    notifyToast('Note: Some advanced Word formatting could not be synced perfectly. Please verify your layout.', 'warning');
   }
-  return extractFindings(html || '');
+  return extractSections(html || '');
 }

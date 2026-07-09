@@ -516,12 +516,35 @@ function htmlToWmlBody(html) {
   }
 
   let body = '';
+  const sdtStack = [];
+  
   for (const node of nodes) {
     if (node._pb) {
       body += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
-    } else {
-      body += blockToWml(node);
+      continue;
     }
+    
+    if (node.nodeType === 1 && node.tagName.toLowerCase() === 'rad-sdt-start') {
+      const alias = esc(node.getAttribute('name') || '');
+      body += `<w:sdt><w:sdtPr><w:alias w:val="${alias}"/><w:tag w:val="${alias}"/><w:lock w:val="sdtContentLocked"/></w:sdtPr><w:sdtContent>`;
+      sdtStack.push(alias);
+      continue;
+    }
+    
+    if (node.nodeType === 1 && node.tagName.toLowerCase() === 'rad-sdt-end') {
+      if (sdtStack.length > 0) {
+        body += `</w:sdtContent></w:sdt>`;
+        sdtStack.pop();
+      }
+      continue;
+    }
+    
+    body += blockToWml(node);
+  }
+  
+  while (sdtStack.length > 0) {
+    body += `</w:sdtContent></w:sdt>`;
+    sdtStack.pop();
   }
 
   return body || '<w:p/>';

@@ -31,32 +31,46 @@ let mainWindow;
 const wordWatchers = new Map();
 
 // Word briefly locks the file while saving — read with a few retries.
-async function readFileWithRetry(filePath, tries = 6) {
+async function readFileWithRetry(filePath, tries = 10) {
   for (let i = 0; i < tries; i++) {
+    let fd;
     try {
-      return await fs.promises.readFile(filePath);
+      // Open with 'r+' (read/write) to ensure Word has completely released its lock.
+      // If Word is still saving, this will throw EBUSY or EPERM.
+      fd = await fs.promises.open(filePath, 'r+');
+      const buf = await fd.readFile();
+      await fd.close();
+      return buf;
     } catch (e) {
+      if (fd) await fd.close().catch(() => {});
       if (i === tries - 1) throw e;
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 800));
     }
   }
 }
 
 function watchWordFile(filePath) {
   if (wordWatchers.has(filePath)) return;
+  
+  let syncTimeout = null;
   const listener = (curr, prev) => {
     // Only react to a genuine, completed write.
     if (curr.mtimeMs === prev.mtimeMs || curr.size === 0) return;
-    readFileWithRetry(filePath)
-      .then(buf => {
-        if (buf && mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('word:fileChanged', {
-            path: filePath,
-            base64: buf.toString('base64'),
-          });
-        }
-      })
-      .catch(err => console.warn('[word-watch] read failed:', err.message));
+    
+    // Debounce the file watch event to allow Word to finish atomic rename/saving
+    if (syncTimeout) clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(() => {
+      readFileWithRetry(filePath)
+        .then(buf => {
+          if (buf && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('word:fileChanged', {
+              path: filePath,
+              base64: buf.toString('base64'),
+            });
+          }
+        })
+        .catch(err => console.warn('[word-watch] read failed:', err.message));
+    }, 2000);
   };
   fs.watchFile(filePath, { interval: 1000 }, listener);
   wordWatchers.set(filePath, listener);
