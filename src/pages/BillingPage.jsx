@@ -674,6 +674,7 @@ export default function BillingPage() {
       total: inv.totalAmount || 0,
       gross: inv.grossAmount || 0,
       discount: inv.discountAmount || 0,
+      additionalCharges: inv.additionalCharges || 0,
       // Partial-payment proof on the slip: amount paid + balance still due.
       paid: Number(inv.paidAmount) || 0,
       balance: Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)),
@@ -1943,7 +1944,8 @@ export default function BillingPage() {
   const recalculateInvoice = (inv) => {
     const gross = inv.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
     const disc = inv.discountAmount || 0;
-    const net = gross - disc;
+    const additionalCharges = Number(inv.additionalCharges) || 0;
+    const net = gross + additionalCharges - disc;
     return {
         ...inv,
         grossAmount: gross,
@@ -2140,6 +2142,8 @@ export default function BillingPage() {
           centreDiscount: Number(draft.centreDisc) || 0,
           referrerDiscount: Number(draft.referrerDisc) || 0,
           institutionalDeduction: Number(draft.deduction) || 0,
+          additionalCharges: Number(draft.additionalCharges) || 0,
+          additionalChargesReason: draft.additionalChargesReason || null,
           discountAmount: (Number(draft.centreDisc) || 0) + (Number(draft.referrerDisc) || 0) + (Number(draft.deduction) || 0),
         }
       : { discountAmount: selectedInvoice.discountAmount };
@@ -2424,6 +2428,12 @@ export default function BillingPage() {
                   <span class="summary-label">Gross Aggregate</span>
                   <span class="summary-value">₹${(inv.grossAmount || 0).toLocaleString()}</span>
                 </div>
+                ${(inv.additionalCharges || 0) > 0 ? `
+                <div class="summary-row" style="color: #0f52ba;">
+                  <span class="summary-label">Additional Charge</span>
+                  <span class="summary-value">+ ₹${(inv.additionalCharges || 0).toLocaleString()}</span>
+                </div>
+                ` : ''}
                 <div class="summary-row" style="color: #ef4444;">
                   <span class="summary-label">Institutional Discount</span>
                   <span class="summary-value">- ₹${(inv.discountAmount || 0).toLocaleString()}</span>

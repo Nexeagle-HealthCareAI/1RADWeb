@@ -29,6 +29,8 @@ export const InvoiceDrawer = ({
   const [centreDisc, setCentreDisc] = React.useState(() => Number(selectedInvoice?.centreDiscount) || 0);
   const [referrerDisc, setReferrerDisc] = React.useState(() => Number(selectedInvoice?.referrerDiscount) || 0);
   const [deduction, setDeduction] = React.useState(() => Number(selectedInvoice?.institutionalDeduction) || 0);
+  const [additionalCharges, setAdditionalCharges] = React.useState(() => Number(selectedInvoice?.additionalCharges) || 0);
+  const [additionalChargesReason, setAdditionalChargesReason] = React.useState(() => selectedInvoice?.additionalChargesReason || '');
   const [isAdjusting, setIsAdjusting] = React.useState(false);
   const [adjustAmount, setAdjustAmount] = React.useState(0);
   // Scenario 09 — a concession after payment must be approved by an admin, so
@@ -219,7 +221,7 @@ export const InvoiceDrawer = ({
   if (!selectedInvoice) return null;
 
   const totalDeductions = centreDisc + referrerDisc + deduction;
-  const netSettlement = (selectedInvoice.grossAmount || 0) - totalDeductions;
+  const netSettlement = (selectedInvoice.grossAmount || 0) + additionalCharges - totalDeductions;
 
   // Partial payments + advances. The biller types the cash tendered; the default
   // is the whole balance (net − already-paid). Paying LESS leaves a balance due;
@@ -629,12 +631,35 @@ export const InvoiceDrawer = ({
                             />
                          </div>
                       </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
+                         <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>ADDITIONAL CHARGE</span>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b' }}>₹</span>
+                            <input 
+                              type="number" value={additionalCharges === 0 ? '' : additionalCharges} placeholder="0" min="0" onChange={e => setAdditionalCharges(Math.max(0, parseInt(e.target.value) || 0))}
+                              style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#1e293b' }}
+                            />
+                         </div>
+                      </div>
+                      {additionalCharges > 0 && (
+                        <div style={{ marginTop: '5px' }}>
+                          <input 
+                            type="text" value={additionalChargesReason} placeholder="Reason for additional charge (e.g. Night Charge)" onChange={e => setAdditionalChargesReason(e.target.value)}
+                            style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '9px', fontWeight: 600, color: '#475569' }}
+                          />
+                        </div>
+                      )}
                    </div>
                  )}
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>ADDITIONAL_CHARGES</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>+ ₹{(isPaid ? (selectedInvoice.additionalCharges || 0) : additionalCharges).toLocaleString()}</div>
+                 </div>
 
                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>TOTAL_DEDUCTIONS</div>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444' }}>- ₹{(isPaid ? selectedInvoice.discountAmount : totalDeductions).toLocaleString()}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444' }}>- ₹{(isPaid ? (selectedInvoice.discountAmount || 0) : totalDeductions).toLocaleString()}</div>
                  </div>
 
 
@@ -735,9 +760,9 @@ export const InvoiceDrawer = ({
                        const meta = excess > 0
                          ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
                          : {};
-                       handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived });
+                       handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason });
                      }} disabled={overCentreDiscount || deficitNeedsReason} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
-                     <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction })} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+                     <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason })} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
                    </div>
 
                 </div>
@@ -971,7 +996,7 @@ export const InvoiceDrawer = ({
                     const meta = fundingChoice === 'centre'
                       ? { absorbToCentre: true }
                       : { deficitReason: deficitReason.trim() };
-                    handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived });
+                    handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason });
                     setShowDeficitModal(false);
                   }}
                   disabled={!canConfirm}
