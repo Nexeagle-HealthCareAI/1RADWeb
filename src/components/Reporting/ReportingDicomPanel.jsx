@@ -649,6 +649,61 @@ export default function ReportingDicomPanel({
                 </div>
               </div>
 
+              {/* Study Actions */}
+              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
+                <div style={{
+                  color: '#8b5cf6',
+                  fontSize: isTablet ? '14px' : '10px',
+                  fontWeight: 900,
+                  marginBottom: isTablet ? '20px' : '10px',
+                  letterSpacing: '1px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>⚙️</span>
+                  STUDY ACTIONS
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <label
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '3px solid transparent',
+                      color: '#e2e8f0',
+                      padding: isTablet ? '16px 12px' : '6px 4px',
+                      borderRadius: '10px',
+                      fontSize: isTablet ? '11px' : '8px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: isTablet ? '8px' : '3px',
+                      transition: 'all 0.3s ease',
+                      width: '100%',
+                      textAlign: 'center',
+                      minHeight: isTablet ? '80px' : '45px',
+                      touchAction: 'manipulation',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}
+                    title="Upload DICOM ZIP or folder to append to this study"
+                  >
+                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>📤</span>
+                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                      Upload DICOM
+                    </span>
+                    <span style={{
+                      fontSize: isTablet ? '9px' : '6px',
+                      background: 'rgba(255,255,255,0.2)',
+                      padding: isTablet ? '3px 6px' : '1px 2px',
+                      borderRadius: '4px',
+                      letterSpacing: '0.5px'
+                    }}>+</span>
+                    <input type="file" multiple accept=".dcm,.dicom,.zip" onChange={handleFileChange} style={{ display: 'none' }} />
+                  </label>
+                </div>
+              </div>
+
               {/* Tablet Footer Info */}
               {isTablet && (
                 <div style={{

@@ -14,6 +14,11 @@ const { autoUpdater } = require('electron-updater');
 // Ignore certificate errors for self-signed production IPs
 app.commandLine.appendSwitch('ignore-certificate-errors');
 
+// Performance / Hardware Acceleration Flags
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 // Initialize Electron Store
 const store = new Store();
 
@@ -29,7 +34,7 @@ const wordWatchers = new Map();
 async function readFileWithRetry(filePath, tries = 6) {
   for (let i = 0; i < tries; i++) {
     try {
-      return fs.readFileSync(filePath);
+      return await fs.promises.readFile(filePath);
     } catch (e) {
       if (i === tries - 1) throw e;
       await new Promise(r => setTimeout(r, 400));
@@ -154,7 +159,7 @@ ipcMain.handle('report:printSilent', async (event, { html, deviceName } = {}) =>
   const tmpFile = path.join(os.tmpdir(), `1rad-report-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
   let printWin = null;
   try {
-    fs.writeFileSync(tmpFile, html, 'utf8');
+    await fs.promises.writeFile(tmpFile, html, 'utf8');
     printWin = new BrowserWindow({
       show: false,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
@@ -182,7 +187,7 @@ ipcMain.handle('report:printSilent', async (event, { html, deviceName } = {}) =>
   } finally {
     // Close after the job has spooled; clean the temp file a moment later.
     setTimeout(() => { try { if (printWin && !printWin.isDestroyed()) printWin.close(); } catch { /* noop */ } }, 1000);
-    setTimeout(() => { try { fs.unlinkSync(tmpFile); } catch { /* noop */ } }, 4000);
+    setTimeout(() => { fs.promises.unlink(tmpFile).catch(() => {}); }, 4000);
   }
 });
 
@@ -441,7 +446,7 @@ ipcMain.handle('word:open', async (event, payload) => {
     const safe = String(filename || 'report').replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 80);
     const filePath = path.join(os.tmpdir(), `${safe}-${Date.now()}.doc`);
     // Prepend a UTF-8 BOM so Word reads the document encoding correctly.
-    fs.writeFileSync(filePath, '﻿' + html, 'utf8');
+    await fs.promises.writeFile(filePath, '﻿' + html, 'utf8');
     const openErr = await shell.openPath(filePath); // '' on success
     if (openErr) return { ok: false, error: openErr, path: filePath };
     return { ok: true, path: filePath };
@@ -462,7 +467,7 @@ ipcMain.handle('word:openFile', async (event, payload) => {
     const safe = String(filename || 'report').replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 80);
     const safeExt = String(ext || 'docx').replace(/[^a-z0-9]/gi, '') || 'docx';
     const filePath = path.join(os.tmpdir(), `${safe}-${Date.now()}.${safeExt}`);
-    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+    await fs.promises.writeFile(filePath, Buffer.from(base64, 'base64'));
     if (watch) watchWordFile(filePath);
     const openErr = await shell.openPath(filePath); // '' on success
     if (openErr) return { ok: false, error: openErr, path: filePath };

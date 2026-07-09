@@ -63,8 +63,11 @@ const DICOM_CONFIG = {
   
   // Maximum number of web workers based on CPU cores
   // Cap phones at 4 workers — the smaller cache (800 MB) plus 8 parallel decoders
-  // can OOM a high-core phone. Tablets/desktops keep up to 8.
-  MAX_WEB_WORKERS: Math.min(navigator.hardwareConcurrency || 4, (typeof window !== 'undefined' && window.innerWidth < 768) ? 4 : 8),
+  // can OOM a high-core phone. Tablets/desktops keep up to 8. Low-RAM devices (<=4GB) are also capped at 4.
+  MAX_WEB_WORKERS: Math.min(
+    navigator.hardwareConcurrency || 4, 
+    (typeof window !== 'undefined' && window.innerWidth < 768) ? 4 : (navigator.deviceMemory && navigator.deviceMemory <= 4 ? 4 : 8)
+  ),
   
   // Timeout for initial image load (milliseconds). Allows worker decode path
   // (15s FAST_FAIL) to fail and Path C fallback (~1s) to complete inside the
@@ -326,10 +329,26 @@ async function initCornerstone() {
     console.warn("[DICOM] wadouri registration failed:", regErr);
   }
 
-  // Initialize global cache to a high-performance threshold (2 GB on desktop,
-  // 800 MB on mobile to keep Safari iOS from OOM-killing the tab).
+  // Initialize global cache to a high-performance threshold.
+  // We use navigator.deviceMemory to scale the cache down on low-RAM machines
+  // (e.g. 4GB) to prevent OS swapping and out-of-memory crashes.
   const isMobileDevice = typeof window !== 'undefined' && window.innerWidth < 768;
-  const cacheSizeBytes = isMobileDevice ? 800 * 1024 * 1024 : 2048 * 1024 * 1024;
+  const deviceMemory = navigator.deviceMemory || 8; // Assume 8GB if API not available
+  
+  let cacheSizeBytes;
+  if (isMobileDevice) {
+    // Keep Safari iOS from OOM-killing the tab
+    cacheSizeBytes = 800 * 1024 * 1024;
+  } else if (deviceMemory <= 4) {
+    // Low-RAM computers (4GB or less): restrict to 800MB to avoid OS swapping
+    cacheSizeBytes = 800 * 1024 * 1024;
+  } else if (deviceMemory <= 8) {
+    // Medium-RAM computers (8GB): restrict to 1.5GB
+    cacheSizeBytes = 1536 * 1024 * 1024;
+  } else {
+    // High-RAM computers (>8GB): 2GB
+    cacheSizeBytes = 2048 * 1024 * 1024;
+  }
   cache.setMaxCacheSize(cacheSizeBytes);
   console.log(`[DICOM] Image cache max size set to ${(cacheSizeBytes / (1024 * 1024)).toFixed(0)} MB`);
 

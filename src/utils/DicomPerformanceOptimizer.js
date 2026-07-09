@@ -257,7 +257,7 @@ export class DicomPerformanceOptimizer {
         type: 'PARSE_DICOM',
         id: jobId,
         data: { arrayBuffer, fileName }
-      });
+      }, [arrayBuffer]);
       
       setTimeout(() => {
         if (this.activeJobs.has(jobId)) {

@@ -111,7 +111,10 @@ const ReportingPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isDicomImage, setIsDicomImage] = useState(false);
-  const [editorState, setEditorState] = useState('standard'); // 'standard', 'expanded', 'collapsed'
+  const isInitialViewDicom = (searchParams.get('view') || '').toLowerCase() === 'dicom';
+  const [editorState, setEditorState] = useState(
+    isInitialViewDicom && window.innerWidth >= 1100 ? 'collapsed' : 'standard'
+  ); // 'standard', 'expanded', 'collapsed'
   const [editorWidth, setEditorWidth] = useState(50); // percentage
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isResizing = useRef(false);
@@ -120,11 +123,11 @@ const ReportingPage = () => {
   // Default tab. Opening from the study board's "View" passes ?view=dicom so the
   // window lands on the DICOM viewer; otherwise start on Reporting.
   const [activeMainTab, setActiveMainTab] = useState(
-    (searchParams.get('view') || '').toLowerCase() === 'dicom' ? 'DICOM' : 'REPORTING'
+    isInitialViewDicom ? 'DICOM' : 'REPORTING'
   ); // 'DICOM', 'REPORTING', 'TIMELINE'
   // True only while the DICOM tab is visible — defers ZIP download until the user
   // actually needs the viewer, avoiding a 200-500 MB download on every page open.
-  const dicomTabActiveRef = useRef(false);
+  const dicomTabActiveRef = useRef(isInitialViewDicom);
   // True while hydrateZipAsset is running — used to pause live polling so it
   // does not compete for bandwidth during the ZIP download + DICOM processing.
   const isHydratingRef = useRef(false);
