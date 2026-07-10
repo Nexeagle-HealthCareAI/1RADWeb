@@ -90,9 +90,9 @@ const esc = (s) => String(s ?? '')
 // (above) and impression/advice (below) never leak into the findings, and real
 // "FINDINGS:" / "IMPRESSION:" section text in the body can't be mistaken for a
 // boundary. Rendered as 1pt white text → effectively invisible in Word.
-export const FINDINGS_START_TOKEN = '[[1RAD-FINDINGS-START]]';
-export const FINDINGS_END_TOKEN = '[[1RAD-FINDINGS-END]]';
-const marker = (token) => `<p><span style="font-size:1pt; color:#FFFFFF">${token}</span></p>`;
+export const FINDINGS_START_TOKEN = '<rad-sdt-start name="1RAD-FINDINGS"></rad-sdt-start>';
+export const FINDINGS_END_TOKEN = '<rad-sdt-end></rad-sdt-end>';
+const marker = (token) => token;
 
 // Generate the patient-tracking QR as a PNG data URL (high-res so it stays crisp
 // when Word scales it down in the banner). Best-effort — '' on any failure.
@@ -178,12 +178,16 @@ function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLe
 function buildImpressionHtml(impression, advice) {
   let out = '';
   if (impression) {
+    out += `<rad-sdt-start name="1RAD-IMPRESSION"></rad-sdt-start>`;
     out += `<p></p><p><span style="font-size:10pt; color:#0F52BA"><b>IMPRESSION</b></span></p>`;
     out += `<p><span style="font-size:12pt"><b>${esc(impression)}</b></span></p>`;
+    out += `<rad-sdt-end></rad-sdt-end>`;
   }
   if (advice) {
+    out += `<rad-sdt-start name="1RAD-ADVICE"></rad-sdt-start>`;
     out += `<p></p><p><span style="font-size:10pt; color:#64748B"><b>ADVICE</b></span></p>`;
     out += `<p><span style="color:#475569"><i>${esc(advice)}</i></span></p>`;
+    out += `<rad-sdt-end></rad-sdt-end>`;
   }
   return out;
 }

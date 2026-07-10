@@ -1534,6 +1534,63 @@ export default function AppointmentBoard() {
     setShowBookingValidation(false);
   };
 
+  const startEditingAppointment = (app) => {
+    const matchedRef = (referrers || []).find(r => (r.name || '').toLowerCase() === (app.referredBy || '').toLowerCase());
+    const apptSupportDoc = app.supportedByDoctor || (matchedRef && matchedRef.isDoctor === false ? matchedRef.supportedByDoctor : '') || '';
+    const supportDoc = apptSupportDoc
+      ? (referrers || []).find(r => r.isDoctor !== false && (r.name || '').toLowerCase() === String(apptSupportDoc).toLowerCase())
+      : null;
+    const refProfile = matchedRef ? {
+      referrerIsDoctor:        matchedRef.isDoctor !== false,
+      referrerContact:         matchedRef.contact || app.referredContact || '',
+      referrerSupportedByDoctor: apptSupportDoc,
+      referrerSupportedSpecialty: supportDoc?.specialty || '',
+      referrerSupportedDegree:    supportDoc?.degree || '',
+      referrerEmail:           matchedRef.email || '',
+      referrerSpecialty:       matchedRef.specialty || '',
+      referrerDegree:          matchedRef.degree || '',
+      referrerAddress:         matchedRef.address || app.referredAddress || '',
+    } : {};
+
+    const lines = getServiceLines(app);
+    const [primary, ...rest] = lines;
+
+    const { value: ageVal, unit: ageUnitVal } = parsePatientAge(app.patientAge || app.age);
+
+    const initialEditing = {
+      ...app,
+      ...refProfile,
+      modality:         primary?.modality || app.modality || 'X-RAY',
+      service:          primary?.serviceName || app.service || '',
+      amount:           primary?.amount || app.amount || 0,
+      referralCutValue: primary?.referralCutValue || app.referralCutValue || 0,
+      _primaryServiceId: primary?.id || null,
+      patientAgeValue:  ageVal || '',
+      patientAgeUnit:   ageUnitVal || 'Y',
+    };
+
+    setEditingAppointment(initialEditing);
+
+    setEditServices(rest.map(l => ({
+      id:               l.id || null,
+      serviceName:      l.serviceName,
+      modality:         l.modality,
+      amount:           l.amount,
+      referralCutValue: l.referralCutValue,
+      status:           l.status,
+    })));
+
+    editOriginalRef.current = {
+      services: lines.map(l => ({ serviceName: l.serviceName, modality: l.modality, amount: l.amount })),
+      doctor: app.doctor || '',
+      referredBy: app.referredBy || '',
+      dateTime: app.dateTime || null,
+      patientName: app.patientName || '',
+      mobile: app.mobile || '',
+    };
+    setIsEditingOpen(true);
+  };
+
   // Print the queue-token slip. On the desktop app with a thermal printer
   // configured (Billing → Control), it prints SILENTLY as ESC/POS (big token
   // number + QR). Otherwise — or if the printer errors — it opens the existing
@@ -1629,6 +1686,10 @@ export default function AppointmentBoard() {
     }
     if (!editingAppointment.doctor) {
       showNotif('warning', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Cannot save without a supervising physician.');
+      return;
+    }
+    if (!String(editingAppointment.patientAgeValue || '').trim()) {
+      showNotif('warning', 'AGE REQUIRED', 'Please enter the patient\'s age.');
       return;
     }
     // Mobile is OPTIONAL on edit — keep whatever the user typed (trimmed) and
@@ -1741,7 +1802,7 @@ export default function AppointmentBoard() {
         referredAddress: editingAppointment.referrerAddress || '',
         patientName: editingAppointment.patientName,
         mobile: editMobile,
-        patientAge: editingAppointment.patientAge,
+        patientAge: buildPatientAge(editingAppointment.patientAgeValue, editingAppointment.patientAgeUnit),
         patientGender: editingAppointment.patientGender,
         address: editingAppointment.address || '',
         village: editingAppointment.village || '',
@@ -2709,66 +2770,7 @@ export default function AppointmentBoard() {
                 title="Print Token"
               >🖨️</button>
               <button
-                onClick={() => {
-                  // Pre-fill the referral type/profile from the saved referrer so
-                  // the edit card shows the right state and an agent isn't flipped
-                  // back to "doctor" on save.
-                  const matchedRef = (referrers || []).find(r => (r.name || '').toLowerCase() === (app.referredBy || '').toLowerCase());
-                  // For an agent, surface the supporting doctor's profile by
-                  // looking the doctor up in the partner list (it lives on the
-                  // doctor's own referrer record, not the agent's).
-                  // Prefer THIS visit's supporting doctor (per-appointment) so an
-                  // agent who refers for different doctors shows the right one for
-                  // this booking; fall back to the agent's saved default.
-                  const apptSupportDoc = app.supportedByDoctor || (matchedRef && matchedRef.isDoctor === false ? matchedRef.supportedByDoctor : '') || '';
-                  const supportDoc = apptSupportDoc
-                    ? (referrers || []).find(r => r.isDoctor !== false && (r.name || '').toLowerCase() === String(apptSupportDoc).toLowerCase())
-                    : null;
-                  const refProfile = matchedRef ? {
-                    referrerIsDoctor:        matchedRef.isDoctor !== false,
-                    referrerContact:         matchedRef.contact || app.referredContact || '',
-                    referrerSupportedByDoctor: apptSupportDoc,
-                    referrerSupportedSpecialty: supportDoc?.specialty || '',
-                    referrerSupportedDegree:    supportDoc?.degree || '',
-                    referrerEmail:           matchedRef.email || '',
-                    referrerSpecialty:       matchedRef.specialty || '',
-                    referrerDegree:          matchedRef.degree || '',
-                    referrerAddress:         matchedRef.address || app.referredAddress || '',
-                  } : {};
-                  setEditingAppointment({ ...app, ...refProfile });
-                  const lines = getServiceLines(app);
-                  const [primary, ...rest] = lines;
-                  if (primary) {
-                    setEditingAppointment(prev => ({
-                      ...app,
-                      ...refProfile,
-                      modality:         primary.modality || app.modality || 'X-RAY',
-                      service:          primary.serviceName || app.service || '',
-                      amount:           primary.amount || app.amount || 0,
-                      referralCutValue: primary.referralCutValue || app.referralCutValue || 0,
-                      _primaryServiceId: primary.id || null,
-                    }));
-                  }
-                  setEditServices(rest.map(l => ({
-                    id:               l.id || null,
-                    serviceName:      l.serviceName,
-                    modality:         l.modality,
-                    amount:           l.amount,
-                    referralCutValue: l.referralCutValue,
-                    status:           l.status,
-                  })));
-                  // Snapshot the pre-edit state so the success popup can show a
-                  // precise "what changed" summary on save.
-                  editOriginalRef.current = {
-                    services: lines.map(l => ({ serviceName: l.serviceName, modality: l.modality, amount: l.amount })),
-                    doctor: app.doctor || '',
-                    referredBy: app.referredBy || '',
-                    dateTime: app.dateTime || null,
-                    patientName: app.patientName || '',
-                    mobile: app.mobile || '',
-                  };
-                  setIsEditingOpen(true);
-                }}
+                onClick={() => startEditingAppointment(app)}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
                 title="Edit"
               >✏️</button>
@@ -4924,94 +4926,176 @@ export default function AppointmentBoard() {
                 <h3 style={{ margin:0,fontSize:'18px',fontWeight:800,color:'white',letterSpacing:'-0.2px' }}>
                   Modify Appointment
                 </h3>
-                <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
-                  Update clinical or financial details below.
-                </p>
+                <p style={{ margin:'5px 0 0', fontSize:'12px', color:'rgba(255,255,255,0.6)' }}>Update appointment details below</p>
               </div>
-              <button
-                onClick={() => { setIsEditingOpen(false); setEditServices([]); }}
-                style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}
-              >
-                &times;
-              </button>
             </div>
           </div>
-
-          {/* Body */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '30px 40px 40px 40px' }}>
-            <form onSubmit={(e) => { e.preventDefault(); handleEditAppointment(); }}>
-              
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Patient Details</h4>
+          <form onSubmit={e => { e.preventDefault(); handleEditAppointment(); }} style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+            <div style={{ marginBottom: '25px' }}>
+                <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
                 
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Patient Name <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input type="text" required value={editingAppointment.patientName || ''} onChange={e => setEditingAppointment({...editingAppointment, patientName: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                <div className="form-group" style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="e.g. Michael Thorne" 
+                    style={{ 
+                      width: '100%',
+                      fontSize: '13px', 
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #dee2e6',
+                      outline: 'none', fontWeight: 600
+                    }} 
+                    value={editingAppointment.patientName || ''}
+                    onChange={e => setEditingAppointment({...editingAppointment, patientName: e.target.value})}
+                  />
                 </div>
                 
-                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Mobile <span style={{ color: '#94a3b8', fontWeight: 600 }}>(optional)</span></label>
-                    <input type="text" value={editingAppointment.mobile || ''} onChange={e => setEditingAppointment({...editingAppointment, mobile: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div className="form-group">
+                    <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
+                    <div style={{
+                      display: 'flex', alignItems: 'stretch',
+                      border: '1.5px solid #dee2e6',
+                      borderRadius: '10px',
+                      overflow: 'hidden',
+                      height: '38px'
+                    }}>
+                      <input
+                        type="text"
+                        required
+                        placeholder={editingAppointment.patientAgeUnit === 'M' ? '6' : editingAppointment.patientAgeUnit === 'D' ? '15' : '25'}
+                        inputMode="numeric"
+                        style={{
+                          flex: 1, minWidth: 0,
+                          fontSize: '13px',
+                          padding: '8px 10px',
+                          border: 'none', outline: 'none',
+                          background: 'transparent',
+                          fontWeight: 600
+                        }}
+                        value={editingAppointment.patientAgeValue || ''}
+                        onChange={e => setEditingAppointment({...editingAppointment, patientAgeValue: e.target.value.replace(/[^0-9.]/g, '')})}
+                      />
+                      <div style={{ display: 'flex', borderLeft: '1.5px solid #dee2e6' }}>
+                        {['Y', 'M', 'D'].map(u => {
+                          const active = editingAppointment.patientAgeUnit === u;
+                          return (
+                            <button
+                              key={u}
+                              type="button"
+                              onClick={() => setEditingAppointment({...editingAppointment, patientAgeUnit: u})}
+                              title={u === 'Y' ? 'Years' : u === 'M' ? 'Months' : 'Days'}
+                              style={{
+                                background: active ? '#0f52ba' : 'transparent',
+                                color: active ? 'white' : '#64748b',
+                                border: 'none',
+                                padding: '0 10px',
+                                fontSize: '11px', fontWeight: 950, letterSpacing: '0.5px',
+                                cursor: 'pointer',
+                                transition: 'background 0.15s',
+                              }}
+                            >{u}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Age <span style={{ color: '#ef4444' }}>*</span></label>
-                    <input type="text" required value={editingAppointment.patientAge || ''} onChange={e => setEditingAppointment({...editingAppointment, patientAge: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Gender <span style={{ color: '#ef4444' }}>*</span></label>
-                    <select required value={editingAppointment.patientGender || ''} onChange={e => setEditingAppointment({...editingAppointment, patientGender: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', height: '44px' }}>
-                      <option value="" disabled>Select</option>
-                      <option value="Female">Female</option>
-                      <option value="Male">Male</option>
-                      <option value="Other">Other</option>
-                    </select>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '4px', display: 'block' }}>GENDER</label>
+                    <div style={{ display: 'flex', alignItems: 'stretch', border: '1.5px solid #dee2e6', borderRadius: '10px', overflow: 'hidden', height: '38px' }}>
+                      {[{ v: 'Female', l: 'F' }, { v: 'Male', l: 'M' }].map(g => {
+                        const active = editingAppointment.patientGender === g.v;
+                        return (
+                          <button
+                            key={g.v}
+                            type="button"
+                            onClick={() => setEditingAppointment({...editingAppointment, patientGender: g.v})}
+                            title={g.v}
+                            style={{
+                              flex: 1,
+                              background: active ? '#0f52ba' : 'transparent',
+                              color: active ? 'white' : '#64748b',
+                              border: 'none',
+                              fontSize: '13px', fontWeight: 900, letterSpacing: '0.5px',
+                              cursor: 'pointer', transition: 'background 0.15s',
+                            }}
+                          >{g.l}</button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
                 <div className="form-group" style={{ marginBottom: '15px' }}>
-                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '8px', display: 'block' }}>SOURCE OF INFORMATION</label>
+                  <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>MOBILE <span style={{ color: '#94a3b8', fontWeight: 600 }}>(optional)</span></label>
+                  <input
+                    type="tel"
+                    placeholder="10-digit mobile (optional)"
+                    style={{
+                      width: '100%',
+                      fontSize: '13px',
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #dee2e6',
+                      outline: 'none', fontWeight: 600
+                    }}
+                    value={editingAppointment.mobile || ''}
+                    onChange={e => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setEditingAppointment({...editingAppointment, mobile: val});
+                    }}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>SOURCE OF INFORMATION</label>
                   <input 
                     type="text" 
                     placeholder="Discovery source..." 
-                    style={{ width: '100%', fontSize: '13px', padding: '12px 16px', border: '1px solid #0f52ba30', background: '#f0f7ff', borderRadius: '12px', outline: 'none', color: '#1e293b' }} 
+                    style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '10px', outline: 'none', fontWeight: 600, color: '#1e293b' }} 
                     value={editingAppointment.sourceOfInfo || ''} 
                     onChange={e => setEditingAppointment({...editingAppointment, sourceOfInfo: e.target.value})} 
                   />
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
                     {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
                       <button key={opt} type="button" onClick={() => setEditingAppointment({...editingAppointment, sourceOfInfo: opt})}
-                        style={{ padding: '6px 12px', fontSize: '10px', fontWeight: 800, borderRadius: '20px', background: editingAppointment.sourceOfInfo === opt ? '#0f52ba' : '#f8fafc', color: editingAppointment.sourceOfInfo === opt ? 'white' : '#475569', border: `1px solid ${editingAppointment.sourceOfInfo === opt ? '#0f52ba' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s ease' }}>
+                        style={{ padding: '4px 10px', fontSize: '9px', fontWeight: 700, borderRadius: '20px', background: editingAppointment.sourceOfInfo === opt ? '#0f52ba' : '#f8fafc', color: editingAppointment.sourceOfInfo === opt ? 'white' : '#475569', border: `1px solid ${editingAppointment.sourceOfInfo === opt ? '#0f52ba' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s ease' }}>
                         {opt}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '15px' }}>
                   <div className="form-group">
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>VILLAGE</label>
-                    <input type="text" placeholder="Village" style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} value={editingAppointment.village || ''} onChange={e => setEditingAppointment({...editingAppointment, village: e.target.value})} />
+                    <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>VILLAGE</label>
+                    <input type="text" placeholder="Village" style={{ width: '100%', fontSize: '13px', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #dee2e6', outline: 'none', fontWeight: 600 }} value={editingAppointment.village || ''} onChange={e => setEditingAppointment({...editingAppointment, village: e.target.value})} />
                   </div>
                   <div className="form-group">
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>BLOCK</label>
-                    <input type="text" placeholder="Block" style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} value={editingAppointment.block || ''} onChange={e => setEditingAppointment({...editingAppointment, block: e.target.value})} />
+                    <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>BLOCK</label>
+                    <input type="text" placeholder="Block" style={{ width: '100%', fontSize: '13px', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #dee2e6', outline: 'none', fontWeight: 600 }} value={editingAppointment.block || ''} onChange={e => setEditingAppointment({...editingAppointment, block: e.target.value})} />
                   </div>
                   <div className="form-group">
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>DISTRICT</label>
-                    <input type="text" placeholder="District" style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} value={editingAppointment.district || ''} onChange={e => setEditingAppointment({...editingAppointment, district: e.target.value})} />
+                    <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>DISTRICT</label>
+                    <input type="text" placeholder="District" style={{ width: '100%', fontSize: '13px', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #dee2e6', outline: 'none', fontWeight: 600 }} value={editingAppointment.district || ''} onChange={e => setEditingAppointment({...editingAppointment, district: e.target.value})} />
                   </div>
                 </div>
+
                 <div className="form-group" style={{ marginBottom: '15px' }}>
-                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '8px', display: 'block' }}>ADDRESS / RESIDENCE DATA</label>
+                  <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>ADDRESS / RESIDENCE DATA</label>
                   <input 
                     type="text" 
                     placeholder="Street, Landmark..." 
-                    style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} 
+                    style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', borderRadius: '10px', border: '1.5px solid #dee2e6', outline: 'none', fontWeight: 600 }} 
                     value={editingAppointment.address || ''} 
                     onChange={e => setEditingAppointment({...editingAppointment, address: e.target.value})} 
                   />
                 </div>
-              </div>
+
 
               <div style={{ marginBottom: '25px' }}>
                 <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Service Details</h4>
@@ -5759,8 +5843,8 @@ export default function AppointmentBoard() {
                 );
               })()}
 
+            </div>
             </form>
-          </div>
 
           {/* Footer */}
           <div style={{ padding:'16px 24px', borderTop:'1px solid #e8edf2', display:'flex', gap:'10px', background:'white', flexShrink:0 }}>
@@ -5849,7 +5933,7 @@ export default function AppointmentBoard() {
       </div>
     );
   };
-;
+
 
   // ============================================================
   //  VIEW MODAL — every detail of one visit at a glance (read-only)
@@ -6534,7 +6618,7 @@ export default function AppointmentBoard() {
                   onPrintServicePrescription={(appointmentObj, serviceId) =>
                     handlePreviewPrint(appointmentObj, serviceId)
                   }
-                  onEdit={(app) => { setEditingAppointment(app); setIsEditingOpen(true); }}
+                  onEdit={(app) => startEditingAppointment(app)}
                   onCancel={(id) => {
                     const matchedApp = appointments.find(a => a.id === id || a.appointmentId === id);
                     setCancelConfirmModal({ isOpen: true, appointmentId: id, patientName: matchedApp?.patientName || 'this patient' });

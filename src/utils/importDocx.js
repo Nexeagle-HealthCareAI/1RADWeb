@@ -315,11 +315,27 @@ function blockParaToHtml(p, imageMap) {
 
 // ─── Body walker (handles list grouping) ──────────────────────────────────
 function bodyToHtml(body, numberingMap, imageMap) {
-  const blocks = Array.from(body.childNodes).filter(n => n.nodeName === W_P || n.nodeName === W_TBL);
+  const blocks = Array.from(body.childNodes).filter(n => n.nodeName === W_P || n.nodeName === W_TBL || n.nodeName === 'w:sdt');
   let html = '';
   let i = 0;
   while (i < blocks.length) {
     const node = blocks[i];
+    if (node.nodeName === 'w:sdt') {
+      const pr = kid(node, 'w:sdtPr');
+      const aliasNode = kid(pr, 'w:alias');
+      const alias = wval(aliasNode) || '';
+      const content = kid(node, 'w:sdtContent');
+      let innerHtml = '';
+      if (content) {
+        innerHtml = bodyToHtml(content, numberingMap, imageMap);
+      }
+      if (alias) {
+        html += `<rad-sdt-start name="${esc(alias)}"></rad-sdt-start>${innerHtml}<rad-sdt-end></rad-sdt-end>`;
+      } else {
+        html += innerHtml;
+      }
+      i++; continue;
+    }
     if (node.nodeName === W_TBL) { html += tableToHtml(node, imageMap); i++; continue; }
 
     const meta = paraMeta(node);

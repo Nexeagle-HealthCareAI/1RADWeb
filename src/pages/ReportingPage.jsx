@@ -23,7 +23,7 @@ import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import ReportingDicomPanel from '../components/Reporting/ReportingDicomPanel';
 import ReportingEditorPanel from '../components/Reporting/ReportingEditorPanel';
-import { NotificationModal, DraftRecoveryModal } from '../components/Reporting/ReportingModals';
+import { NotificationModal, DraftRecoveryModal, WordSyncModal } from '../components/Reporting/ReportingModals';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId } from '../db/repos/reportsRepo';
 import { getAppointmentById } from '../db/repos/appointmentsRepo';
@@ -111,7 +111,10 @@ const ReportingPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isDicomImage, setIsDicomImage] = useState(false);
-  const [editorState, setEditorState] = useState('standard'); // 'standard', 'expanded', 'collapsed'
+  const isInitialViewDicom = (searchParams.get('view') || '').toLowerCase() === 'dicom';
+  const [editorState, setEditorState] = useState(
+    isInitialViewDicom && window.innerWidth >= 1100 ? 'collapsed' : 'standard'
+  ); // 'standard', 'expanded', 'collapsed'
   const [editorWidth, setEditorWidth] = useState(50); // percentage
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isResizing = useRef(false);
@@ -120,11 +123,11 @@ const ReportingPage = () => {
   // Default tab. Opening from the study board's "View" passes ?view=dicom so the
   // window lands on the DICOM viewer; otherwise start on Reporting.
   const [activeMainTab, setActiveMainTab] = useState(
-    (searchParams.get('view') || '').toLowerCase() === 'dicom' ? 'DICOM' : 'REPORTING'
+    isInitialViewDicom ? 'DICOM' : 'REPORTING'
   ); // 'DICOM', 'REPORTING', 'TIMELINE'
   // True only while the DICOM tab is visible — defers ZIP download until the user
   // actually needs the viewer, avoiding a 200-500 MB download on every page open.
-  const dicomTabActiveRef = useRef(false);
+  const dicomTabActiveRef = useRef(isInitialViewDicom);
   // True while hydrateZipAsset is running — used to pause live polling so it
   // does not compete for bandwidth during the ZIP download + DICOM processing.
   const isHydratingRef = useRef(false);
@@ -381,6 +384,7 @@ const ReportingPage = () => {
   // Crash-recovery prompt — promise-based so the load flow can await the
   // user's choice and decide which version of the report to render.
   const [draftRecoveryModal, setDraftRecoveryModal] = useState({ isOpen: false, ageMin: 0, resolve: null });
+  const [wordSyncModal, setWordSyncModal] = useState(null);
   const askDraftRecovery = (ageMin) => new Promise((resolve) => {
     setDraftRecoveryModal({ isOpen: true, ageMin, resolve });
   });
@@ -1716,14 +1720,23 @@ const ReportingPage = () => {
     if (wordSyncRef.current.busy) return;
     wordSyncRef.current.busy = true;
     try {
-      const findings = await docxToFindingsHtml(base64);
-      if (findings && findings.trim()) {
-        applyEditorContent(findings);
-        // Let the editor commit the new content, then save a draft to cloud.
-        // Debounced to 1000ms because Word often writes to the file twice in rapid succession.
-        if (wordSaveTimeoutRef.current) clearTimeout(wordSaveTimeoutRef.current);
-        wordSaveTimeoutRef.current = setTimeout(() => { try { handleSaveReport(false); } catch (_) {} }, 1000);
-        showNotif('success', 'IMPORTED FROM WORD', 'Your Word edits were pulled in and saved as a draft.');
+      const incoming = await docxToFindingsHtml(base64);
+      const hasContent = incoming.findingsHtml?.trim() || incoming.impressionText?.trim() || incoming.adviceText?.trim();
+      
+      if (hasContent) {
+        // Trigger modal for user to accept/ignore changes
+        const accept = await new Promise((resolve) => setWordSyncModal({ resolve }));
+        setWordSyncModal(null);
+        
+        if (accept) {
+          if (incoming.findingsHtml) applyEditorContent(incoming.findingsHtml);
+          if (incoming.impressionText !== undefined) setImpression(incoming.impressionText);
+          if (incoming.adviceText !== undefined) setAdvice(incoming.adviceText);
+          
+          if (wordSaveTimeoutRef.current) clearTimeout(wordSaveTimeoutRef.current);
+          wordSaveTimeoutRef.current = setTimeout(() => { try { handleSaveReport(false); } catch (_) {} }, 1000);
+          showNotif('success', 'IMPORTED FROM WORD', 'Your Word edits were pulled in and saved as a draft.');
+        }
       }
     } catch (e) {
       showNotif('error', 'WORD IMPORT FAILED', e?.message || 'Could not read the saved Word document.');
@@ -3716,6 +3729,11 @@ const ReportingPage = () => {
       <NotificationModal
         notifModal={notifModal}
         setNotifModal={setNotifModal}
+        overlayHost={overlayHost}
+      />
+      <WordSyncModal
+        wordSyncModal={wordSyncModal}
+        resolveWordSync={(res) => { if (wordSyncModal?.resolve) wordSyncModal.resolve(res); }}
         overlayHost={overlayHost}
       />
 

@@ -193,11 +193,20 @@ export default function StudiesPage() {
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
 
-    for (const file of files) {
+    await Promise.all(files.map(async (file) => {
       const key = `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setUploads((u) => [...u, { key, name: file.name, size: file.size, pct: 0, stage: 'starting', error: null }]);
-      const onProgress = (p) =>
-        setUploads((u) => u.map((x) => (x.key === key ? { ...x, pct: p.pct ?? x.pct, stage: p.stage } : x)));
+      
+      let lastUpdate = 0;
+      const onProgress = (p) => {
+        const now = Date.now();
+        // Throttle state updates to ~6 fps to prevent React re-render freezes
+        if (now - lastUpdate > 150 || p.pct === 1) {
+          lastUpdate = now;
+          setUploads((u) => u.map((x) => (x.key === key ? { ...x, pct: p.pct ?? x.pct, stage: p.stage } : x)));
+        }
+      };
+
       try {
         const studyId = await registerStudy({ source: 'web-upload' });
         await uploadStudyAssetToStudy(file, studyId, onProgress);
@@ -205,7 +214,7 @@ export default function StudiesPage() {
       } catch (e) {
         setUploads((u) => u.map((x) => (x.key === key ? { ...x, stage: 'error', error: e.message } : x)));
       }
-    }
+    }));
     fetchStudies();
   }, [fetchStudies]);
 

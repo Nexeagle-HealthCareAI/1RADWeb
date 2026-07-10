@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx-js-style';
 
 const AnalyticsHub = ({
   isMobile,
@@ -26,6 +27,219 @@ const AnalyticsHub = ({
   const [hoveredDonutSegment, setHoveredDonutSegment] = useState(null);
 
   const TODAY = new Date().toISOString().split('T')[0];
+
+  const handleExportToExcel = () => {
+    if (!modalityGroupedServices.length) return;
+    const wb = XLSX.utils.book_new();
+
+    const HDR_BG = 'FF1E293B';
+    const TOT_BG = 'FF334155';
+    const ALT_BG = 'FFF8FAFC';
+    const DEF_FG = 'FF1E293B';
+    const BDR    = 'FFE2E8F0';
+
+    const thin    = { style: 'thin',   color: { rgb: BDR } };
+    const medium  = { style: 'medium', color: { rgb: 'FF94A3B8' } };
+    const borders = { top: thin, bottom: thin, left: thin, right: thin };
+
+    const hdrStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: HDR_BG } },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 10, name: 'Calibri' },
+      border: borders,
+      alignment: { vertical: 'center', horizontal: 'center' },
+    };
+    const leftHdrStyle = {
+      ...hdrStyle,
+      alignment: { vertical: 'center', horizontal: 'left' }
+    };
+    const totStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: TOT_BG } },
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 10, name: 'Calibri' },
+      border: { ...borders, top: medium },
+      alignment: { vertical: 'center', horizontal: 'center' },
+    };
+    const leftTotStyle = {
+      ...totStyle,
+      alignment: { vertical: 'center', horizontal: 'left' }
+    };
+    const subHdrStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFE2E8F0' } },
+      font: { bold: true, color: { rgb: 'FF1E293B' }, sz: 10, name: 'Calibri' },
+      border: borders,
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+    const mkRow = (bg, fg, bold = false, align = 'center') => ({
+      fill: { patternType: 'solid', fgColor: { rgb: bg } },
+      font: { color: { rgb: fg }, sz: 10, name: 'Calibri', bold },
+      border: borders,
+      alignment: { vertical: 'center', horizontal: align },
+    });
+
+    const dataRows = [];
+    const styleMap = new Map();
+
+    modalityGroupedServices.forEach((modGroup) => {
+      const subheaderRowIdx = dataRows.length + 1;
+      dataRows.push({
+        'Modality': modGroup.modality,
+        'Service Name': `MODALITY: ${modGroup.modality}`,
+        'Scan Volume': '',
+        'Gross Revenue (INR)': '',
+        'Discount/Comm (INR)': '',
+        'Net Yield (INR)': '',
+        'Avg Value (INR)': '',
+        'Collection Efficiency': ''
+      });
+      styleMap.set(subheaderRowIdx, 'SUBHEADER');
+
+      (modGroup.services || []).forEach((svc) => {
+        const rowIdx = dataRows.length + 1;
+        const gross = Math.round(svc.grossRevenue || 0);
+        const cut = Math.round(svc.referralCut || 0);
+        const net = Math.round(svc.netRevenue || 0);
+        const avgVal = svc.scanCount > 0 ? Math.round(svc.grossRevenue / svc.scanCount) : 0;
+        const eff = `${(svc.collectionEfficiency || 0).toFixed(1)}%`;
+
+        dataRows.push({
+          'Modality': modGroup.modality,
+          'Service Name': svc.serviceName || 'Unknown Service',
+          'Scan Volume': svc.scanCount || 0,
+          'Gross Revenue (INR)': gross,
+          'Discount/Comm (INR)': cut,
+          'Net Yield (INR)': net,
+          'Avg Value (INR)': avgVal,
+          'Collection Efficiency': eff
+        });
+        styleMap.set(rowIdx, 'DATA');
+      });
+
+      const subtotalRowIdx = dataRows.length + 1;
+      const modGross = (modGroup.services || []).reduce((s, x) => s + (x.grossRevenue || 0), 0);
+      const modNet = (modGroup.services || []).reduce((s, x) => s + (x.netRevenue || 0), 0);
+      const modCut = (modGroup.services || []).reduce((s, x) => s + (x.referralCut || 0), 0);
+      const modScans = (modGroup.services || []).reduce((s, x) => s + (x.scanCount || 0), 0);
+      const modAvg = modScans > 0 ? Math.round(modGross / modScans) : 0;
+      const modEff = modGross > 0 ? `${((modNet / modGross) * 100).toFixed(1)}%` : '0.0%';
+
+      dataRows.push({
+        'Modality': modGroup.modality,
+        'Service Name': `SUBTOTAL — ${modGroup.modality}`,
+        'Scan Volume': modScans,
+        'Gross Revenue (INR)': Math.round(modGross),
+        'Discount/Comm (INR)': Math.round(modCut),
+        'Net Yield (INR)': Math.round(modNet),
+        'Avg Value (INR)': modAvg,
+        'Collection Efficiency': modEff
+      });
+      styleMap.set(subtotalRowIdx, 'SUBTOTAL');
+    });
+
+    const grandTotalRowIdx = dataRows.length + 1;
+    const totalGross = allServicesData.reduce((s, x) => s + (x.grossRevenue || 0), 0);
+    const totalNet = allServicesData.reduce((s, x) => s + (x.netRevenue || 0), 0);
+    const totalCut = allServicesData.reduce((s, x) => s + (x.referralCut || 0), 0);
+    const totalScans = allServicesData.reduce((s, x) => s + (x.scanCount || 0), 0);
+    const totalAvg = totalScans > 0 ? Math.round(totalGross / totalScans) : 0;
+    const totalEff = totalGross > 0 ? `${((totalNet / totalGross) * 100).toFixed(1)}%` : '0.0%';
+
+    dataRows.push({
+      'Modality': 'ALL',
+      'Service Name': 'GRAND TOTAL',
+      'Scan Volume': totalScans,
+      'Gross Revenue (INR)': Math.round(totalGross),
+      'Discount/Comm (INR)': Math.round(totalCut),
+      'Net Yield (INR)': Math.round(totalNet),
+      'Avg Value (INR)': totalAvg,
+      'Collection Efficiency': totalEff
+    });
+    styleMap.set(grandTotalRowIdx, 'GRAND_TOTAL');
+
+    const ws = XLSX.utils.json_to_sheet(dataRows);
+    const numCols = 8;
+    const numRows = dataRows.length;
+
+    ws['!cols'] = [
+      { wch: 15 },
+      { wch: 35 },
+      { wch: 12 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 22 }
+    ];
+
+    for (let C = 0; C < numCols; C++) {
+      const cellRef = XLSX.utils.encode_cell({ c: C, r: 0 });
+      if (ws[cellRef]) {
+        ws[cellRef].s = C === 1 ? leftHdrStyle : hdrStyle;
+      }
+    }
+
+    for (let R = 1; R <= numRows; R++) {
+      const type = styleMap.get(R);
+      const bg = R % 2 === 0 ? ALT_BG : 'FFFFFFFF';
+
+      for (let C = 0; C < numCols; C++) {
+        const cellRef = XLSX.utils.encode_cell({ c: C, r: R });
+        if (!ws[cellRef]) continue;
+
+        const align = C === 1 ? 'left' : 'center';
+
+        if (type === 'SUBHEADER') {
+          ws[cellRef].s = subHdrStyle;
+        } else if (type === 'SUBTOTAL') {
+          ws[cellRef].s = C === 1 ? leftTotStyle : totStyle;
+        } else if (type === 'GRAND_TOTAL') {
+          ws[cellRef].s = C === 1 ? leftTotStyle : totStyle;
+        } else {
+          ws[cellRef].s = mkRow(bg, DEF_FG, false, align);
+        }
+      }
+    }
+
+    const summarySheetRows = [
+      { Metric: 'Service Performance Summary', Value: '' },
+      { Metric: 'Temporal Scope', Value: timeFilter },
+      { Metric: 'Start Date', Value: startDate || 'All Time' },
+      { Metric: 'End Date', Value: endDate || 'All Time' },
+      { Metric: 'Total Modalities', Value: modalityGroupedServices.length },
+      { Metric: 'Total Unique Services', Value: allServicesData.length },
+      { Metric: 'Total Scans Volume', Value: totalScans },
+      { Metric: 'Total Gross Billing', Value: Math.round(totalGross) },
+      { Metric: 'Total Yield (Net)', Value: Math.round(totalNet) },
+      { Metric: 'Overall Efficiency', Value: totalEff },
+      { Metric: 'Exported At', Value: new Date().toLocaleString() }
+    ];
+
+    const wsSummary = XLSX.utils.json_to_sheet(summarySheetRows);
+    wsSummary['!cols'] = [{ wch: 25 }, { wch: 25 }];
+
+    for (let C = 0; C < 2; C++) {
+      const cellRef = XLSX.utils.encode_cell({ c: C, r: 0 });
+      if (wsSummary[cellRef]) wsSummary[cellRef].s = hdrStyle;
+    }
+    for (let R = 1; R < summarySheetRows.length; R++) {
+      const bg = R % 2 === 0 ? ALT_BG : 'FFFFFFFF';
+      for (let C = 0; C < 2; C++) {
+        const cellRef = XLSX.utils.encode_cell({ c: C, r: R });
+        if (wsSummary[cellRef]) wsSummary[cellRef].s = mkRow(bg, DEF_FG, R === 1, C === 0 ? 'left' : 'center');
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Services Performance');
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+    const fname = `Service_Performance_${timeFilter}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fname;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   // ==========================================
   // 1. DATA HEURISTICS & PRESETS (STUNNING FALLBACKS)
@@ -1363,6 +1577,34 @@ const AnalyticsHub = ({
             {/* ======================================================== */}
             {activeSection === 'SERVICES' && (
               <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b', margin: 0 }}>SERVICE PERFORMANCE ANALYSIS</h4>
+                  {modalityGroupedServices.length > 0 && (
+                    <button
+                      onClick={handleExportToExcel}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: '#0f52ba',
+                        color: 'white',
+                        border: 'none',
+                        padding: '8px 16px',
+                        borderRadius: '10px',
+                        fontSize: '9px',
+                        fontWeight: 950,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(15, 82, 186, 0.2)',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+                    >
+                      📥 EXPORT EXCEL
+                    </button>
+                  )}
+                </div>
 
                 {/* Summary KPI strip */}
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: '16px' }}>
