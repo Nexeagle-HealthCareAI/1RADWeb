@@ -569,11 +569,6 @@ export default function useReportAutosave({
       notify('error', 'CONTEXT MISSING', 'Cannot sign — study/appointment context is missing. Please reload.');
       return { ok: false };
     }
-    if (!isOnline) {
-      notify('warning', 'OFFLINE', 'Signing a report requires a connection. Reconnect and sign again.');
-      return { ok: false };
-    }
-
     let currentFindings = editorText;
     if (editorRef.current?.editor) currentFindings = editorRef.current.editor.getHTML();
 
@@ -582,6 +577,36 @@ export default function useReportAutosave({
       imagingStudyId: imagingStudyId || null,
       appointmentServiceId: activeServiceId || null,
     };
+
+    if (!isOnline) {
+      const draftPayload = {
+        ...owner,
+        templateId: selectedTemplateId,
+        findings: currentFindings,
+        impression: impression || '',
+        advice: advice || '',
+        reportingMode: 'Narrative',
+        rowVersion: rowVersionRef.current,
+      };
+      await addToOutbox('REPORT', draftPayload);
+      
+      const finPayload = {
+        ...owner,
+        targetStatus,
+        password,
+        credentials: credentials || null,
+        // Since we queued the draft first, it will bump the RowVersion on the server.
+        // The SyncEngine will process them sequentially, but sending the old rowVersion 
+        // in REPORT_FINALIZE might cause a conflict. We omit it for offline finalize to let it pass.
+        rowVersion: null,
+      };
+      await addToOutbox('REPORT_FINALIZE', finPayload);
+
+      await nativeStorage.delete(reportDraftKey(ownerKey, activeServiceId));
+      notify('warning', 'QUEUED FOR SYNC', 'You are offline. The report signature has been queued and will be applied when you reconnect.');
+      if (targetStatus === 'Final') onFinalized();
+      return { ok: true };
+    }
 
     setIsSaving(true);
     try {
@@ -661,19 +686,24 @@ export default function useReportAutosave({
       notify('error', 'CONTEXT MISSING', 'Cannot add an addendum — context is missing. Please reload.');
       return { ok: false };
     }
+
+    const payload = {
+      appointmentId,
+      imagingStudyId: imagingStudyId || null,
+      appointmentServiceId: activeServiceId || null,
+      text,
+      password,
+      credentials: credentials || null,
+    };
+
     if (!isOnline) {
-      notify('warning', 'OFFLINE', 'Adding an addendum requires a connection. Reconnect and try again.');
-      return { ok: false };
+      await addToOutbox('REPORT_ADDENDUM', payload);
+      notify('warning', 'QUEUED FOR SYNC', 'You are offline. The signed addendum has been queued and will be appended when you reconnect.');
+      return { ok: true };
     }
+
     try {
-      const res = await apiClient.post('/reporting/report/addendum', {
-        appointmentId,
-        imagingStudyId: imagingStudyId || null,
-        appointmentServiceId: activeServiceId || null,
-        text,
-        password,
-        credentials: credentials || null,
-      });
+      const res = await apiClient.post('/reporting/report/addendum', payload);
       if (res.data?.success) {
         const report = res.data.data;
         if (report?.rowVersion ?? report?.RowVersion) rowVersionRef.current = report.rowVersion ?? report.RowVersion;

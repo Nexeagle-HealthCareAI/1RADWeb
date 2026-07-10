@@ -321,11 +321,20 @@ function resolveRoute(item) {
   switch (item.type) {
     case 'INVOICE':              return { method: 'POST',   url: '/finance/invoices' };
     case 'EXPENSE':              return { method: 'POST',   url: '/finance/expense' };
+    case 'EXPENSE_UPDATE':       return { method: 'PUT',    url: `/finance/expenses/${p.id}` };
+    case 'EXPENSE_STATUS_UPDATE':return { method: 'PUT',    url: `/finance/expenses/${p.id}/status`,
+                                          body: { status: p.status } };
     case 'PAYMENT':              return { method: 'POST',   url: '/finance/payments' };
     case 'REPORT':               return { method: 'POST',   url: '/reporting/save' };
+    case 'REPORT_FINALIZE':      return { method: 'POST',   url: '/reporting/report/finalize' };
+    case 'REPORT_ADDENDUM':      return { method: 'POST',   url: '/reporting/report/addendum' };
     case 'PRICE_UPDATE':         return { method: 'POST',   url: '/finance/registry' };
     case 'PAYOUT':               return { method: 'POST',   url: '/referrers/commissions' };
     case 'PAYOUT_BATCH':         return { method: 'POST',   url: '/referrers/commissions/batch' };
+    case 'PAYOUT_UPDATE':        return { method: 'PUT',    url: `/referrers/commissions/${p.commissionId}` };
+    case 'PAYOUT_STATUS_UPDATE': return { method: 'PATCH',  url: `/referrers/commissions/${p.id}/status`,
+                                          body: { status: p.status } };
+    case 'APPROVAL_CREATE':      return { method: 'POST',   url: '/approvals' };
     case 'HOSPITAL_UPDATE':      return { method: 'PUT',    url: `/hospitals/${p.id}` };
     case 'PERSONNEL_CREATE':     return { method: 'POST',   url: '/personnel' };
     case 'PERSONNEL_UPDATE':     return { method: 'PUT',    url: `/personnel/${p.id}` };
@@ -336,6 +345,8 @@ function resolveRoute(item) {
     case 'INVOICE_DELETE':       return { method: 'DELETE', url: `/finance/invoices/${p.id}` };
     case 'PRESCRIPTION_UPDATE':  return { method: 'POST',   url: '/Prescription' };
     case 'APPOINTMENT_CREATE':   return { method: 'POST',   url: '/appointments' };
+    case 'STUDY_ASSIGN':         return { method: 'POST',   url: `/Study/studies/${p.id}/assign`, body: p.body };
+    case 'STUDY_DELETE':         return { method: 'DELETE', url: `/Study/studies/${p.id}` };
     case 'APPOINTMENT_STATUS':   return { method: 'PATCH',  url: `/appointments/${p.id}/status`,
                                           // server expects a raw JSON string for this endpoint
                                           body: JSON.stringify(p.status),

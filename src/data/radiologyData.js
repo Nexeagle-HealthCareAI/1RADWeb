@@ -16,7 +16,7 @@
 
 import { MEDICAL_TERMS as FALLBACK_TERMS } from '../components/NarrativeEditor/extensions/medicalTerms';
 
-const DATA_URL = '/data/radlex_ranked.json';
+const DATA_URL = (import.meta.env.BASE_URL || '/') + 'data/radlex_ranked.json';
 
 let _terms = null;       // string[] — display labels, aligned with _freq
 let _freq = null;        // number[] — frequency/relevance score per term

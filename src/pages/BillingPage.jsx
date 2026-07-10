@@ -478,7 +478,7 @@ export default function BillingPage() {
     // retry can't record the expense twice.
     const idemKey = crypto.randomUUID();
     if (!isOnline) {
-      await addToOutbox('EXPENSE', payload, idemKey);
+      await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload, idemKey);
       notify({ type: 'info', title: 'Offline', message: 'Expense will sync when reconnected.' });
       setIsExpenseDrawerOpen(false);
       return;
@@ -509,7 +509,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
-        await addToOutbox('EXPENSE', payload, idemKey);
+        await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload, idemKey);
         notify({ type: 'info', title: 'No connection', message: 'Expense added to offline queue.' });
         setIsExpenseDrawerOpen(false);
       } else {
@@ -795,12 +795,24 @@ export default function BillingPage() {
   // (Draft / Pending / Approved / Paid) instead of just toggling.
   const handleSetExpenseStatus = async (id, newStatus) => {
     console.log(`[FINANCE] Setting expense ${id} status → ${newStatus}`);
+    
+    if (!isOnline) {
+      await addToOutbox('EXPENSE_STATUS_UPDATE', { id, status: newStatus });
+      notify({ type: 'info', title: 'Offline', message: 'Expense status update queued.' });
+      // We don't have optimistic UI for this yet, so we just wait for sync
+      return;
+    }
+
     try {
       const resp = await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
       console.log('[FINANCE] Status update OK:', resp.status, resp.data);
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
+      if (!err.response) {
+        await addToOutbox('EXPENSE_STATUS_UPDATE', { id, status: newStatus });
+        notify({ type: 'info', title: 'No connection', message: 'Status update added to offline queue.' });
+      } else {
       const status = err.response?.status;
       const data = err.response?.data;
       const errorMsg = data?.message || data?.error || data?.title || err.message || 'Could not update expense status.';
@@ -808,7 +820,7 @@ export default function BillingPage() {
         type: 'error',
         title: `Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}`,
         message: errorMsg,
-      });
+      }
     }
   };
 
@@ -833,17 +845,31 @@ export default function BillingPage() {
       confirmText: 'Write off',
       danger: true,
       onConfirm: async () => {
+        const payload = {
+          referrerId,
+          remarks: `DEFICIT WRITE-OFF (₹${deficit}) — centre absorbed`,
+          lines: [{ modality: 'WRITE-OFF', amount: deficit, status: 'PAID' }],
+        };
+
+        if (!isOnline) {
+          await addToOutbox('PAYOUT_BATCH', payload);
+          notify({ type: 'info', title: 'Offline', message: 'Write-off queued for sync.' });
+          // Optimistic UI could go here, but for now we just rely on the sync pull
+          return;
+        }
+
         try {
-          await apiClient.post('/referrers/commissions/batch', {
-            referrerId,
-            remarks: `DEFICIT WRITE-OFF (₹${deficit}) — centre absorbed`,
-            lines: [{ modality: 'WRITE-OFF', amount: deficit, status: 'PAID' }],
-          });
+          await apiClient.post('/referrers/commissions/batch', payload);
           notify({ type: 'success', title: 'Written off', message: `₹${deficit.toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
           refreshAllFinancialData();
         } catch (err) {
           console.error('[FINANCE] Deficit write-off failed', err);
-          notify({ type: 'error', message: 'Could not write off the deficit.' });
+          if (!err.response) {
+            await addToOutbox('PAYOUT_BATCH', payload);
+            notify({ type: 'info', title: 'No connection', message: 'Write-off added to offline queue.' });
+          } else {
+            notify({ type: 'error', message: 'Could not write off the deficit.' });
+          }
         }
       },
     });
@@ -917,31 +943,42 @@ export default function BillingPage() {
         notify({ type: 'warning', title: 'REASON REQUIRED', message: 'Enter a short reason for this payout change — edits to a recorded payout need admin approval.' });
         return;
       }
+      
+      const approvalPayload = {
+        type: 'EDIT_COMMISSION',
+        title: `Payout edit — ${editPayout.referrerName || ''} · ₹${(parseFloat(editPayout.amount) || 0).toLocaleString()} ${editPayout.modality || ''}`.trim(),
+        appointmentId: editPayout.appointmentId || null,
+        payload: JSON.stringify({
+          commissionId: editPayout.commissionId,
+          amount: parseFloat(editPayout.amount) || 0,
+          modality: editPayout.modality || '',
+          status: editPayout.status || 'UNPAID',
+          remarks: editPayout.remarks || '',
+        }),
+        reason,
+      };
+
       if (!isOnline) {
-        notify({ type: 'warning', title: 'OFFLINE', message: 'Reconnect to send this payout change for approval.' });
+        await addToOutbox('APPROVAL_CREATE', approvalPayload);
+        notify({ type: 'info', title: 'Offline', message: 'Approval request added to offline queue.' });
+        setIsPayoutDrawerOpen(false);
         return;
       }
       try {
         setIsSavingPayout(true);
-        await apiClient.post('/approvals', {
-          type: 'EDIT_COMMISSION',
-          title: `Payout edit — ${editPayout.referrerName || ''} · ₹${(parseFloat(editPayout.amount) || 0).toLocaleString()} ${editPayout.modality || ''}`.trim(),
-          appointmentId: editPayout.appointmentId || null,
-          payload: JSON.stringify({
-            commissionId: editPayout.commissionId,
-            amount: parseFloat(editPayout.amount) || 0,
-            modality: editPayout.modality || '',
-            status: editPayout.status || 'UNPAID',
-            remarks: editPayout.remarks || '',
-          }),
-          reason,
-        });
+        await apiClient.post('/approvals', approvalPayload);
         window.dispatchEvent(new Event('1rad_approvals_changed'));   // refresh the nav badge
         notify({ type: 'success', title: 'Sent for approval', message: 'The payout change will apply once an admin approves it.' });
         setIsPayoutDrawerOpen(false);
       } catch (err) {
         console.error('[PAYOUT] approval request failed', err);
-        notify({ type: 'error', message: 'Could not send the change for approval. Please try again.' });
+        if (!err.response) {
+          await addToOutbox('APPROVAL_CREATE', approvalPayload);
+          notify({ type: 'info', title: 'No connection', message: 'Approval request added to offline queue.' });
+          setIsPayoutDrawerOpen(false);
+        } else {
+          notify({ type: 'error', message: 'Could not send the change for approval. Please try again.' });
+        }
       } finally {
         setIsSavingPayout(false);
       }
@@ -971,7 +1008,7 @@ export default function BillingPage() {
     const idemKey = crypto.randomUUID();
     if (!isOnline) {
       if (isSingle) {
-        await addToOutbox('PAYOUT', singlePayload, idemKey);
+        await addToOutbox('PAYOUT_UPDATE', { ...singlePayload, commissionId: editPayout.commissionId }, idemKey);
       } else {
         await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
       }
@@ -998,7 +1035,11 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
-        await addToOutbox(isSingle ? 'PAYOUT' : 'PAYOUT_BATCH', isSingle ? singlePayload : batchPayload, idemKey);
+        if (isSingle) {
+          await addToOutbox('PAYOUT_UPDATE', { ...singlePayload, commissionId: editPayout.commissionId }, idemKey);
+        } else {
+          await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
+        }
         notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
         setIsPayoutDrawerOpen(false);
       } else {
@@ -1055,12 +1096,24 @@ export default function BillingPage() {
       return;
     }
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+    
+    if (!isOnline) {
+      await addToOutbox('PAYOUT_STATUS_UPDATE', { id, status: newStatus });
+      notify({ type: 'info', title: 'Offline', message: 'Commission status update queued.' });
+      return;
+    }
+
     try {
       await apiClient.patch(`/referrers/commissions/${id}/status`, { status: newStatus });
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
-      notify({ type: 'error', message: 'Could not update commission status.' });
+      if (!err.response) {
+        await addToOutbox('PAYOUT_STATUS_UPDATE', { id, status: newStatus });
+        notify({ type: 'info', title: 'No connection', message: 'Commission status update added to offline queue.' });
+      } else {
+        notify({ type: 'error', message: 'Could not update commission status.' });
+      }
     }
   };
 
