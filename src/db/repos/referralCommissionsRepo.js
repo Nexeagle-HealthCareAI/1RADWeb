@@ -71,3 +71,50 @@ export async function evictOlderThan(daysAgo) {
   const t = tables.referral_commissions();
   return t.filter(r => (r.transactionDate || '') < cutoffIso).delete();
 }
+
+// ── Page-aware reactive read ────────────────────────────────────────────────
+// Same cursor pattern. Cursor = { transactionDate, id }.
+export const PAGE_SIZE_COMMISSIONS = 25;
+
+export function watchCommissionsPage(
+  filters = {},
+  { pageSize = PAGE_SIZE_COMMISSIONS, cursor = null } = {}
+) {
+  const { status = 'ALL', startDateIso, endDateIso, referrerId } = filters;
+
+  return liveQuery(async () => {
+    const t = tables.referral_commissions();
+    let arr = await t.orderBy('transactionDate').reverse().toArray();
+
+    if (status && status !== 'ALL') {
+      arr = arr.filter(r => (r.status || '').toUpperCase() === status.toUpperCase());
+    }
+    if (referrerId) {
+      arr = arr.filter(r => r.referrerId === referrerId);
+    }
+    if (startDateIso) {
+      arr = arr.filter(r => (r.transactionDate || '') >= startDateIso);
+    }
+    if (endDateIso) {
+      const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
+      arr = arr.filter(r => (r.transactionDate || '') <= eod);
+    }
+
+    const totalCount = arr.length;
+
+    if (cursor) {
+      const idx = arr.findIndex(
+        r => r.transactionDate === cursor.transactionDate && r.id === cursor.id
+      );
+      if (idx >= 0) arr = arr.slice(idx + 1);
+    }
+
+    const page = arr.slice(0, pageSize);
+    const nextCursor =
+      arr.length > pageSize
+        ? { transactionDate: page[page.length - 1].transactionDate, id: page[page.length - 1].id }
+        : null;
+
+    return { rows: page, nextCursor, totalCount };
+  });
+}

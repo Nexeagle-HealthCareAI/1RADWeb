@@ -5,7 +5,7 @@ import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import { printThermalReceipt } from '../utils/thermalPrint';
-import { watchInvoices } from '../db/repos/invoicesRepo';
+import { watchInvoices, watchInvoicesPage } from '../db/repos/invoicesRepo';
 import { watchExpenses } from '../db/repos/expensesRepo';
 import { watchReferrers } from '../db/repos/referrersRepo';
 import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
@@ -125,9 +125,25 @@ export default function BillingPage() {
     }
     setSortConfig({ key, direction });
   };
-  
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+
+  // ── Pagination state (Revenue Hub) ────────────────────────────────────────
+  // invoiceCursors is a stack of cursor tokens:
+  //   [null]           = first page only (null cursor means start-of-list)
+  //   [null, c1]       = first page rendered + next page loaded
+  //   [null, c1, c2]   = first two pages rendered etc.
+  // "Load 25 more" appends the nextCursor returned by the current page.
+  const [invoiceCursors, setInvoiceCursors] = useState([null]); // stack: [null, cursor1, cursor2, ...]
+  const [invoicePageData, setInvoicePageData] = useState({ rows: [], nextCursor: null, totalCount: 0 });
+  const [invoiceLoadingMore, setInvoiceLoadingMore] = useState(false);
+
+  // The active cursor is the last entry in the stack.
+  const invoiceActiveCursor = invoiceCursors[invoiceCursors.length - 1];
+
+  // Reset to page 1 whenever any filter changes (status, date, search, modality).
+  // Called inside the useEffect dependencies.
+  const resetInvoicePage = useCallback(() => {
+    setInvoiceCursors([null]);
+  }, []);
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
@@ -343,11 +359,48 @@ export default function BillingPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchOutstandingCredits]);
 
-  // B3 Slice 1 — invoices come from the local Dexie cache via liveQuery.
-  // The sync engine keeps the cache fresh in the background; this just
-  // re-renders the table whenever a delta lands. Filters mirror the
-  // legacy server-side query (status / search / date range) so the
-  // offline experience is identical to online.
+  // B3 Slice 1 — paged invoice display. Uses watchInvoicesPage (cursor-based)
+  // so only PAGE_SIZE_INVOICES rows are loaded at a time. The existing full
+  // watchInvoices subscription below this one keeps feeding liveStats / analytics.
+  // When any filter changes, the cursor stack is reset (resetInvoicePage) so the
+  // user always sees page 1 of the new filtered set.
+  useEffect(() => {
+    // This liveQuery only drives the table; it subscribes to a single page slice.
+    const sub = watchInvoicesPage(
+      {
+        status: statusFilter,
+        search: searchTerm,
+        startDateIso: startDate || undefined,
+        endDateIso:   endDate   || undefined,
+      },
+      { cursor: invoiceActiveCursor }
+    ).subscribe({
+      next: (data) => setInvoicePageData(data),
+      error: (err) => console.warn('[BillingPage] invoice page liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [statusFilter, searchTerm, startDate, endDate, invoiceActiveCursor]);
+
+  // Reset page whenever filters change so 'Load more' doesn't carry over
+  // a cursor that no longer makes sense for the new filter set.
+  useEffect(() => {
+    resetInvoicePage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, searchTerm, startDate, endDate]);
+
+  // 'Load 25 more' — push the current page's nextCursor onto the stack.
+  // watchInvoicesPage re-emits with the next slice appended.
+  const loadMoreInvoices = useCallback(async () => {
+    if (!invoicePageData.nextCursor || invoiceLoadingMore) return;
+    setInvoiceLoadingMore(true);
+    // Small artificial delay so the skeleton has time to render.
+    await new Promise(r => setTimeout(r, 120));
+    setInvoiceCursors(prev => [...prev, invoicePageData.nextCursor]);
+    setInvoiceLoadingMore(false);
+  }, [invoicePageData.nextCursor, invoiceLoadingMore]);
+
+  // Full watchInvoices subscription — feeds liveStats and analytics only.
+  // Always reads the entire filtered set regardless of display pagination.
   useEffect(() => {
     const sub = watchInvoices({
       status: statusFilter,
@@ -820,6 +873,7 @@ export default function BillingPage() {
         type: 'error',
         title: `Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}`,
         message: errorMsg,
+      });
       }
     }
   };
@@ -2817,8 +2871,14 @@ export default function BillingPage() {
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
-          paginatedInvoices={paginatedInvoices}
-          renderPagination={renderPagination}
+          /* ── Cursor-pagination props ───────────────────────────── */
+          pagedInvoices={invoicePageData.rows}
+          invoiceTotalCount={invoicePageData.totalCount}
+          invoiceHasMore={!!invoicePageData.nextCursor}
+          onLoadMoreInvoices={loadMoreInvoices}
+          invoiceLoadingMore={invoiceLoadingMore}
+          /* ── Future-appointment section (unchanged) ───────────────── */
+          paginatedFutureAppointments={futureAppointments}
           handleOpenInvoice={handleOpenInvoice}
           handleDeleteInvoice={handleDeleteInvoice}
           handlePrintA4={handlePrintA4}
@@ -2835,7 +2895,6 @@ export default function BillingPage() {
           sortConfig={sortConfig}
           handleSort={handleSort}
           futureAppointments={futureAppointments}
-          paginatedFutureAppointments={paginatedFutureAppointments}
           serviceRegistry={serviceRegistry}
         />
       )}
