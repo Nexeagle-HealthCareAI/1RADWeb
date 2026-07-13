@@ -145,6 +145,15 @@ export default function BillingPage() {
     setInvoiceCursors([null]);
   }, []);
 
+  // ── Pagination state (Expense Ledger) ─────────────────────────────────────
+  const [expenseCursors, setExpenseCursors] = useState([null]);
+  const [expensePageData, setExpensePageData] = useState({ rows: [], nextCursor: null, totalCount: 0 });
+  const [expenseLoadingMore, setExpenseLoadingMore] = useState(false);
+  const expenseActiveCursor = expenseCursors[expenseCursors.length - 1];
+  const resetExpensePage = useCallback(() => {
+    setExpenseCursors([null]);
+  }, []);
+
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
   const [matrix, setMatrix] = useState({ daily: [], weekly: [], monthly: [], yearly: [], modalityBreakdown: [] });
@@ -399,6 +408,37 @@ export default function BillingPage() {
     setInvoiceLoadingMore(false);
   }, [invoicePageData.nextCursor, invoiceLoadingMore]);
 
+  // ── Expense Ledger Progressive Sync (Phase 5) ─────────────────────────────
+  useEffect(() => {
+    const sub = watchExpensesPage(
+      {
+        category: expenseFilter,
+        search: expenseSearch,
+        startDateIso: startDate || undefined,
+        endDateIso:   endDate   || undefined,
+      },
+      { cursor: expenseActiveCursor }
+    ).subscribe({
+      next: (data) => setExpensePageData(data),
+      error: (err) => console.warn('[BillingPage] expense page liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [expenseFilter, expenseSearch, startDate, endDate, expenseActiveCursor]);
+
+  useEffect(() => {
+    resetExpensePage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenseFilter, expenseSearch, startDate, endDate]);
+
+  const loadMoreExpenses = useCallback(async () => {
+    if (!expensePageData.nextCursor || expenseLoadingMore) return;
+    setExpenseLoadingMore(true);
+    await new Promise(r => setTimeout(r, 120));
+    setExpenseCursors(prev => [...prev, expensePageData.nextCursor]);
+    setExpenseLoadingMore(false);
+  }, [expensePageData.nextCursor, expenseLoadingMore]);
+
+
   // Full watchInvoices subscription — feeds liveStats and analytics only.
   // Always reads the entire filtered set regardless of display pagination.
   useEffect(() => {
@@ -442,11 +482,10 @@ export default function BillingPage() {
     return () => sub.unsubscribe();
   }, [isOnline, pendingCount, startDate, endDate]);
 
-  // B3 Slice 3 — expenses liveQuery. Same filter shape; expenses don't
-  // have a status filter but reuse search + date range from the page state.
+  // B3 Slice 3 — full expenses liveQuery (used by analytics/exports).
   useEffect(() => {
     const sub = watchExpenses({
-      search: searchTerm,
+      search: expenseSearch,
       startDateIso: startDate || undefined,
       endDateIso:   endDate   || undefined,
     }).subscribe({
@@ -454,7 +493,7 @@ export default function BillingPage() {
       error: (err) => console.warn('[BillingPage] expense liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [searchTerm, startDate, endDate]);
+  }, [expenseSearch, startDate, endDate]);
 
   // B3 Slice 4 — referrers liveQuery.
   useEffect(() => {
@@ -2822,8 +2861,13 @@ export default function BillingPage() {
         <ExpenseLedger
           isMobile={isMobile}
           outflowStats={outflowStats}
-          filteredOutflow={filteredOutflow}
-          paginatedOutflow={paginatedOutflow}
+          /* ── Cursor-pagination props (Phase 5) ──────────────────────── */
+          pagedExpenses={expensePageData.rows}
+          expenseTotalCount={expensePageData.totalCount}
+          expenseHasMore={!!expensePageData.nextCursor}
+          onLoadMoreExpenses={loadMoreExpenses}
+          expenseLoadingMore={expenseLoadingMore}
+          /* ─────────────────────────────────────────────────────────────── */
           timeFilter={timeFilter}
           setTimeFilter={setTimeFilter}
           startDate={startDate}
