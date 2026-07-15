@@ -312,8 +312,9 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest .
-          docker push ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          docker build -t ghcr.io/${REPO_OWNER}/1rad-web-prod:latest .
+          docker push ghcr.io/${REPO_OWNER}/1rad-web-prod:latest
 
       - name: Deploy to E2E VM via SSH
         uses: appleboy/ssh-action@master
@@ -322,6 +323,8 @@ jobs:
           username: ${{ secrets.PROD_SSH_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
+            REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+            
             # Log into registry on the VM
             echo "${{ secrets.GHCR_PAT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
@@ -329,7 +332,7 @@ jobs:
             docker rm -f 1rad-web-prod || true
             
             # Pull the fresh image
-            docker pull ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest
+            docker pull ghcr.io/${REPO_OWNER}/1rad-web-prod:latest
             
             # Run on host port 84 mapped to container port 80
             docker run -d \
@@ -337,7 +340,7 @@ jobs:
               --restart unless-stopped \
               --add-host host.docker.internal:host-gateway \
               -p 84:80 \
-              ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest
+              ghcr.io/${REPO_OWNER}/1rad-web-prod:latest
 
       - name: Write deploy summary
         if: always()
