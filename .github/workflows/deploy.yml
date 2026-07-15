@@ -297,6 +297,9 @@ jobs:
     environment: production    # ← requires manual approval in GitHub
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Restore dist artifact
         uses: actions/cache/restore@v4
         with:
@@ -304,35 +307,37 @@ jobs:
           key: easyrad-dist-${{ github.run_id }}-${{ github.run_attempt }}
           fail-on-cache-miss: true
 
-      - name: Prepare SSH key
-        run: |
-          echo "${{ secrets.PROD_SSH_KEY_B64 }}" | base64 -d > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Ensure web root exists on VM
+      - name: Build and Push Docker Image
         run: |
-          ssh -i /tmp/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=30 \
-              ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
-              'mkdir -p /var/www/easyrad'
+          docker build -t ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest .
+          docker push ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest
 
-      - name: Copy dist to Prod VM
-        run: |
-          scp -i /tmp/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -r dist/* \
-              ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/var/www/easyrad/
-
-      - name: Reload nginx
-        run: |
-          ssh -i /tmp/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
-              'nginx -s reload 2>/dev/null || systemctl reload nginx 2>/dev/null || true'
+      - name: Deploy to E2E VM via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            # Log into registry on the VM
+            echo "${{ secrets.GHCR_PAT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Clean up the old container if it exists
+            docker rm -f 1rad-web-prod || true
+            
+            # Pull the fresh image
+            docker pull ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest
+            
+            # Run on host port 84 mapped to container port 80
+            docker run -d \
+              --name 1rad-web-prod \
+              --restart unless-stopped \
+              --add-host host.docker.internal:host-gateway \
+              -p 84:80 \
+              ghcr.io/${{ github.repository_owner }}/1rad-web-prod:latest
 
       - name: Write deploy summary
         if: always()

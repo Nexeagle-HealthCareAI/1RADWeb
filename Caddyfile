@@ -1,0 +1,27 @@
+:80 {
+    root * /usr/share/caddy
+    file_server
+    try_files {path} /index.html
+
+    # Proxy API requests to backend ASP.NET container on the host VM
+    handle /api/* {
+        reverse_proxy http://host.docker.internal:5000 {
+            flush_interval -1
+        }
+    }
+
+    # Security headers
+    header {
+        Cross-Origin-Embedder-Policy "require-corp"
+        Cross-Origin-Opener-Policy "same-origin"
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+    }
+
+    # Cache static assets
+    @static {
+        file
+        path *.js *.css *.png *.jpg *.ico *.woff2 *.svg
+    }
+    header @static Cache-Control "public, immutable, max-age=31536000"
+}
