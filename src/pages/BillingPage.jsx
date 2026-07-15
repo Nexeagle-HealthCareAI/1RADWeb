@@ -6,7 +6,7 @@ import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import { printThermalReceipt } from '../utils/thermalPrint';
 import { watchInvoices, watchInvoicesPage } from '../db/repos/invoicesRepo';
-import { watchExpenses } from '../db/repos/expensesRepo';
+import { watchExpenses, watchExpensesPage } from '../db/repos/expensesRepo';
 import { watchReferrers } from '../db/repos/referrersRepo';
 import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
 import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
