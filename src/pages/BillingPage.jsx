@@ -117,6 +117,7 @@ export default function BillingPage() {
   const [endDate, setEndDate] = useState('');
   
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'DESC' });
+  const [currentPage, setCurrentPage] = useState(1);
 
   const handleSort = (key) => {
     let direction = 'ASC';
