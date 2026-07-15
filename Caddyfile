@@ -1,13 +1,16 @@
 :80 {
     root * /usr/share/caddy
-    file_server
-    try_files {path} /index.html
-
     # Proxy API requests to backend ASP.NET container on the host VM
     handle /api/* {
         reverse_proxy http://host.docker.internal:5000 {
             flush_interval -1
         }
+    }
+
+    # SPA - fallback for all other routes
+    handle {
+        try_files {path} /index.html
+        file_server
     }
 
     # Security headers
