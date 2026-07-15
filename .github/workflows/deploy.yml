@@ -308,7 +308,7 @@ jobs:
           fail-on-cache-miss: true
 
       - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build and Push Docker Image
         run: |
@@ -316,17 +316,20 @@ jobs:
           docker build -t ghcr.io/${REPO_OWNER}/1rad-web-prod:latest .
           docker push ghcr.io/${REPO_OWNER}/1rad-web-prod:latest
 
+      - name: Prepare SSH key
+        run: |
+          echo "${{ secrets.PROD_SSH_KEY_B64 }}" | base64 -d > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+
       - name: Deploy to E2E VM via SSH
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.PROD_SSH_HOST }}
-          username: ${{ secrets.PROD_SSH_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-            
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          ssh -i /tmp/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} << EOF
             # Log into registry on the VM
-            echo "${{ secrets.GHCR_PAT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
             # Clean up the old container if it exists
             docker rm -f 1rad-web-prod || true
@@ -335,12 +338,13 @@ jobs:
             docker pull ghcr.io/${REPO_OWNER}/1rad-web-prod:latest
             
             # Run on host port 84 mapped to container port 80
-            docker run -d \
-              --name 1rad-web-prod \
-              --restart unless-stopped \
-              --add-host host.docker.internal:host-gateway \
-              -p 84:80 \
+            docker run -d \\
+              --name 1rad-web-prod \\
+              --restart unless-stopped \\
+              --add-host host.docker.internal:host-gateway \\
+              -p 84:80 \\
               ghcr.io/${REPO_OWNER}/1rad-web-prod:latest
+          EOF
 
       - name: Write deploy summary
         if: always()
