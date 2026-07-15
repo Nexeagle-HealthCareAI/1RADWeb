@@ -2018,6 +2018,7 @@ export default function BillingPage() {
     });
   }, [combinedReferralCuts, upcomingReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig, referralSearch]);
 
+  const itemsPerPage = 10;
 
   // Total records + label for the current view — drives the shared pager's
   // "Showing X–Y of N …" line and the page count.
