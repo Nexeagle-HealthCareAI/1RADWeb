@@ -242,15 +242,15 @@ const RevenueHub = ({
   const visibleRows = useMemo(() => {
     if (timeFilter === 'FUTURE') {
       const apps = paginatedFutureAppointments || [];
-      const invs = paginatedInvoices || [];
+      const invs = pagedInvoices || [];
       return [
         ...apps.map(a => ({ id: a.appointmentId, type: 'app' })),
         ...invs.map(i => ({ id: i.invoiceId, type: 'inv' }))
       ];
     } else {
-      return (paginatedInvoices || []).map(i => ({ id: i.invoiceId, type: 'inv' }));
+      return (pagedInvoices || []).map(i => ({ id: i.invoiceId, type: 'inv' }));
     }
-  }, [timeFilter, paginatedFutureAppointments, paginatedInvoices]);
+  }, [timeFilter, paginatedFutureAppointments, pagedInvoices]);
 
   const isAllVisibleSelected = useMemo(() => {
     if (visibleRows.length === 0) return false;
