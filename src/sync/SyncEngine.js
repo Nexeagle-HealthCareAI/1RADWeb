@@ -220,11 +220,26 @@ async function pullReports() {
 }
 
 // --- Invoices delta pull -----------------------------------------------------
+// Progressive strategy:
+//   Phase A (cold boot): pull the most-recent RECENT_DAYS_WINDOW days first
+//   so the Revenue Hub renders real data instantly, even on a large clinic.
+//   Phase B (background): the full-history pull runs after a short delay.
+//   Steady-state 30s tick: always uses updatedAfter watermark (tiny delta).
 
-async function pullInvoices() {
+const RECENT_DAYS_WINDOW = 60; // days to pull on a fast first-page load
+
+async function pullInvoices({ recentOnly = false } = {}) {
   const since = await invoicesHighWatermarkIso();
   const params = { includeDeleted: true };
   if (since) params.updatedAfter = since;
+
+  // On cold boot with no cached data AND recentOnly mode, scope to the last
+  // RECENT_DAYS_WINDOW days so the initial pull is small and fast. The
+  // full-history pull follows 5 s later on the same boot cycle (Phase B).
+  if (recentOnly && !since) {
+    const cutoff = new Date(Date.now() - RECENT_DAYS_WINDOW * 24 * 3600 * 1000);
+    params.startDate = cutoff.toISOString();
+  }
 
   const res = await apiClient.get('/finance/invoices', { params });
   const rows = Array.isArray(res?.data) ? res.data : [];
@@ -232,17 +247,23 @@ async function pullInvoices() {
   if (stats == null) return { applied: 0, deleted: 0 };
 
   if (stats.applied || stats.deleted) {
-    console.info(`[SYNC] Invoices: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+    const tag = recentOnly && !since ? ` [Phase A — last ${RECENT_DAYS_WINDOW}d]` : '';
+    console.info(`[SYNC] Invoices${tag}: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
   }
   return stats;
 }
 
 // --- Expenses delta pull -----------------------------------------------------
 
-async function pullExpenses() {
+async function pullExpenses({ recentOnly = false } = {}) {
   const since = await expensesHighWatermarkIso();
   const params = { includeDeleted: true };
   if (since) params.updatedAfter = since;
+
+  if (recentOnly && !since) {
+    const cutoff = new Date(Date.now() - RECENT_DAYS_WINDOW * 24 * 3600 * 1000);
+    params.startDate = cutoff.toISOString();
+  }
 
   const res = await apiClient.get('/finance/expenses', { params });
   const rows = Array.isArray(res?.data) ? res.data : [];
@@ -250,7 +271,8 @@ async function pullExpenses() {
   if (stats == null) return { applied: 0, deleted: 0 };
 
   if (stats.applied || stats.deleted) {
-    console.info(`[SYNC] Expenses: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+    const tag = recentOnly && !since ? ` [Phase A — last ${RECENT_DAYS_WINDOW}d]` : '';
+    console.info(`[SYNC] Expenses${tag}: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
   }
   return stats;
 }
@@ -275,10 +297,15 @@ async function pullReferrers() {
 
 // --- Referral commissions delta pull -----------------------------------------
 
-async function pullReferralCommissions() {
+async function pullReferralCommissions({ recentOnly = false } = {}) {
   const since = await commissionsHighWatermarkIso();
   const params = { includeDeleted: true };
   if (since) params.updatedAfter = since;
+
+  if (recentOnly && !since) {
+    const cutoff = new Date(Date.now() - RECENT_DAYS_WINDOW * 24 * 3600 * 1000);
+    params.startDate = cutoff.toISOString();
+  }
 
   const res = await apiClient.get('/referrers/commissions', { params });
   const rows = Array.isArray(res?.data) ? res.data : [];
@@ -286,7 +313,8 @@ async function pullReferralCommissions() {
   if (stats == null) return { applied: 0, deleted: 0 };
 
   if (stats.applied || stats.deleted) {
-    console.info(`[SYNC] Commissions: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+    const tag = recentOnly && !since ? ` [Phase A — last ${RECENT_DAYS_WINDOW}d]` : '';
+    console.info(`[SYNC] Commissions${tag}: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
   }
   return stats;
 }
@@ -321,11 +349,20 @@ function resolveRoute(item) {
   switch (item.type) {
     case 'INVOICE':              return { method: 'POST',   url: '/finance/invoices' };
     case 'EXPENSE':              return { method: 'POST',   url: '/finance/expense' };
+    case 'EXPENSE_UPDATE':       return { method: 'PUT',    url: `/finance/expenses/${p.id}` };
+    case 'EXPENSE_STATUS_UPDATE':return { method: 'PUT',    url: `/finance/expenses/${p.id}/status`,
+                                          body: { status: p.status } };
     case 'PAYMENT':              return { method: 'POST',   url: '/finance/payments' };
     case 'REPORT':               return { method: 'POST',   url: '/reporting/save' };
+    case 'REPORT_FINALIZE':      return { method: 'POST',   url: '/reporting/report/finalize' };
+    case 'REPORT_ADDENDUM':      return { method: 'POST',   url: '/reporting/report/addendum' };
     case 'PRICE_UPDATE':         return { method: 'POST',   url: '/finance/registry' };
     case 'PAYOUT':               return { method: 'POST',   url: '/referrers/commissions' };
     case 'PAYOUT_BATCH':         return { method: 'POST',   url: '/referrers/commissions/batch' };
+    case 'PAYOUT_UPDATE':        return { method: 'PUT',    url: `/referrers/commissions/${p.commissionId}` };
+    case 'PAYOUT_STATUS_UPDATE': return { method: 'PATCH',  url: `/referrers/commissions/${p.id}/status`,
+                                          body: { status: p.status } };
+    case 'APPROVAL_CREATE':      return { method: 'POST',   url: '/approvals' };
     case 'HOSPITAL_UPDATE':      return { method: 'PUT',    url: `/hospitals/${p.id}` };
     case 'PERSONNEL_CREATE':     return { method: 'POST',   url: '/personnel' };
     case 'PERSONNEL_UPDATE':     return { method: 'PUT',    url: `/personnel/${p.id}` };
@@ -336,6 +373,8 @@ function resolveRoute(item) {
     case 'INVOICE_DELETE':       return { method: 'DELETE', url: `/finance/invoices/${p.id}` };
     case 'PRESCRIPTION_UPDATE':  return { method: 'POST',   url: '/Prescription' };
     case 'APPOINTMENT_CREATE':   return { method: 'POST',   url: '/appointments' };
+    case 'STUDY_ASSIGN':         return { method: 'POST',   url: `/Study/studies/${p.id}/assign`, body: p.body };
+    case 'STUDY_DELETE':         return { method: 'DELETE', url: `/Study/studies/${p.id}` };
     case 'APPOINTMENT_STATUS':   return { method: 'PATCH',  url: `/appointments/${p.id}/status`,
                                           // server expects a raw JSON string for this endpoint
                                           body: JSON.stringify(p.status),
@@ -459,15 +498,8 @@ async function pushCycle() {
   return stats;
 }
 
-// Single coordinated pull cycle. Adding more resources here is the B2
-// extension point — each just gets one more await in the right order.
-// Order matters: appointments first because the user-visible worklist is
-// the highest-priority paint; patients second so booking drawer search
-// works as soon as the worklist is on screen; reports last because they're
-// only consulted when the radiologist opens a specific row.
-// The pull sequence itself, with NO mutex/guards — callers hold the mutex.
-// Order matters: appointments first (highest-priority worklist paint),
-// patients second (booking search), the rest after.
+// Single coordinated pull cycle.
+// Steady-state: always uses updatedAfter watermarks for tiny delta scans.
 async function runAllPulls() {
   await pullAppointments();
   await pullPatients();
@@ -476,11 +508,48 @@ async function runAllPulls() {
   await pullExpenses();
   await pullReferrers();
   await pullReferralCommissions();
-  // Reference data last — lowest priority, tiny payloads. Wrapped so a
-  // reference-list hiccup never aborts the (already-completed) worklist pulls.
+  // Reference data last — lowest priority, tiny payloads.
   try { await pullPersonnel(); }      catch (err) { console.warn('[SYNC] Personnel refresh failed', err?.message || err); }
   try { await pullServiceCharges(); } catch (err) { console.warn('[SYNC] Price registry refresh failed', err?.message || err); }
   await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+}
+
+// Progressive cold-boot pull.
+// Phase A: pull the last RECENT_DAYS_WINDOW days of high-value data so the
+//          Revenue Hub renders real data in < 1 second.
+// Phase B: 5 seconds later, pull full history silently in the background.
+//          liveQuery re-emits; the table fills in without any user action.
+async function runProgressivePulls() {
+  // Appointments and patients are always pulled fully (they're small + needed for worklist).
+  await pullAppointments();
+  await pullPatients();
+  await pullReports();
+
+  // Phase A — finance data for the last 60 days. Fast.
+  await pullInvoices({ recentOnly: true });
+  await pullExpenses({ recentOnly: true });
+  await pullReferralCommissions({ recentOnly: true });
+  await pullReferrers();
+  try { await pullPersonnel(); }      catch (err) { console.warn('[SYNC] Personnel refresh failed', err?.message || err); }
+  try { await pullServiceCharges(); } catch (err) { console.warn('[SYNC] Price registry refresh failed', err?.message || err); }
+  await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+
+  console.info('[SYNC] Phase A complete — scheduling Phase B (full history) in 5 s');
+
+  // Phase B — silent background pull for full history (no UI block).
+  setTimeout(async () => {
+    if (!navigator.onLine) return;
+    try {
+      console.info('[SYNC] Phase B: pulling full invoice/expense/commission history');
+      await pullInvoices();
+      await pullExpenses();
+      await pullReferralCommissions();
+      await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+      console.info('[SYNC] Phase B complete');
+    } catch (err) {
+      console.warn('[SYNC] Phase B background pull failed (will retry on next tick)', err?.message || err);
+    }
+  }, 5_000);
 }
 
 async function pullCycle() {
@@ -564,38 +633,39 @@ export function startSyncEngine() {
   if (started) return;
   started = true;
 
-  // Boot sequence: measure clock skew, then push anything queued from a
-  // prior offline session, then pull deltas. Doing push BEFORE pull means
-  // the queued mutations land server-side first, so the very next pull
-  // sees them in the canonical state.
+  // Boot sequence:
+  // 1. Measure clock skew.
+  // 2. Push any queued mutations from a prior offline session.
+  // 3. Progressive pull:
+  //    Phase A — last RECENT_DAYS_WINDOW days (fast, user sees data quickly).
+  //    Phase B — full history 5 s later (background, silent).
+  //
+  // The progressive strategy is only used on a cold boot where the cache
+  // is empty (no watermark). If the cache already has data (returning
+  // user) we run a normal delta pull — it's already fast.
   (async () => {
     await measureClockSkew();
-    await pushAndPullCycle();
-    await pullCycle();
+    await pushAndPullCycle();       // flush outbox + targeted pull (appointments/patients/reports)
+    await runProgressivePulls();    // progressive boot for finance data
   })();
 
-  // B2 Track 4 — proactive quota monitoring. Polls usage; sheds old data
-  // before the cache fills. Idempotent.
+  // B2 Track 4 — proactive quota monitoring.
   startQuotaMonitor();
 
-  // Steady-state heartbeat now pushes (auto-retry) AND pulls — see autoSyncTick.
+  // Steady-state heartbeat: push (auto-retry) AND full delta pull.
   pollTimer = setInterval(autoSyncTick, PULL_INTERVAL_MS);
 
-  // Reconnect: push queued mutations first, then pull. Single listener
-  // (B1 had two — one here, one in useOffline — which fired in parallel
-  // and could race).
+  // Reconnect: push queued mutations first, then pull.
   const onOnline = () => pushAndPullCycle();
   window.addEventListener('online', onOnline);
 
-  // Save the cleanup off the engine so a future hot-reload or test harness
-  // can shut it down cleanly.
   startSyncEngine._cleanup = () => {
     started = false;
     if (pollTimer) clearInterval(pollTimer);
     window.removeEventListener('online', onOnline);
   };
 
-  console.info(`[SYNC] Engine started (interval ${PULL_INTERVAL_MS / 1000}s)`);
+  console.info(`[SYNC] Engine started (progressive boot, interval ${PULL_INTERVAL_MS / 1000}s)`);
 }
 
 export function stopSyncEngine() {

@@ -22,7 +22,7 @@
 
 import { warmRadiologyData, getMedicalWords, getWordFrequency } from './radiologyData';
 
-const EN_URL = '/data/spell_en.json';
+const EN_URL = (import.meta.env.BASE_URL || '/') + 'data/spell_en.json';
 const CUSTOM_KEY = 'narrative-editor:custom-dict';
 
 // Common English contractions — whitelisted so the apostrophe-free dictionary

@@ -54,8 +54,13 @@ const metaFor = (status) => {
 const ExpenseLedger = ({
   isMobile,
   outflowStats,
-  filteredOutflow,
-  paginatedOutflow,
+  // ── Cursor-pagination props (Phase 5) ──────────────────────────────────
+  pagedExpenses = [],
+  expenseTotalCount = 0,
+  expenseHasMore = false,
+  onLoadMoreExpenses = () => {},
+  expenseLoadingMore = false,
+  // ───────────────────────────────────────────────────────────────────────
   timeFilter,
   setTimeFilter,
   startDate,
@@ -69,9 +74,6 @@ const ExpenseLedger = ({
   handleDeleteExpense,
   setEditExpense,
   setIsExpenseDrawerOpen,
-  currentPage,
-  setCurrentPage,
-  itemsPerPage,
   TODAY,
   sortConfig,
   handleSort,
@@ -107,7 +109,7 @@ const ExpenseLedger = ({
     };
   }, [openStatusMenuId]);
 
-  const visibleRows = paginatedOutflow || [];
+  const visibleRows = pagedExpenses || [];
   const isAllVisibleSelected =
     visibleRows.length > 0 && visibleRows.every(row => selectedIds.has(row.id));
 
@@ -136,8 +138,8 @@ const ExpenseLedger = ({
   };
 
   const selectedExpenses = useMemo(
-    () => (filteredOutflow || []).filter(e => selectedIds.has(e.id)),
-    [filteredOutflow, selectedIds]
+    () => (pagedExpenses || []).filter(e => selectedIds.has(e.id)),
+    [pagedExpenses, selectedIds]
   );
 
   const bulkDeletable = selectedExpenses.filter(isMutable);
@@ -183,8 +185,8 @@ const ExpenseLedger = ({
   const handleExportXlsx = () => {
     const useSelection = selectedIds.size > 0;
     const list = useSelection
-      ? (filteredOutflow || []).filter(e => selectedIds.has(e.id))
-      : (filteredOutflow || []);
+      ? (pagedExpenses || []).filter(e => selectedIds.has(e.id))
+      : (pagedExpenses || []);
 
     if (list.length === 0) {
       notify({ type: 'info', message: 'No expenses in the current view to export.' });
@@ -225,8 +227,8 @@ const ExpenseLedger = ({
   const handleExportToExcel = () => {
     const useSelection = selectedIds.size > 0;
     const list = useSelection
-      ? (filteredOutflow || []).filter(e => selectedIds.has(e.id))
-      : (filteredOutflow || []);
+      ? (pagedExpenses || []).filter(e => selectedIds.has(e.id))
+      : (pagedExpenses || []);
 
     const headers = ['Date', 'Description', 'Vendor/Partner Name', 'Category', 'Amount (INR)', 'Status'];
     const rows = list.map(e => [
@@ -264,11 +266,9 @@ const ExpenseLedger = ({
     setTimeFilter('ALL');
   };
 
-  // ─── Pagination math ───────────────────────────────────────────────────
-  const totalRecords = (filteredOutflow || []).length;
-  const totalPages = Math.max(1, Math.ceil(totalRecords / itemsPerPage));
-  const showingFrom = totalRecords === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
-  const showingTo = Math.min(currentPage * itemsPerPage, totalRecords);
+  const totalRecords = expenseTotalCount;
+  const showingFrom = totalRecords === 0 ? 0 : 1;
+  const showingTo = pagedExpenses.length;
 
   // ─── Render ────────────────────────────────────────────────────────────
   return (
@@ -582,35 +582,36 @@ const ExpenseLedger = ({
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             flexWrap: 'wrap', gap: '10px',
           }}>
-            <span style={{ fontSize: '12px', color: C.textSecondary }}>
-              Showing <strong style={{ color: C.textPrimary }}>{showingFrom}–{showingTo}</strong> of <strong style={{ color: C.textPrimary }}>{totalRecords}</strong>
+            <span style={{ fontSize: '13px', color: C.textSecondary, fontWeight: 500 }}>
+              Showing <strong style={{ color: C.textPrimary }}>{showingTo}</strong> of <strong style={{ color: C.textPrimary }}>{totalRecords}</strong>
             </span>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage <= 1}
-                style={pagerBtn(currentPage <= 1)}
-              >← Prev</button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: C.textSecondary }}>
-                Page
-                <input
-                  type="number" min={1} max={totalPages}
-                  value={currentPage}
-                  onChange={e => {
-                    const v = parseInt(e.target.value, 10);
-                    if (!isNaN(v)) setCurrentPage(Math.min(totalPages, Math.max(1, v)));
+              {expenseHasMore && (
+                <button
+                  type="button"
+                  onClick={onLoadMoreExpenses}
+                  disabled={expenseLoadingMore}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px', border: `1px solid ${C.border}`,
+                    background: C.surface, color: C.textPrimary, fontSize: '13px', fontWeight: 600,
+                    cursor: expenseLoadingMore ? 'wait' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    transition: 'all 0.2s',
+                    opacity: expenseLoadingMore ? 0.7 : 1,
                   }}
-                  style={{ width: '46px', padding: '4px 6px', textAlign: 'center', border: `1px solid ${C.border}`, borderRadius: '6px', fontSize: '12px', color: C.textPrimary }}
-                />
-                of {totalPages}
-              </div>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                style={pagerBtn(currentPage >= totalPages)}
-              >Next →</button>
+                  onMouseEnter={e => { if (!expenseLoadingMore) e.currentTarget.style.background = C.surfaceHover; }}
+                  onMouseLeave={e => { if (!expenseLoadingMore) e.currentTarget.style.background = C.surface; }}
+                >
+                  {expenseLoadingMore && (
+                    <div style={{
+                      width: '14px', height: '14px', border: '2px solid',
+                      borderColor: `${C.textTertiary} transparent transparent transparent`,
+                      borderRadius: '50%', animation: 'spin 1s linear infinite'
+                    }} />
+                  )}
+                  Load 25 more
+                </button>
+              )}
             </div>
           </div>
         )}

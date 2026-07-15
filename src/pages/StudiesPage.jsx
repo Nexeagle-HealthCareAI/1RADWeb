@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { registerStudy, uploadStudyAssetToStudy } from '../utils/azureUpload';
+import useOffline from '../hooks/useOffline';
 
 /**
  * Cloud PACS-only worklist + Upload Center.
@@ -78,6 +79,7 @@ const fmtBytes = (b) => {
 
 export default function StudiesPage() {
   const navigate = useNavigate();
+  const { isOnline, addToOutbox } = useOffline();
   const [tab, setTab] = useState(TABS.ALL);
   const [q, setQ] = useState('');
   const [modality, setModality] = useState('');
@@ -266,6 +268,15 @@ export default function StudiesPage() {
 
   const doAssign = async (body) => {
     if (!assignFor) return;
+
+    if (!isOnline) {
+      await addToOutbox('STUDY_ASSIGN', { id: assignFor.imagingStudyId, body });
+      closeAssign();
+      showToast('ok', 'Study assigned (offline queue).');
+      fetchStudies();
+      return;
+    }
+
     setAssignBusy(true);
     try {
       await apiClient.post(`/Study/studies/${assignFor.imagingStudyId}/assign`, body);
@@ -273,7 +284,14 @@ export default function StudiesPage() {
       showToast('ok', 'Study assigned.');
       fetchStudies();
     } catch (e) {
-      showToast('err', e?.response?.data?.error || e.message || 'Assign failed.');
+      if (!e.response) {
+        await addToOutbox('STUDY_ASSIGN', { id: assignFor.imagingStudyId, body });
+        closeAssign();
+        showToast('ok', 'Study assigned (offline queue).');
+        fetchStudies();
+      } else {
+        showToast('err', e?.response?.data?.error || e.message || 'Assign failed.');
+      }
     } finally {
       setAssignBusy(false);
     }
@@ -360,6 +378,15 @@ export default function StudiesPage() {
   const confirmDelete = async () => {
     const s = deleteFor;
     if (!s) return;
+
+    if (!isOnline) {
+      await addToOutbox('STUDY_DELETE', { id: s.imagingStudyId });
+      setDeleteFor(null);
+      showToast('ok', 'Study deleted (offline queue).');
+      fetchStudies();
+      return;
+    }
+
     setDeleteBusy(true);
     try {
       await apiClient.delete(`/Study/studies/${s.imagingStudyId}`);
@@ -367,7 +394,14 @@ export default function StudiesPage() {
       showToast('ok', 'Study deleted.');
       fetchStudies();
     } catch (e) {
-      showToast('err', e?.response?.data?.error || e.message || 'Delete failed.');
+      if (!e.response) {
+        await addToOutbox('STUDY_DELETE', { id: s.imagingStudyId });
+        setDeleteFor(null);
+        showToast('ok', 'Study deleted (offline queue).');
+        fetchStudies();
+      } else {
+        showToast('err', e?.response?.data?.error || e.message || 'Delete failed.');
+      }
     } finally {
       setDeleteBusy(false);
     }

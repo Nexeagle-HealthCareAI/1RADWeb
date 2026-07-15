@@ -2151,7 +2151,7 @@ export default function ReferralsPage() {
     const payload = editExpense;
 
     if (!isOnline) {
-      await addToOutbox('EXPENSE', payload);
+      await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload);
       notifyToast({ title: 'Queued for sync', message: 'Expense entry will sync when connection is restored.' }, 'info');
       setIsExpenseDrawerOpen(false);
       return;
@@ -2178,7 +2178,7 @@ export default function ReferralsPage() {
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
-        await addToOutbox('EXPENSE', payload);
+        await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload);
         notifyToast({ title: 'Network error', message: 'Expense queued in offline outbox.' }, 'warning');
         setIsExpenseDrawerOpen(false);
       } else {

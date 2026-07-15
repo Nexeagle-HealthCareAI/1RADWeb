@@ -7,7 +7,7 @@ import { celebrate } from '../../utils/celebrate';
 if (typeof document !== 'undefined' && !document.getElementById('row-actions-menu-kf')) {
   const s = document.createElement('style');
   s.id = 'row-actions-menu-kf';
-  s.textContent = '@keyframes rowMenuIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }';
+  s.textContent = '@keyframes rowMenuIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
   document.head.appendChild(s);
 }
 
@@ -96,8 +96,12 @@ const RevenueHub = ({
   setStartDate,
   endDate,
   setEndDate,
-  paginatedInvoices,
-  renderPagination,
+  // ── Cursor-pagination props (replaces paginatedInvoices + renderPagination) ──
+  pagedInvoices = [],
+  invoiceTotalCount = 0,
+  invoiceHasMore = false,
+  onLoadMoreInvoices = () => {},
+  invoiceLoadingMore = false,
   handleOpenInvoice,
   handleDeleteInvoice,
   handlePrintA4,
@@ -571,7 +575,7 @@ const RevenueHub = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
               <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
-                {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)}
+                {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (invoiceTotalCount || 0)) : (invoiceTotalCount || 0)}
               </span>
             </div>
 
@@ -764,12 +768,12 @@ const RevenueHub = ({
                         </td>
                      </tr>
                    ))}
-                   {paginatedInvoices.length > 0 && (
+                    {pagedInvoices.length > 0 && (
                      <tr style={{ background: '#f1f5f9' }}>
                        <td colSpan="10" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
                      </tr>
                    )}
-                   {paginatedInvoices.map(inv => (
+                    {pagedInvoices.map(inv => (
                      <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f1f5f9', background: '#f8fafc', opacity: 0.85 }}>
                         <td style={{ padding: '15px 10px', textAlign: 'center' }}>
                           <input 
@@ -791,7 +795,7 @@ const RevenueHub = ({
                    ))}
                  </>
                ) : (
-                 paginatedInvoices.map(inv => (
+                 pagedInvoices.map(inv => (
                    <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
                      <td style={{ padding: '20px 10px', textAlign: 'center' }}>
                        <input 
@@ -1069,7 +1073,48 @@ const RevenueHub = ({
                 )}
              </tbody>
            </table>
-            {renderPagination()}
+                {/* ── Load More / Showing count ────────────────────────────── */}
+             {(timeFilter !== 'FUTURE') && (
+               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '20px 0 8px' }}>
+                 <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>
+                   Showing {pagedInvoices.length} of {invoiceTotalCount} invoices
+                 </div>
+                 {invoiceHasMore && (
+                   <button
+                     id="load-more-invoices-btn"
+                     onClick={onLoadMoreInvoices}
+                     disabled={invoiceLoadingMore}
+                     style={{
+                       padding: '10px 28px',
+                       borderRadius: '12px',
+                       border: '1.5px solid #0f52ba',
+                       background: invoiceLoadingMore ? '#f1f5f9' : 'white',
+                       color: invoiceLoadingMore ? '#94a3b8' : '#0f52ba',
+                       fontSize: '12px',
+                       fontWeight: 800,
+                       cursor: invoiceLoadingMore ? 'default' : 'pointer',
+                       display: 'flex',
+                       alignItems: 'center',
+                       gap: '8px',
+                       transition: 'all 0.2s',
+                       boxShadow: invoiceLoadingMore ? 'none' : '0 2px 8px rgba(15,82,186,0.12)',
+                     }}
+                   >
+                     {invoiceLoadingMore ? (
+                       <>
+                         <span style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid #0f52ba', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                         Loading…
+                       </>
+                     ) : (
+                       <>
+                         <span style={{ fontSize: '14px' }}>↓</span>
+                         Load 25 more
+                       </>
+                     )}
+                   </button>
+                 )}
+               </div>
+             )}
           </div>
        </div>
      </div>

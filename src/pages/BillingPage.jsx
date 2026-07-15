@@ -5,7 +5,7 @@ import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import { printThermalReceipt } from '../utils/thermalPrint';
-import { watchInvoices } from '../db/repos/invoicesRepo';
+import { watchInvoices, watchInvoicesPage } from '../db/repos/invoicesRepo';
 import { watchExpenses } from '../db/repos/expensesRepo';
 import { watchReferrers } from '../db/repos/referrersRepo';
 import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
@@ -125,9 +125,34 @@ export default function BillingPage() {
     }
     setSortConfig({ key, direction });
   };
-  
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+
+  // ── Pagination state (Revenue Hub) ────────────────────────────────────────
+  // invoiceCursors is a stack of cursor tokens:
+  //   [null]           = first page only (null cursor means start-of-list)
+  //   [null, c1]       = first page rendered + next page loaded
+  //   [null, c1, c2]   = first two pages rendered etc.
+  // "Load 25 more" appends the nextCursor returned by the current page.
+  const [invoiceCursors, setInvoiceCursors] = useState([null]); // stack: [null, cursor1, cursor2, ...]
+  const [invoicePageData, setInvoicePageData] = useState({ rows: [], nextCursor: null, totalCount: 0 });
+  const [invoiceLoadingMore, setInvoiceLoadingMore] = useState(false);
+
+  // The active cursor is the last entry in the stack.
+  const invoiceActiveCursor = invoiceCursors[invoiceCursors.length - 1];
+
+  // Reset to page 1 whenever any filter changes (status, date, search, modality).
+  // Called inside the useEffect dependencies.
+  const resetInvoicePage = useCallback(() => {
+    setInvoiceCursors([null]);
+  }, []);
+
+  // ── Pagination state (Expense Ledger) ─────────────────────────────────────
+  const [expenseCursors, setExpenseCursors] = useState([null]);
+  const [expensePageData, setExpensePageData] = useState({ rows: [], nextCursor: null, totalCount: 0 });
+  const [expenseLoadingMore, setExpenseLoadingMore] = useState(false);
+  const expenseActiveCursor = expenseCursors[expenseCursors.length - 1];
+  const resetExpensePage = useCallback(() => {
+    setExpenseCursors([null]);
+  }, []);
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
@@ -343,11 +368,79 @@ export default function BillingPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchOutstandingCredits]);
 
-  // B3 Slice 1 — invoices come from the local Dexie cache via liveQuery.
-  // The sync engine keeps the cache fresh in the background; this just
-  // re-renders the table whenever a delta lands. Filters mirror the
-  // legacy server-side query (status / search / date range) so the
-  // offline experience is identical to online.
+  // B3 Slice 1 — paged invoice display. Uses watchInvoicesPage (cursor-based)
+  // so only PAGE_SIZE_INVOICES rows are loaded at a time. The existing full
+  // watchInvoices subscription below this one keeps feeding liveStats / analytics.
+  // When any filter changes, the cursor stack is reset (resetInvoicePage) so the
+  // user always sees page 1 of the new filtered set.
+  useEffect(() => {
+    // This liveQuery only drives the table; it subscribes to a single page slice.
+    const sub = watchInvoicesPage(
+      {
+        status: statusFilter,
+        search: searchTerm,
+        startDateIso: startDate || undefined,
+        endDateIso:   endDate   || undefined,
+      },
+      { cursor: invoiceActiveCursor }
+    ).subscribe({
+      next: (data) => setInvoicePageData(data),
+      error: (err) => console.warn('[BillingPage] invoice page liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [statusFilter, searchTerm, startDate, endDate, invoiceActiveCursor]);
+
+  // Reset page whenever filters change so 'Load more' doesn't carry over
+  // a cursor that no longer makes sense for the new filter set.
+  useEffect(() => {
+    resetInvoicePage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, searchTerm, startDate, endDate]);
+
+  // 'Load 25 more' — push the current page's nextCursor onto the stack.
+  // watchInvoicesPage re-emits with the next slice appended.
+  const loadMoreInvoices = useCallback(async () => {
+    if (!invoicePageData.nextCursor || invoiceLoadingMore) return;
+    setInvoiceLoadingMore(true);
+    // Small artificial delay so the skeleton has time to render.
+    await new Promise(r => setTimeout(r, 120));
+    setInvoiceCursors(prev => [...prev, invoicePageData.nextCursor]);
+    setInvoiceLoadingMore(false);
+  }, [invoicePageData.nextCursor, invoiceLoadingMore]);
+
+  // ── Expense Ledger Progressive Sync (Phase 5) ─────────────────────────────
+  useEffect(() => {
+    const sub = watchExpensesPage(
+      {
+        category: expenseFilter,
+        search: expenseSearch,
+        startDateIso: startDate || undefined,
+        endDateIso:   endDate   || undefined,
+      },
+      { cursor: expenseActiveCursor }
+    ).subscribe({
+      next: (data) => setExpensePageData(data),
+      error: (err) => console.warn('[BillingPage] expense page liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [expenseFilter, expenseSearch, startDate, endDate, expenseActiveCursor]);
+
+  useEffect(() => {
+    resetExpensePage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenseFilter, expenseSearch, startDate, endDate]);
+
+  const loadMoreExpenses = useCallback(async () => {
+    if (!expensePageData.nextCursor || expenseLoadingMore) return;
+    setExpenseLoadingMore(true);
+    await new Promise(r => setTimeout(r, 120));
+    setExpenseCursors(prev => [...prev, expensePageData.nextCursor]);
+    setExpenseLoadingMore(false);
+  }, [expensePageData.nextCursor, expenseLoadingMore]);
+
+
+  // Full watchInvoices subscription — feeds liveStats and analytics only.
+  // Always reads the entire filtered set regardless of display pagination.
   useEffect(() => {
     const sub = watchInvoices({
       status: statusFilter,
@@ -389,11 +482,10 @@ export default function BillingPage() {
     return () => sub.unsubscribe();
   }, [isOnline, pendingCount, startDate, endDate]);
 
-  // B3 Slice 3 — expenses liveQuery. Same filter shape; expenses don't
-  // have a status filter but reuse search + date range from the page state.
+  // B3 Slice 3 — full expenses liveQuery (used by analytics/exports).
   useEffect(() => {
     const sub = watchExpenses({
-      search: searchTerm,
+      search: expenseSearch,
       startDateIso: startDate || undefined,
       endDateIso:   endDate   || undefined,
     }).subscribe({
@@ -401,7 +493,7 @@ export default function BillingPage() {
       error: (err) => console.warn('[BillingPage] expense liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [searchTerm, startDate, endDate]);
+  }, [expenseSearch, startDate, endDate]);
 
   // B3 Slice 4 — referrers liveQuery.
   useEffect(() => {
@@ -478,7 +570,7 @@ export default function BillingPage() {
     // retry can't record the expense twice.
     const idemKey = crypto.randomUUID();
     if (!isOnline) {
-      await addToOutbox('EXPENSE', payload, idemKey);
+      await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload, idemKey);
       notify({ type: 'info', title: 'Offline', message: 'Expense will sync when reconnected.' });
       setIsExpenseDrawerOpen(false);
       return;
@@ -509,7 +601,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
-        await addToOutbox('EXPENSE', payload, idemKey);
+        await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload, idemKey);
         notify({ type: 'info', title: 'No connection', message: 'Expense added to offline queue.' });
         setIsExpenseDrawerOpen(false);
       } else {
@@ -795,12 +887,24 @@ export default function BillingPage() {
   // (Draft / Pending / Approved / Paid) instead of just toggling.
   const handleSetExpenseStatus = async (id, newStatus) => {
     console.log(`[FINANCE] Setting expense ${id} status → ${newStatus}`);
+    
+    if (!isOnline) {
+      await addToOutbox('EXPENSE_STATUS_UPDATE', { id, status: newStatus });
+      notify({ type: 'info', title: 'Offline', message: 'Expense status update queued.' });
+      // We don't have optimistic UI for this yet, so we just wait for sync
+      return;
+    }
+
     try {
       const resp = await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
       console.log('[FINANCE] Status update OK:', resp.status, resp.data);
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
+      if (!err.response) {
+        await addToOutbox('EXPENSE_STATUS_UPDATE', { id, status: newStatus });
+        notify({ type: 'info', title: 'No connection', message: 'Status update added to offline queue.' });
+      } else {
       const status = err.response?.status;
       const data = err.response?.data;
       const errorMsg = data?.message || data?.error || data?.title || err.message || 'Could not update expense status.';
@@ -809,6 +913,7 @@ export default function BillingPage() {
         title: `Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}`,
         message: errorMsg,
       });
+      }
     }
   };
 
@@ -833,17 +938,31 @@ export default function BillingPage() {
       confirmText: 'Write off',
       danger: true,
       onConfirm: async () => {
+        const payload = {
+          referrerId,
+          remarks: `DEFICIT WRITE-OFF (₹${deficit}) — centre absorbed`,
+          lines: [{ modality: 'WRITE-OFF', amount: deficit, status: 'PAID' }],
+        };
+
+        if (!isOnline) {
+          await addToOutbox('PAYOUT_BATCH', payload);
+          notify({ type: 'info', title: 'Offline', message: 'Write-off queued for sync.' });
+          // Optimistic UI could go here, but for now we just rely on the sync pull
+          return;
+        }
+
         try {
-          await apiClient.post('/referrers/commissions/batch', {
-            referrerId,
-            remarks: `DEFICIT WRITE-OFF (₹${deficit}) — centre absorbed`,
-            lines: [{ modality: 'WRITE-OFF', amount: deficit, status: 'PAID' }],
-          });
+          await apiClient.post('/referrers/commissions/batch', payload);
           notify({ type: 'success', title: 'Written off', message: `₹${deficit.toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
           refreshAllFinancialData();
         } catch (err) {
           console.error('[FINANCE] Deficit write-off failed', err);
-          notify({ type: 'error', message: 'Could not write off the deficit.' });
+          if (!err.response) {
+            await addToOutbox('PAYOUT_BATCH', payload);
+            notify({ type: 'info', title: 'No connection', message: 'Write-off added to offline queue.' });
+          } else {
+            notify({ type: 'error', message: 'Could not write off the deficit.' });
+          }
         }
       },
     });
@@ -917,31 +1036,42 @@ export default function BillingPage() {
         notify({ type: 'warning', title: 'REASON REQUIRED', message: 'Enter a short reason for this payout change — edits to a recorded payout need admin approval.' });
         return;
       }
+      
+      const approvalPayload = {
+        type: 'EDIT_COMMISSION',
+        title: `Payout edit — ${editPayout.referrerName || ''} · ₹${(parseFloat(editPayout.amount) || 0).toLocaleString()} ${editPayout.modality || ''}`.trim(),
+        appointmentId: editPayout.appointmentId || null,
+        payload: JSON.stringify({
+          commissionId: editPayout.commissionId,
+          amount: parseFloat(editPayout.amount) || 0,
+          modality: editPayout.modality || '',
+          status: editPayout.status || 'UNPAID',
+          remarks: editPayout.remarks || '',
+        }),
+        reason,
+      };
+
       if (!isOnline) {
-        notify({ type: 'warning', title: 'OFFLINE', message: 'Reconnect to send this payout change for approval.' });
+        await addToOutbox('APPROVAL_CREATE', approvalPayload);
+        notify({ type: 'info', title: 'Offline', message: 'Approval request added to offline queue.' });
+        setIsPayoutDrawerOpen(false);
         return;
       }
       try {
         setIsSavingPayout(true);
-        await apiClient.post('/approvals', {
-          type: 'EDIT_COMMISSION',
-          title: `Payout edit — ${editPayout.referrerName || ''} · ₹${(parseFloat(editPayout.amount) || 0).toLocaleString()} ${editPayout.modality || ''}`.trim(),
-          appointmentId: editPayout.appointmentId || null,
-          payload: JSON.stringify({
-            commissionId: editPayout.commissionId,
-            amount: parseFloat(editPayout.amount) || 0,
-            modality: editPayout.modality || '',
-            status: editPayout.status || 'UNPAID',
-            remarks: editPayout.remarks || '',
-          }),
-          reason,
-        });
+        await apiClient.post('/approvals', approvalPayload);
         window.dispatchEvent(new Event('1rad_approvals_changed'));   // refresh the nav badge
         notify({ type: 'success', title: 'Sent for approval', message: 'The payout change will apply once an admin approves it.' });
         setIsPayoutDrawerOpen(false);
       } catch (err) {
         console.error('[PAYOUT] approval request failed', err);
-        notify({ type: 'error', message: 'Could not send the change for approval. Please try again.' });
+        if (!err.response) {
+          await addToOutbox('APPROVAL_CREATE', approvalPayload);
+          notify({ type: 'info', title: 'No connection', message: 'Approval request added to offline queue.' });
+          setIsPayoutDrawerOpen(false);
+        } else {
+          notify({ type: 'error', message: 'Could not send the change for approval. Please try again.' });
+        }
       } finally {
         setIsSavingPayout(false);
       }
@@ -971,7 +1101,7 @@ export default function BillingPage() {
     const idemKey = crypto.randomUUID();
     if (!isOnline) {
       if (isSingle) {
-        await addToOutbox('PAYOUT', singlePayload, idemKey);
+        await addToOutbox('PAYOUT_UPDATE', { ...singlePayload, commissionId: editPayout.commissionId }, idemKey);
       } else {
         await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
       }
@@ -998,7 +1128,11 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
-        await addToOutbox(isSingle ? 'PAYOUT' : 'PAYOUT_BATCH', isSingle ? singlePayload : batchPayload, idemKey);
+        if (isSingle) {
+          await addToOutbox('PAYOUT_UPDATE', { ...singlePayload, commissionId: editPayout.commissionId }, idemKey);
+        } else {
+          await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
+        }
         notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
         setIsPayoutDrawerOpen(false);
       } else {
@@ -1055,12 +1189,24 @@ export default function BillingPage() {
       return;
     }
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+    
+    if (!isOnline) {
+      await addToOutbox('PAYOUT_STATUS_UPDATE', { id, status: newStatus });
+      notify({ type: 'info', title: 'Offline', message: 'Commission status update queued.' });
+      return;
+    }
+
     try {
       await apiClient.patch(`/referrers/commissions/${id}/status`, { status: newStatus });
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
-      notify({ type: 'error', message: 'Could not update commission status.' });
+      if (!err.response) {
+        await addToOutbox('PAYOUT_STATUS_UPDATE', { id, status: newStatus });
+        notify({ type: 'info', title: 'No connection', message: 'Commission status update added to offline queue.' });
+      } else {
+        notify({ type: 'error', message: 'Could not update commission status.' });
+      }
     }
   };
 
@@ -2715,8 +2861,13 @@ export default function BillingPage() {
         <ExpenseLedger
           isMobile={isMobile}
           outflowStats={outflowStats}
-          filteredOutflow={filteredOutflow}
-          paginatedOutflow={paginatedOutflow}
+          /* ── Cursor-pagination props (Phase 5) ──────────────────────── */
+          pagedExpenses={expensePageData.rows}
+          expenseTotalCount={expensePageData.totalCount}
+          expenseHasMore={!!expensePageData.nextCursor}
+          onLoadMoreExpenses={loadMoreExpenses}
+          expenseLoadingMore={expenseLoadingMore}
+          /* ─────────────────────────────────────────────────────────────── */
           timeFilter={timeFilter}
           setTimeFilter={setTimeFilter}
           startDate={startDate}
@@ -2764,8 +2915,14 @@ export default function BillingPage() {
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
-          paginatedInvoices={paginatedInvoices}
-          renderPagination={renderPagination}
+          /* ── Cursor-pagination props ───────────────────────────── */
+          pagedInvoices={invoicePageData.rows}
+          invoiceTotalCount={invoicePageData.totalCount}
+          invoiceHasMore={!!invoicePageData.nextCursor}
+          onLoadMoreInvoices={loadMoreInvoices}
+          invoiceLoadingMore={invoiceLoadingMore}
+          /* ── Future-appointment section (unchanged) ───────────────── */
+          paginatedFutureAppointments={futureAppointments}
           handleOpenInvoice={handleOpenInvoice}
           handleDeleteInvoice={handleDeleteInvoice}
           handlePrintA4={handlePrintA4}
@@ -2782,7 +2939,6 @@ export default function BillingPage() {
           sortConfig={sortConfig}
           handleSort={handleSort}
           futureAppointments={futureAppointments}
-          paginatedFutureAppointments={paginatedFutureAppointments}
           serviceRegistry={serviceRegistry}
         />
       )}

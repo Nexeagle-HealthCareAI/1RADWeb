@@ -84,6 +84,62 @@ export function watchInvoices({
   });
 }
 
+// Page-aware reactive read.
+// Applies the same filter chain as watchInvoices then slices one page.
+// cursor = { createdAt: isoString, invoiceId: string } of the last visible row.
+// Returns { rows, nextCursor, totalCount }:
+//   rows        — the current page (≤ pageSize)
+//   nextCursor  — pass as cursor on the next call; null = last page
+//   totalCount  — total matching rows (for "Showing X of Y")
+export const PAGE_SIZE_INVOICES = 25;
+
+export function watchInvoicesPage(filters = {}, { pageSize = PAGE_SIZE_INVOICES, cursor = null } = {}) {
+  const { status = 'ALL', startDateIso, endDateIso, search = '' } = filters;
+  const q = (search || '').toLowerCase().trim();
+
+  return liveQuery(async () => {
+    const t = tables.invoices();
+    let arr = await t.orderBy('createdAt').reverse().toArray();
+
+    // Apply same filters as watchInvoices
+    if (status && status !== 'ALL') {
+      arr = arr.filter(r => (r.status || '').toUpperCase() === status.toUpperCase());
+    }
+    if (startDateIso) {
+      arr = arr.filter(r => (r.createdAt || '') >= startDateIso);
+    }
+    if (endDateIso) {
+      const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
+      arr = arr.filter(r => (r.createdAt || '') <= eod);
+    }
+    if (q) {
+      arr = arr.filter(r =>
+        (r.patientName  || '').toLowerCase().includes(q) ||
+        (r.displayId    || '').toLowerCase().includes(q) ||
+        (r.referrerName || '').toLowerCase().includes(q)
+      );
+    }
+
+    const totalCount = arr.length;
+
+    // Apply cursor — skip everything up to AND INCLUDING the last seen row.
+    if (cursor) {
+      const idx = arr.findIndex(
+        r => r.createdAt === cursor.createdAt && r.invoiceId === cursor.invoiceId
+      );
+      if (idx >= 0) arr = arr.slice(idx + 1);
+    }
+
+    const page = arr.slice(0, pageSize);
+    const nextCursor =
+      arr.length > pageSize
+        ? { createdAt: page[page.length - 1].createdAt, invoiceId: page[page.length - 1].invoiceId }
+        : null;
+
+    return { rows: page, nextCursor, totalCount };
+  });
+}
+
 // Eviction — drop invoices whose createdAt is older than the cut-off.
 // Called by the quota monitor when storage fills up.
 export async function evictOlderThan(daysAgo) {

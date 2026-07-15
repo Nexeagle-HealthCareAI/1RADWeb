@@ -77,3 +77,52 @@ export async function evictOlderThan(daysAgo) {
   const t = tables.expenses();
   return t.filter(r => (r.transactionDate || '') < cutoffIso).delete();
 }
+
+// ── Page-aware reactive read ────────────────────────────────────────────────
+// Same pattern as watchInvoicesPage. Cursor = { transactionDate, id }.
+export const PAGE_SIZE_EXPENSES = 25;
+
+export function watchExpensesPage(filters = {}, { pageSize = PAGE_SIZE_EXPENSES, cursor = null } = {}) {
+  const { category = 'ALL', startDateIso, endDateIso, search = '' } = filters;
+  const q = (search || '').toLowerCase().trim();
+
+  return liveQuery(async () => {
+    const t = tables.expenses();
+    let arr = await t.orderBy('transactionDate').reverse().toArray();
+
+    if (category && category !== 'ALL') {
+      arr = arr.filter(r => (r.category || '') === category);
+    }
+    if (startDateIso) {
+      arr = arr.filter(r => (r.transactionDate || '') >= startDateIso);
+    }
+    if (endDateIso) {
+      const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
+      arr = arr.filter(r => (r.transactionDate || '') <= eod);
+    }
+    if (q) {
+      arr = arr.filter(r =>
+        (r.description     || '').toLowerCase().includes(q) ||
+        (r.vendorName      || '').toLowerCase().includes(q) ||
+        (r.referenceNumber || '').toLowerCase().includes(q)
+      );
+    }
+
+    const totalCount = arr.length;
+
+    if (cursor) {
+      const idx = arr.findIndex(
+        r => r.transactionDate === cursor.transactionDate && r.id === cursor.id
+      );
+      if (idx >= 0) arr = arr.slice(idx + 1);
+    }
+
+    const page = arr.slice(0, pageSize);
+    const nextCursor =
+      arr.length > pageSize
+        ? { transactionDate: page[page.length - 1].transactionDate, id: page[page.length - 1].id }
+        : null;
+
+    return { rows: page, nextCursor, totalCount };
+  });
+}
