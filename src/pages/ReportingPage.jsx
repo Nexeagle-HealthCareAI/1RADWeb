@@ -1720,6 +1720,81 @@ const ReportingPage = () => {
   const wordSyncRef = useRef({ path: null, unsub: null, busy: false });
   const wordSaveTimeoutRef = useRef(null);
 
+  const expandKeywordsInHtml = useCallback((html) => {
+    if (!keywordLibrary || keywordLibrary.length === 0 || !html) return html;
+    
+    const sortedKeywords = [...keywordLibrary].sort((a, b) => (b.trigger || '').length - (a.trigger || '').length);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    
+    const textNodes = [];
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) textNodes.push(node);
+      else if (node.nodeType === Node.ELEMENT_NODE) {
+        Array.from(node.childNodes).forEach(walk);
+      }
+    };
+    Array.from(doc.body.childNodes).forEach(walk);
+    
+    const replacements = {};
+    let counter = 0;
+    
+    textNodes.forEach(node => {
+      let text = node.nodeValue;
+      let modified = false;
+      
+      sortedKeywords.forEach(k => {
+        if (!k.trigger) return;
+        const trigger = k.trigger.startsWith('/') ? k.trigger : `/${k.trigger}`;
+        const escaped = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        const regex = new RegExp(`(^|\\s)(${escaped})(?=\\s|$|[.,?!])`, 'gi');
+        if (regex.test(text)) {
+          text = text.replace(regex, (match, p1) => {
+            const token = `__1RAD_KW_${counter++}__`;
+            let replHtml = k.replacementText || '';
+            const tmp = document.createElement('div');
+            tmp.innerHTML = replHtml;
+            const topChildren = Array.from(tmp.children);
+            if (topChildren.length === 1 && topChildren[0].tagName === 'P') {
+              replHtml = topChildren[0].innerHTML;
+            }
+            replacements[token] = replHtml;
+            return p1 + token;
+          });
+          modified = true;
+        }
+      });
+      
+      if (modified) node.nodeValue = text;
+    });
+    
+    let finalHtml = doc.body.innerHTML;
+    for (const [token, replHtml] of Object.entries(replacements)) {
+      finalHtml = finalHtml.replace(token, replHtml);
+    }
+    return finalHtml;
+  }, [keywordLibrary]);
+
+  const expandKeywordsInPlainText = useCallback((text) => {
+    if (!keywordLibrary || keywordLibrary.length === 0 || !text) return text;
+    const sortedKeywords = [...keywordLibrary].sort((a, b) => (b.trigger || '').length - (a.trigger || '').length);
+    let result = text;
+    sortedKeywords.forEach(k => {
+      if (!k.trigger) return;
+      const trigger = k.trigger.startsWith('/') ? k.trigger : `/${k.trigger}`;
+      const escaped = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(^|\\s)(${escaped})(?=\\s|$|[.,?!])`, 'gi');
+      
+      if (regex.test(result)) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = k.replacementText || '';
+        const plainTextRepl = tmp.textContent || tmp.innerText || '';
+        result = result.replace(regex, `$1${plainTextRepl}`);
+      }
+    });
+    return result;
+  }, [keywordLibrary]);
+
   // Pull the saved Word bytes back into the editor and persist to cloud.
   const importFromWordBytes = async (base64) => {
     if (wordSyncRef.current.busy) return;
@@ -1734,9 +1809,13 @@ const ReportingPage = () => {
         setWordSyncModal(null);
         
         if (accept) {
-          if (incoming.findingsHtml) applyEditorContent(incoming.findingsHtml);
-          if (incoming.impressionText !== undefined) setImpression(incoming.impressionText);
-          if (incoming.adviceText !== undefined) setAdvice(incoming.adviceText);
+          const expandedFindings = expandKeywordsInHtml(incoming.findingsHtml);
+          const expandedImpression = expandKeywordsInPlainText(incoming.impressionText);
+          const expandedAdvice = expandKeywordsInPlainText(incoming.adviceText);
+          
+          if (expandedFindings) applyEditorContent(expandedFindings);
+          if (expandedImpression !== undefined) setImpression(expandedImpression);
+          if (expandedAdvice !== undefined) setAdvice(expandedAdvice);
           
           if (wordSaveTimeoutRef.current) clearTimeout(wordSaveTimeoutRef.current);
           wordSaveTimeoutRef.current = setTimeout(() => { try { handleSaveReportRef.current(false); } catch (_) {} }, 1000);
