@@ -16,6 +16,8 @@
 
 import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
+import { insertOptimisticInvoice } from './invoicesRepo';
+import { insertOptimisticCommission } from './referralCommissionsRepo';
 
 // Map the server's AppointmentDto (camelCase JSON over the wire) into the
 // local row shape. We keep the same field names so component code that
@@ -197,6 +199,12 @@ export async function patchCachedAppointment(appointmentId, mutate) {
   if (!patched) return false;
   patched._localDirty = 1;            // marks an unsynced optimistic change
   patched._updatedAtMs = row._updatedAtMs; // keep the delta cursor unchanged
+  
+  if (patched.status === 'confirmed' && row.status !== 'confirmed') {
+    insertOptimisticInvoice(patched).catch(err => console.warn('[OPS] Optimistic invoice failed', err));
+    insertOptimisticCommission(patched).catch(err => console.warn('[OPS] Optimistic commission failed', err));
+  }
+
   await t.put(patched);
   return true;
 }
