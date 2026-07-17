@@ -13,6 +13,35 @@
 import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
 
+export async function insertOptimisticInvoice(appointment) {
+  if (!appointment || !appointment.appointmentId) return;
+  const t = tables.invoices();
+
+  let totalAmount = 0;
+  if (appointment.services && Array.isArray(appointment.services)) {
+    totalAmount = appointment.services.reduce((acc, svc) => acc + (svc.amount || 0), 0);
+  }
+
+  const invoice = {
+    invoiceId: `OPT-INV-${appointment.appointmentId}`,
+    displayId: 'Pending Sync...',
+    appointmentId: appointment.appointmentId,
+    patientId: appointment.patient?.id || appointment.patientId || null,
+    patientName: appointment.patient?.fullName || appointment.patientName || 'Unknown',
+    referrerName: appointment.referredBy || 'Unknown',
+    status: 'PENDING',
+    grossAmount: totalAmount,
+    discountAmount: 0,
+    totalAmount: totalAmount,
+    paidAmount: 0,
+    isOptimistic: true,
+    createdAt: new Date().toISOString(),
+    _updatedAtMs: 0
+  };
+
+  await t.put(invoice);
+}
+
 export function fromServerDto(dto) {
   if (!dto || !dto.invoiceId) return null;
   const updatedAtIso = dto.updatedAt || null;
@@ -26,13 +55,25 @@ export async function applyServerDeltas(serverDtos) {
   const t = tables.invoices();
   const tombstones = [];
   const live       = [];
+  const liveApptIds = new Set();
+  
   for (const dto of serverDtos || []) {
-    if (dto.deletedAt) tombstones.push(dto.invoiceId);
-    else {
+    if (dto.deletedAt) {
+      tombstones.push(dto.invoiceId);
+    } else {
       const row = fromServerDto(dto);
-      if (row) live.push(row);
+      if (row) {
+        live.push(row);
+        if (row.appointmentId) liveApptIds.add(row.appointmentId);
+      }
     }
   }
+
+  if (liveApptIds.size > 0) {
+    const tempIdsToDelete = Array.from(liveApptIds).map(id => `OPT-INV-${id}`);
+    await t.bulkDelete(tempIdsToDelete);
+  }
+
   if (tombstones.length) await t.bulkDelete(tombstones);
   if (live.length)       await t.bulkPut(live);
   return { applied: live.length, deleted: tombstones.length };

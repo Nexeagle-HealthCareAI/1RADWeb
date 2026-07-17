@@ -4,6 +4,34 @@
 import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
 
+export async function insertOptimisticCommission(appointment) {
+  if (!appointment || !appointment.appointmentId || !appointment.referredBy) return;
+  // If referredBy is "Self", they don't get a commission
+  if (String(appointment.referredBy).trim().toLowerCase() === 'self') return;
+  
+  const t = tables.referral_commissions();
+
+  let totalCommission = 0;
+  if (appointment.services && Array.isArray(appointment.services)) {
+    totalCommission = appointment.services.reduce((acc, svc) => acc + (svc.referralCutValue || 0), 0);
+  }
+
+  const commission = {
+    id: `OPT-COM-${appointment.appointmentId}`,
+    appointmentId: appointment.appointmentId,
+    patientName: appointment.patient?.fullName || appointment.patientName || 'Unknown',
+    referrerId: appointment.patient?.referrerId || null,
+    referrerName: appointment.referredBy,
+    commissionAmount: totalCommission,
+    status: 'UNPAID',
+    isOptimistic: true,
+    transactionDate: new Date().toISOString(),
+    _updatedAtMs: 0
+  };
+
+  await t.put(commission);
+}
+
 export function fromServerDto(dto) {
   if (!dto || !dto.id) return null;
   const updatedAtIso = dto.updatedAt || null;
@@ -17,13 +45,25 @@ export async function applyServerDeltas(serverDtos) {
   const t = tables.referral_commissions();
   const tombstones = [];
   const live       = [];
+  const liveApptIds = new Set();
+  
   for (const dto of serverDtos || []) {
-    if (dto.deletedAt) tombstones.push(dto.id);
-    else {
+    if (dto.deletedAt) {
+      tombstones.push(dto.id);
+    } else {
       const row = fromServerDto(dto);
-      if (row) live.push(row);
+      if (row) {
+        live.push(row);
+        if (row.appointmentId) liveApptIds.add(row.appointmentId);
+      }
     }
   }
+
+  if (liveApptIds.size > 0) {
+    const tempIdsToDelete = Array.from(liveApptIds).map(id => `OPT-COM-${id}`);
+    await t.bulkDelete(tempIdsToDelete);
+  }
+
   if (tombstones.length) await t.bulkDelete(tombstones);
   if (live.length)       await t.bulkPut(live);
   return { applied: live.length, deleted: tombstones.length };

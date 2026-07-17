@@ -37,11 +37,20 @@ import {
   PayoutDrawer 
 } from '../components/Billing/Drawers';
 
+const getIstDateStr = (iso) => {
+  if (!iso) return null;
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+  const d = new Date(hasTz ? iso : `${iso}Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+};
+
 export default function BillingPage() {
   const { activeCenter } = useAuth();
   const { isOnline, addToOutbox, performSync, pendingCount } = useOffline();
   
-  const TODAY = new Date().toISOString().split('T')[0];
+  const TODAY = getIstDateStr(new Date().toISOString());
 
   // --- STATE ---
   const [paymentSuccess, setPaymentSuccess] = useState(null); // { amount, method, patientName, invoiceId }
@@ -127,33 +136,14 @@ export default function BillingPage() {
     setSortConfig({ key, direction });
   };
 
-  // ── Pagination state (Revenue Hub) ────────────────────────────────────────
-  // invoiceCursors is a stack of cursor tokens:
-  //   [null]           = first page only (null cursor means start-of-list)
-  //   [null, c1]       = first page rendered + next page loaded
-  //   [null, c1, c2]   = first two pages rendered etc.
-  // "Load 25 more" appends the nextCursor returned by the current page.
-  const [invoiceCursors, setInvoiceCursors] = useState([null]); // stack: [null, cursor1, cursor2, ...]
-  const [invoicePageData, setInvoicePageData] = useState({ rows: [], nextCursor: null, totalCount: 0 });
+  // ── Pagination state (Client-side slicing) ─────────────────────────────────
+  const [invoicePageSize, setInvoicePageSize] = useState(25);
+  const [expensePageSize, setExpensePageSize] = useState(25);
   const [invoiceLoadingMore, setInvoiceLoadingMore] = useState(false);
-
-  // The active cursor is the last entry in the stack.
-  const invoiceActiveCursor = invoiceCursors[invoiceCursors.length - 1];
-
-  // Reset to page 1 whenever any filter changes (status, date, search, modality).
-  // Called inside the useEffect dependencies.
-  const resetInvoicePage = useCallback(() => {
-    setInvoiceCursors([null]);
-  }, []);
-
-  // ── Pagination state (Expense Ledger) ─────────────────────────────────────
-  const [expenseCursors, setExpenseCursors] = useState([null]);
-  const [expensePageData, setExpensePageData] = useState({ rows: [], nextCursor: null, totalCount: 0 });
   const [expenseLoadingMore, setExpenseLoadingMore] = useState(false);
-  const expenseActiveCursor = expenseCursors[expenseCursors.length - 1];
-  const resetExpensePage = useCallback(() => {
-    setExpenseCursors([null]);
-  }, []);
+
+  const resetInvoicePage = useCallback(() => setInvoicePageSize(25), []);
+  const resetExpensePage = useCallback(() => setExpensePageSize(25), []);
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
@@ -206,7 +196,7 @@ export default function BillingPage() {
   }, []);
 
   const fetchMatrix = useCallback(async () => {
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     let finalStart = null;
     let finalEnd = null;
 
@@ -369,132 +359,83 @@ export default function BillingPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchOutstandingCredits]);
 
-  // B3 Slice 1 — paged invoice display. Uses watchInvoicesPage (cursor-based)
-  // so only PAGE_SIZE_INVOICES rows are loaded at a time. The existing full
-  // watchInvoices subscription below this one keeps feeding liveStats / analytics.
-  // When any filter changes, the cursor stack is reset (resetInvoicePage) so the
-  // user always sees page 1 of the new filtered set.
-  useEffect(() => {
-    // This liveQuery only drives the table; it subscribes to a single page slice.
-    const sub = watchInvoicesPage(
-      {
-        status: statusFilter,
-        search: searchTerm,
-        startDateIso: startDate || undefined,
-        endDateIso:   endDate   || undefined,
-      },
-      { cursor: invoiceActiveCursor }
-    ).subscribe({
-      next: (data) => setInvoicePageData(data),
-      error: (err) => console.warn('[BillingPage] invoice page liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, [statusFilter, searchTerm, startDate, endDate, invoiceActiveCursor]);
-
-  // Reset page whenever filters change so 'Load more' doesn't carry over
-  // a cursor that no longer makes sense for the new filter set.
+  // Reset page whenever filters change so 'Load more' resets to page 1
   useEffect(() => {
     resetInvoicePage();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, searchTerm, startDate, endDate]);
+  }, [statusFilter, searchTerm, startDate, endDate, timeFilter, modalityFilter, approvalFilter, resetInvoicePage]);
 
-  // 'Load 25 more' — push the current page's nextCursor onto the stack.
-  // watchInvoicesPage re-emits with the next slice appended.
+  // 'Load 25 more' 
   const loadMoreInvoices = useCallback(async () => {
-    if (!invoicePageData.nextCursor || invoiceLoadingMore) return;
+    if (invoiceLoadingMore) return;
     setInvoiceLoadingMore(true);
-    // Small artificial delay so the skeleton has time to render.
     await new Promise(r => setTimeout(r, 120));
-    setInvoiceCursors(prev => [...prev, invoicePageData.nextCursor]);
+    setInvoicePageSize(prev => prev + 25);
     setInvoiceLoadingMore(false);
-  }, [invoicePageData.nextCursor, invoiceLoadingMore]);
+  }, [invoiceLoadingMore]);
 
-  // ── Expense Ledger Progressive Sync (Phase 5) ─────────────────────────────
-  useEffect(() => {
-    const sub = watchExpensesPage(
-      {
-        category: expenseFilter,
-        search: expenseSearch,
-        startDateIso: startDate || undefined,
-        endDateIso:   endDate   || undefined,
-      },
-      { cursor: expenseActiveCursor }
-    ).subscribe({
-      next: (data) => setExpensePageData(data),
-      error: (err) => console.warn('[BillingPage] expense page liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, [expenseFilter, expenseSearch, startDate, endDate, expenseActiveCursor]);
-
+  // ── Expense Ledger Pagination ─────────────────────────────────────────────
   useEffect(() => {
     resetExpensePage();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenseFilter, expenseSearch, startDate, endDate]);
+  }, [expenseFilter, expenseSearch, startDate, endDate, timeFilter, modalityFilter, resetExpensePage]);
 
   const loadMoreExpenses = useCallback(async () => {
-    if (!expensePageData.nextCursor || expenseLoadingMore) return;
+    if (expenseLoadingMore) return;
     setExpenseLoadingMore(true);
     await new Promise(r => setTimeout(r, 120));
-    setExpenseCursors(prev => [...prev, expensePageData.nextCursor]);
+    setExpensePageSize(prev => prev + 25);
     setExpenseLoadingMore(false);
-  }, [expensePageData.nextCursor, expenseLoadingMore]);
+  }, [expenseLoadingMore]);
 
 
-  // Full watchInvoices subscription — feeds liveStats and analytics only.
-  // Always reads the entire filtered set regardless of display pagination.
+  // Full watchInvoices subscription — fetches all invoices.
+  // The UI arrays (filteredInvoices) will apply the complex filters consistently.
   useEffect(() => {
-    const sub = watchInvoices({
-      status: statusFilter,
-      search: searchTerm,
-      startDateIso: startDate || undefined,
-      endDateIso:   endDate   || undefined,
-    }).subscribe({
+    const sub = watchInvoices({}).subscribe({
       next: (rows) => setInvoices(rows),
       error: (err) => console.warn('[BillingPage] invoice liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [statusFilter, searchTerm, startDate, endDate]);
+  }, []);
 
-  // Client-side analytics override. The server /finance/stats and
-  // /finance/matrix endpoints are authoritative when we're online AND the
-  // outbox is empty — fetchStats / fetchMatrix above keep state in sync
-  // with the server in that case. But when offline OR with queued
-  // mutations, the server values can't reflect reality (the user's
-  // pending invoices haven't reached the server yet). We compute the
-  // same shape locally from the cached invoices so the dashboard moves
-  // when the user creates an invoice offline.
+  // Client-side analytics override. 
   useEffect(() => {
     const useComputed = !isOnline || pendingCount > 0;
     if (!useComputed) return undefined;
+    
+    // Compute date boundaries for analytics based on timeFilter
+    const todayStr = getIstDateStr(new Date().toISOString());
+    let s = undefined, e = undefined;
+    if (timeFilter === 'TODAY') { s = e = todayStr; }
+    else if (timeFilter === 'PAST') { 
+        const d = new Date(); d.setDate(d.getDate() - 1);
+        e = getIstDateStr(d.toISOString()); 
+    }
+    else if (timeFilter === 'CUSTOM') { s = startDate; e = endDate; }
+    
     const sub = watchInvoices({
-      status: 'ALL',     // stats span all statuses regardless of UI filter
-      startDateIso: startDate || undefined,
-      endDateIso:   endDate   || undefined,
+      startDateIso: s,
+      endDateIso:   e,
     }).subscribe({
       next: (rows) => {
         setStats(computeStats(rows));
         setMatrix(computeMatrix(rows, {
-          from: startDate || undefined,
-          to:   endDate   || undefined,
+          from: s || undefined,
+          to:   e || undefined,
         }));
       },
       error: (err) => console.warn('[BillingPage] computed analytics liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [isOnline, pendingCount, startDate, endDate]);
+  }, [isOnline, pendingCount, timeFilter, startDate, endDate]);
 
-  // B3 Slice 3 — full expenses liveQuery (used by analytics/exports).
+  // B3 Slice 3 — full expenses liveQuery. Fetches all.
   useEffect(() => {
-    const sub = watchExpenses({
-      search: expenseSearch,
-      startDateIso: startDate || undefined,
-      endDateIso:   endDate   || undefined,
-    }).subscribe({
+    const sub = watchExpenses({}).subscribe({
       next: (rows) => setExpenses(rows),
       error: (err) => console.warn('[BillingPage] expense liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [expenseSearch, startDate, endDate]);
+  }, []);
 
   // B3 Slice 4 — referrers liveQuery.
   useEffect(() => {
@@ -529,18 +470,14 @@ export default function BillingPage() {
     return () => { alive = false; };
   }, [activeCenter?.id]);
 
-  // B3 Slice 5 — referral commissions liveQuery. Status defaults to ALL
-  // (the page's own UI filters specific statuses post-query).
+  // B3 Slice 5 — referral commissions liveQuery. Fetches all.
   useEffect(() => {
-    const sub = watchReferralCommissions({
-      startDateIso: startDate || undefined,
-      endDateIso:   endDate   || undefined,
-    }).subscribe({
+    const sub = watchReferralCommissions({}).subscribe({
       next: (rows) => setReferralCommissions(rows),
       error: (err) => console.warn('[BillingPage] commissions liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [startDate, endDate]);
+  }, []);
 
   // Reactive reference data: the price registry and owner details render from
   // the local cache, refreshed every cycle by the sync engine. A price edited
@@ -1581,7 +1518,7 @@ export default function BillingPage() {
   };
 
   const filteredInvoices = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     const safeInvoices = invoices || [];
     const safeApps = appointments || [];
     
@@ -1621,7 +1558,7 @@ export default function BillingPage() {
       // Time Filter Logic - Respect Appointment Schedule for categorization
       const linkedApp = safeApps.find(a => a.appointmentId === inv.appointmentId);
       const appDateStr = linkedApp ? (linkedApp.date || (linkedApp.dateTime ? linkedApp.dateTime.split('T')[0] : null)) : null;
-      const invDateStr = inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-CA') : null;
+      const invDateStr = inv.createdAt ? getIstDateStr(inv.createdAt) : null;
       
       const targetDate = appDateStr || invDateStr;
 
@@ -1649,7 +1586,7 @@ export default function BillingPage() {
   }, [invoices, appointments, searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate, sortConfig, approvalFilter, approvalMap]);
 
   const futureAppointments = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     const safeApps = appointments || [];
 
     // A future appointment that's ALREADY BILLED has a real invoice, which is
@@ -1859,12 +1796,12 @@ export default function BillingPage() {
   }, [combinedReferralCuts]);
 
   const todayReferralTotal = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     return combinedReferralCuts
       .filter(cut => {
         if (!cut.date) return false;
         try {
-          return new Date(cut.date).toLocaleDateString('en-CA') === today;
+          return getIstDateStr(cut.date) === today;
         } catch {
           return false;
         }
@@ -1896,7 +1833,7 @@ export default function BillingPage() {
   }, [expenses, combinedReferralCuts, sortConfig]);
 
   const filteredOutflow = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     const q = expenseSearch.trim().toLowerCase();
 
     return globalOutflow.filter(exp => {
@@ -1905,7 +1842,7 @@ export default function BillingPage() {
         
 
         // Time Filter
-        const expDate = exp.date ? new Date(exp.date).toLocaleDateString('en-CA') : null;
+        const expDate = exp.date ? getIstDateStr(exp.date) : null;
         if (timeFilter === 'TODAY' && expDate !== today) return false;
         if (timeFilter === 'PAST' && expDate === today) return false;
         if (timeFilter === 'CUSTOM') {
@@ -1940,9 +1877,9 @@ export default function BillingPage() {
     const referralTotal = safeOutflow.filter(e => e?.category === 'Referral').reduce((sum, exp) => sum + cost(exp), 0);
     const operationalTotal = safeOutflow.filter(e => e?.category !== 'Referral').reduce((sum, exp) => sum + cost(exp), 0);
 
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     const todayOutflow = safeOutflow
-      .filter(e => e?.date && new Date(e.date).toLocaleDateString('en-CA') === today)
+      .filter(e => e?.date && getIstDateStr(e.date) === today)
       .reduce((sum, exp) => sum + cost(exp), 0);
 
     const referralPercentage = totalOutflow > 0 ? Math.round((referralTotal / totalOutflow) * 100) : 0;
@@ -1958,14 +1895,14 @@ export default function BillingPage() {
   }, [filteredOutflow]);
 
   const filteredReferralCuts = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = getIstDateStr(new Date().toISOString());
     const q = referralSearch.trim().toLowerCase();
     // Include the projected upcoming cuts so future bookings' referrer payouts
     // appear under Future/All. Their future serviceDate keeps them out of the
     // earned (Today/Past/Custom) tabs automatically.
     return [...combinedReferralCuts, ...upcomingReferralCuts].filter(cut => {
-        const cutDate = cut.date ? new Date(cut.date).toLocaleDateString('en-CA') : null;
-        const svcDate = cut.serviceDate ? new Date(cut.serviceDate).toLocaleDateString('en-CA') : null;
+        const cutDate = cut.date ? getIstDateStr(cut.date) : null;
+        const svcDate = cut.serviceDate ? getIstDateStr(cut.serviceDate) : null;
         const isFuture = !!svcDate && svcDate > today;   // appointment not yet served = upcoming
 
         // FUTURE tab = every upcoming commission (future service date), regardless
@@ -2864,9 +2801,9 @@ export default function BillingPage() {
           isMobile={isMobile}
           outflowStats={outflowStats}
           /* ── Cursor-pagination props (Phase 5) ──────────────────────── */
-          pagedExpenses={expensePageData.rows}
-          expenseTotalCount={expensePageData.totalCount}
-          expenseHasMore={!!expensePageData.nextCursor}
+          pagedExpenses={(filteredOutflow || []).slice(0, expensePageSize)}
+          expenseTotalCount={(filteredOutflow || []).length}
+          expenseHasMore={expensePageSize < (filteredOutflow || []).length}
           onLoadMoreExpenses={loadMoreExpenses}
           expenseLoadingMore={expenseLoadingMore}
           /* ─────────────────────────────────────────────────────────────── */
@@ -2918,9 +2855,9 @@ export default function BillingPage() {
           endDate={endDate}
           setEndDate={setEndDate}
           /* ── Cursor-pagination props ───────────────────────────── */
-          pagedInvoices={invoicePageData.rows}
-          invoiceTotalCount={invoicePageData.totalCount}
-          invoiceHasMore={!!invoicePageData.nextCursor}
+          pagedInvoices={(filteredInvoices || []).slice(0, invoicePageSize)}
+          invoiceTotalCount={(filteredInvoices || []).length}
+          invoiceHasMore={invoicePageSize < (filteredInvoices || []).length}
           onLoadMoreInvoices={loadMoreInvoices}
           invoiceLoadingMore={invoiceLoadingMore}
           /* ── Future-appointment section (unchanged) ───────────────── */
