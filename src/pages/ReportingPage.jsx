@@ -299,6 +299,11 @@ const ReportingPage = () => {
     onFinalized: onReportFinalized,
   });
 
+  const handleSaveReportRef = useRef(handleSaveReport);
+  useEffect(() => {
+    handleSaveReportRef.current = handleSaveReport;
+  }, [handleSaveReport]);
+
   // Page-level sign-off wrappers passed to the editor. They call the hook
   // (server save-then-sign / addendum) and fold the returned report's sign-off
   // metadata back into local state so the lock banner, signature footer, and
@@ -1734,7 +1739,7 @@ const ReportingPage = () => {
           if (incoming.adviceText !== undefined) setAdvice(incoming.adviceText);
           
           if (wordSaveTimeoutRef.current) clearTimeout(wordSaveTimeoutRef.current);
-          wordSaveTimeoutRef.current = setTimeout(() => { try { handleSaveReport(false); } catch (_) {} }, 1000);
+          wordSaveTimeoutRef.current = setTimeout(() => { try { handleSaveReportRef.current(false); } catch (_) {} }, 1000);
           showNotif('success', 'IMPORTED FROM WORD', 'Your Word edits were pulled in and saved as a draft.');
         }
       }
@@ -1744,6 +1749,11 @@ const ReportingPage = () => {
       wordSyncRef.current.busy = false;
     }
   };
+
+  const importFromWordBytesRef = useRef(importFromWordBytes);
+  useEffect(() => {
+    importFromWordBytesRef.current = importFromWordBytes;
+  }, [importFromWordBytes]);
 
   // Stop watching the current temp Word file and drop the listener.
   const teardownWordWatch = () => {
@@ -1780,7 +1790,7 @@ const ReportingPage = () => {
         if (res?.path) {
           const unsub = nativeWord.onFileChanged((payload) => {
             if (payload?.path === wordSyncRef.current.path && payload?.base64) {
-              importFromWordBytes(payload.base64);
+              importFromWordBytesRef.current(payload.base64);
             }
           });
           wordSyncRef.current = { path: res.path, unsub, busy: false };
