@@ -63,6 +63,7 @@ export const InvoiceDrawer = ({
   const [editCentre, setEditCentre] = React.useState(0);
   const [editReferrer, setEditReferrer] = React.useState(0);
   const [editDeduction, setEditDeduction] = React.useState(0);
+  const [editExtraCharges, setEditExtraCharges] = React.useState([]);
   const [editReason, setEditReason] = React.useState('');
   const [editSubmitting, setEditSubmitting] = React.useState(false);
   // Partial payment: amount the biller is collecting now. null = default to the
@@ -112,6 +113,12 @@ export const InvoiceDrawer = ({
     setEditCentre(Number(selectedInvoice.centreDiscount) || 0);
     setEditReferrer(Number(selectedInvoice.referrerDiscount) || 0);
     setEditDeduction(Number(selectedInvoice.institutionalDeduction) || 0);
+    const initialExtraCharges = Array.isArray(selectedInvoice?.extraCharges) && selectedInvoice.extraCharges.length > 0 
+      ? selectedInvoice.extraCharges 
+      : (selectedInvoice?.additionalChargesReason 
+         ? [{ reason: selectedInvoice.additionalChargesReason, amount: Number(selectedInvoice.additionalCharges) || 0 }] 
+         : []);
+    setEditExtraCharges(initialExtraCharges);
     setEditReason('');
     setFundingChoice('centre');
     setDeficitReason('');
@@ -130,6 +137,7 @@ export const InvoiceDrawer = ({
           centreDiscount: Number(editCentre) || 0,
           referrerDiscount: Number(editReferrer) || 0,
           deduction: Number(editDeduction) || 0,
+          extraCharges: editExtraCharges.filter(c => Number(c.amount) > 0),
           // Over-commission surplus: true → centre absorbs it; false → referrer deficit.
           absorbExcessToCentre: (Number(editReferrer) || 0) > (Number(selectedInvoice.commissionAmount) || 0) && fundingChoice === 'centre',
         }),
@@ -904,7 +912,10 @@ export const InvoiceDrawer = ({
 
       {/* ── Big sectioned payment-edit window (concessions), admin-approved ── */}
       {editReqOpen && (() => {
-        const fee = Number(selectedInvoice.grossAmount) || 0;
+        const baseFee = Number(selectedInvoice.items?.reduce((sum, item) => sum + (Number(item.amount) * Number(item.quantity)), 0)) || 0;
+        const totalExtraCharges = editExtraCharges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0);
+        const fee = baseFee > 0 ? baseFee + totalExtraCharges : (Number(selectedInvoice.grossAmount) || 0) - (Number(selectedInvoice.additionalCharges) || 0) + totalExtraCharges;
+        
         const commission = Number(selectedInvoice.commissionAmount) || 0;
         const maxCentre = Math.max(0, fee - commission);
         const editTotal = (Number(editCentre) || 0) + (Number(editReferrer) || 0) + (Number(editDeduction) || 0);
@@ -962,6 +973,49 @@ export const InvoiceDrawer = ({
                   </div>
                 </div>
                 {overFee && <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 800, color: '#ef4444' }}>⚠ Total concession can’t exceed the fee of ₹{fee.toLocaleString()}.</div>}
+              </div>
+
+              {/* Extra Charges Section */}
+              <div style={{ background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: '14px', padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>EXTRA CHARGES</div>
+                  <button type="button" onClick={() => setEditExtraCharges([...editExtraCharges, { reason: '', amount: 0 }])}
+                    style={{ background: '#e0e7ff', color: '#4338ca', border: 'none', borderRadius: '8px', padding: '5px 10px', fontSize: '9px', fontWeight: 900, cursor: 'pointer' }}>+ ADD CHARGE</button>
+                </div>
+                
+                {editExtraCharges.length === 0 ? (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '10px 0' }}>No extra charges added.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {editExtraCharges.map((charge, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input type="text" placeholder="Reason (e.g., Delivery)" value={charge.reason}
+                          onChange={e => {
+                            const n = [...editExtraCharges];
+                            n[idx].reason = e.target.value;
+                            setEditExtraCharges(n);
+                          }}
+                          style={{ flex: 1, padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }} />
+                        <div style={{ position: 'relative', width: '90px' }}>
+                          <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '12px', fontWeight: 800 }}>₹</span>
+                          <input type="number" placeholder="0" min="0" value={charge.amount === 0 ? '' : charge.amount}
+                            onChange={e => {
+                              const val = Math.max(0, parseFloat(e.target.value) || 0);
+                              const n = [...editExtraCharges];
+                              n[idx].amount = val;
+                              setEditExtraCharges(n);
+                            }}
+                            style={{ width: '100%', boxSizing: 'border-box', padding: '8px 8px 8px 22px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900 }} />
+                        </div>
+                        <button type="button" onClick={() => {
+                          const n = [...editExtraCharges];
+                          n.splice(idx, 1);
+                          setEditExtraCharges(n);
+                        }} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {Number(editReferrer) > commission && overCommissionChoice(Number(editReferrer) - commission, selectedInvoice.referrerName, false)}
