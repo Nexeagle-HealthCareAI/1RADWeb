@@ -2090,7 +2090,8 @@ export default function BillingPage() {
       deficitReason: meta.deficitReason || '',
       // Over-commission excess funded by the centre (instead of the referrer's
       // deficit): the API floors the commission at 0 and the centre absorbs it.
-      absorbExcessToCentre: !!meta.absorbToCentre
+      absorbExcessToCentre: !!meta.absorbToCentre,
+      extraCharges: meta.additionalChargesReason ? JSON.parse(meta.additionalChargesReason) : []
     };
 
     // Stable key shared by the online call + outbox fallback — a payment that
@@ -2231,6 +2232,7 @@ export default function BillingPage() {
           institutionalDeduction: Number(draft.deduction) || 0,
           additionalCharges: Number(draft.additionalCharges) || 0,
           additionalChargesReason: draft.additionalChargesReason || null,
+          extraCharges: draft.additionalChargesReason ? JSON.parse(draft.additionalChargesReason) : [],
           discountAmount: (Number(draft.centreDisc) || 0) + (Number(draft.referrerDisc) || 0) + (Number(draft.deduction) || 0),
         }
       : { discountAmount: selectedInvoice.discountAmount };
@@ -2515,12 +2517,21 @@ export default function BillingPage() {
                   <span class="summary-label">Gross Aggregate</span>
                   <span class="summary-value">₹${(inv.grossAmount || 0).toLocaleString()}</span>
                 </div>
-                ${(inv.additionalCharges || 0) > 0 ? `
-                <div class="summary-row" style="color: #0f52ba;">
-                  <span class="summary-label">Additional Charge${inv.additionalChargesReason ? ` (${inv.additionalChargesReason})` : ''}</span>
-                  <span class="summary-value">+ ₹${(inv.additionalCharges || 0).toLocaleString()}</span>
-                </div>
-                ` : ''}
+                ${(inv.additionalCharges || 0) > 0 ? (
+                  (Array.isArray(inv.extraCharges) && inv.extraCharges.length > 0)
+                    ? inv.extraCharges.filter(c => Number(c.amount) > 0).map(c => `
+                      <div class="summary-row" style="color: #0f52ba;">
+                        <span class="summary-label">Additional Charge${c.reason ? ` (${c.reason})` : ''}</span>
+                        <span class="summary-value">+ ₹${(Number(c.amount) || 0).toLocaleString()}</span>
+                      </div>
+                    `).join('')
+                    : `
+                      <div class="summary-row" style="color: #0f52ba;">
+                        <span class="summary-label">Additional Charge${inv.additionalChargesReason ? ` (${inv.additionalChargesReason})` : ''}</span>
+                        <span class="summary-value">+ ₹${(inv.additionalCharges || 0).toLocaleString()}</span>
+                      </div>
+                    `
+                ) : ''}
                 <div class="summary-row" style="color: #ef4444;">
                   <span class="summary-label">Institutional Discount</span>
                   <span class="summary-value">- ₹${(inv.discountAmount || 0).toLocaleString()}</span>
