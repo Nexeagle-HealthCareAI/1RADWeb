@@ -571,16 +571,21 @@ export const InvoiceDrawer = ({
                     </div>
                     {/* Additional Charges Input Block (Left Side) */}
                     {/* Extra Charges Input Block (Left Side) */}
-                    {!isPaid && (
-                      <div style={{ marginBottom: '20px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #eef2f7' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: extraCharges.length > 0 ? '10px' : '0' }}>
-                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.3px' }}>EXTRA CHARGES</span>
+                    {/* Extra Charges Input Block (Left Side) */}
+                    <div style={{ marginBottom: '20px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #eef2f7' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: extraCharges.length > 0 ? '10px' : '0' }}>
+                         <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.3px' }}>EXTRA CHARGES</span>
+                         {!isPaid && (
                            <button 
                              onClick={() => setExtraCharges([...extraCharges, { reason: '', amount: 0 }])}
                              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', fontSize: '9px', fontWeight: 900, cursor: 'pointer', color: '#0f52ba' }}
                            >+ ADD</button>
-                        </div>
-                        {extraCharges.map((charge, idx) => (
+                         )}
+                      </div>
+                      {extraCharges.length === 0 && isPaid ? (
+                         <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic', marginTop: '8px' }}>No extra charges recorded.</div>
+                      ) : (
+                        extraCharges.map((charge, idx) => (
                           <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: idx === extraCharges.length - 1 ? '0' : '8px', alignItems: 'center' }}>
                             <input 
                               type="text" value={charge.reason} placeholder="Reason (e.g. Night Charge)" 
@@ -589,7 +594,8 @@ export const InvoiceDrawer = ({
                                 newCharges[idx].reason = e.target.value;
                                 setExtraCharges(newCharges);
                               }}
-                              style={{ flex: 1, padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', fontWeight: 600, color: '#334155' }}
+                              disabled={isPaid}
+                              style={{ flex: 1, padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', fontWeight: 600, color: '#334155', background: isPaid ? '#f1f5f9' : 'white', cursor: isPaid ? 'not-allowed' : 'text' }}
                             />
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <span style={{ fontSize: '11px', fontWeight: 950, color: '#64748b' }}>₹</span>
@@ -600,20 +606,23 @@ export const InvoiceDrawer = ({
                                   newCharges[idx].amount = Math.max(0, parseInt(e.target.value) || 0);
                                   setExtraCharges(newCharges);
                                 }}
-                                style={{ width: '70px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#0f172a' }}
+                                disabled={isPaid}
+                                style={{ width: '70px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#0f172a', background: isPaid ? '#f1f5f9' : 'white', cursor: isPaid ? 'not-allowed' : 'text' }}
                               />
-                              <button 
-                                onClick={() => {
-                                  const newCharges = extraCharges.filter((_, i) => i !== idx);
-                                  setExtraCharges(newCharges);
-                                }}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '0 4px' }}
-                              >×</button>
+                              {!isPaid && (
+                                <button 
+                                  onClick={() => {
+                                    const newCharges = extraCharges.filter((_, i) => i !== idx);
+                                    setExtraCharges(newCharges);
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '0 4px' }}
+                                >×</button>
+                              )}
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        ))
+                      )}
+                    </div>
                   </>
                 );
               })()}
