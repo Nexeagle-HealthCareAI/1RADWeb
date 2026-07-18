@@ -29,8 +29,20 @@ export const InvoiceDrawer = ({
   const [centreDisc, setCentreDisc] = React.useState(() => Number(selectedInvoice?.centreDiscount) || 0);
   const [referrerDisc, setReferrerDisc] = React.useState(() => Number(selectedInvoice?.referrerDiscount) || 0);
   const [deduction, setDeduction] = React.useState(() => Number(selectedInvoice?.institutionalDeduction) || 0);
-  const [additionalCharges, setAdditionalCharges] = React.useState(() => Number(selectedInvoice?.additionalCharges) || 0);
-  const [additionalChargesReason, setAdditionalChargesReason] = React.useState(() => selectedInvoice?.additionalChargesReason || '');
+  const [extraCharges, setExtraCharges] = React.useState(() => {
+    try {
+      const parsed = JSON.parse(selectedInvoice?.additionalChargesReason || '[]');
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].amount !== undefined) return parsed;
+      throw new Error();
+    } catch {
+      return selectedInvoice?.additionalChargesReason 
+        ? [{ reason: selectedInvoice.additionalChargesReason, amount: Number(selectedInvoice.additionalCharges) || 0 }] 
+        : [];
+    }
+  });
+  
+  const additionalCharges = useMemo(() => extraCharges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0), [extraCharges]);
+  const additionalChargesReason = useMemo(() => JSON.stringify(extraCharges), [extraCharges]);
   const [isAdjusting, setIsAdjusting] = React.useState(false);
   const [adjustAmount, setAdjustAmount] = React.useState(0);
   // Scenario 09 — a concession after payment must be approved by an admin, so
@@ -550,26 +562,48 @@ export const InvoiceDrawer = ({
                       )}
                     </div>
                     {/* Additional Charges Input Block (Left Side) */}
+                    {/* Extra Charges Input Block (Left Side) */}
                     {!isPaid && (
                       <div style={{ marginBottom: '20px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #eef2f7' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.3px' }}>ADDITIONAL CHARGE</span>
-                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: extraCharges.length > 0 ? '10px' : '0' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.3px' }}>EXTRA CHARGES</span>
+                           <button 
+                             onClick={() => setExtraCharges([...extraCharges, { reason: '', amount: 0 }])}
+                             style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', fontSize: '9px', fontWeight: 900, cursor: 'pointer', color: '#0f52ba' }}
+                           >+ ADD</button>
+                        </div>
+                        {extraCharges.map((charge, idx) => (
+                          <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: idx === extraCharges.length - 1 ? '0' : '8px', alignItems: 'center' }}>
+                            <input 
+                              type="text" value={charge.reason} placeholder="Reason (e.g. Night Charge)" 
+                              onChange={e => {
+                                const newCharges = [...extraCharges];
+                                newCharges[idx].reason = e.target.value;
+                                setExtraCharges(newCharges);
+                              }}
+                              style={{ flex: 1, padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', fontWeight: 600, color: '#334155' }}
+                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <span style={{ fontSize: '11px', fontWeight: 950, color: '#64748b' }}>₹</span>
                               <input 
-                                type="number" value={additionalCharges === 0 ? '' : additionalCharges} placeholder="0" min="0" onChange={e => setAdditionalCharges(Math.max(0, parseInt(e.target.value) || 0))}
-                                style={{ width: '80px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#0f172a' }}
+                                type="number" value={charge.amount === 0 ? '' : charge.amount} placeholder="0" min="0" 
+                                onChange={e => {
+                                  const newCharges = [...extraCharges];
+                                  newCharges[idx].amount = Math.max(0, parseInt(e.target.value) || 0);
+                                  setExtraCharges(newCharges);
+                                }}
+                                style={{ width: '70px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#0f172a' }}
                               />
-                           </div>
-                        </div>
-                        {additionalCharges > 0 && (
-                          <div style={{ marginTop: '8px' }}>
-                            <input 
-                              type="text" value={additionalChargesReason} placeholder="Reason (e.g. Night Charge)" onChange={e => setAdditionalChargesReason(e.target.value)}
-                              style={{ width: '100%', boxSizing: 'border-box', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', fontWeight: 600, color: '#334155' }}
-                            />
+                              <button 
+                                onClick={() => {
+                                  const newCharges = extraCharges.filter((_, i) => i !== idx);
+                                  setExtraCharges(newCharges);
+                                }}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '0 4px' }}
+                              >×</button>
+                            </div>
                           </div>
-                        )}
+                        ))}
                       </div>
                     )}
                   </>

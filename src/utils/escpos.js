@@ -126,8 +126,16 @@ export function buildReceiptBytes(data = {}) {
   if ((Number(data.discount) || 0) > 0 || (Number(data.additionalCharges) || 0) > 0) {
     p.leftRight('SUBTOTAL', money(sub));
     if ((Number(data.additionalCharges) || 0) > 0) {
-      const reason = data.additionalChargesReason ? ` (${data.additionalChargesReason})` : '';
-      p.leftRight(`ADDL CHARGE${reason}`.slice(0, cols === 32 ? 20 : 30), '+' + money(data.additionalCharges));
+      const extraCharges = Array.isArray(data.extraCharges) && data.extraCharges.length > 0 
+        ? data.extraCharges 
+        : [{ reason: data.additionalChargesReason || 'Extra Charge', amount: data.additionalCharges }];
+      
+      for (const charge of extraCharges) {
+        if ((Number(charge.amount) || 0) > 0) {
+          const reason = charge.reason ? ` (${charge.reason})` : '';
+          p.leftRight(`ADDL CHARGE${reason}`.slice(0, cols === 32 ? 20 : 30), '+' + money(charge.amount));
+        }
+      }
     }
     if ((Number(data.discount) || 0) > 0) {
       p.leftRight('DISCOUNT', '-' + money(data.discount));
