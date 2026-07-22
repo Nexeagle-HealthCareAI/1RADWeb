@@ -241,7 +241,14 @@ export const InvoiceDrawer = ({
   if (!selectedInvoice) return null;
 
   const totalDeductions = centreDisc + referrerDisc + deduction;
-  const netSettlement = (selectedInvoice.grossAmount || 0) + additionalCharges - totalDeductions;
+  // Derive the items-only base from grossAmount. `grossAmount` is normally the
+  // pure items sum (set by all API handlers), but if a prior draft-save or
+  // partial-payment cycle didn't re-anchor it correctly it can drift to include
+  // the stored additionalCharges. Subtract the stale stored value before adding
+  // the current drawer-local value so the formula is idempotent regardless.
+  const storedAdditionalCharges = Number(selectedInvoice.additionalCharges) || 0;
+  const pureGross = Math.max(0, (selectedInvoice.grossAmount || 0) - storedAdditionalCharges);
+  const netSettlement = pureGross + additionalCharges - totalDeductions;
 
   // Partial payments + advances. The biller types the cash tendered; the default
   // is the whole balance (net − already-paid). Paying LESS leaves a balance due;
