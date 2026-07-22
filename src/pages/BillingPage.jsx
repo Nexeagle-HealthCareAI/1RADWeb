@@ -1609,7 +1609,8 @@ export default function BillingPage() {
       
       // Search Filter
       const matchesSearch = String(app.patientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            String(app.displayId || '').toLowerCase().includes(searchTerm.toLowerCase());
+                            String(app.displayId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            String(app.referredBy || app.referrerName || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       return matchesSearch;
     }).sort((a, b) => {

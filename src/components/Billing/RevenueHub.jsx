@@ -407,8 +407,8 @@ const RevenueHub = ({
 
     } else {
       headers = [
-        'Invoice ID', 'Patient Name', 'Referred By', 'Timestamp', 'Modality',
-        'Gross Amount (INR)', 'Discount Amount (INR)', 'Net Payable (INR)',
+        'Token No', 'Patient Name', 'Referred By', 'Timestamp', 'Modality',
+        'Gross Amount (INR)', 'Extra Charges (INR)', 'Discount Amount (INR)', 'Net Payable (INR)',
         'Referral Cut (INR)', 'Net Clinic Income (INR)', 'Status', 'Admin Approval', 'Reason'
       ];
 
@@ -419,18 +419,20 @@ const RevenueHub = ({
 
       filteredInvoicesToExport.forEach(inv => {
         totals.gross += (inv.grossAmount || 0);
+        totals.extra += (inv.additionalCharges || 0);
         totals.discount += (inv.discountAmount || 0);
         totals.net += (inv.totalAmount || 0);
         totals.cut += (inv.commissionAmount || 0);
         totals.income += ((inv.totalAmount || 0) - (inv.commissionAmount || 0));
 
         rows.push([
-          inv.displayId || 'N/A',
+          inv.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A',
           inv.patientName || 'UNKNOWN',
           inv.referrerName || 'SELF',
           formatDate(inv.createdAt, true),
           inv.modality || 'US',
           inv.grossAmount || 0,
+          inv.additionalCharges || 0,
           inv.discountAmount || 0,
           inv.totalAmount || 0,
           inv.commissionAmount || 0,
@@ -443,7 +445,7 @@ const RevenueHub = ({
       rows.push([]);
       rows.push([
         'TOTALS', '', '', '', '',
-        totals.gross, totals.discount, totals.net, totals.cut, totals.income, '', '', ''
+        totals.gross, totals.extra, totals.discount, totals.net, totals.cut, totals.income, '', '', ''
       ]);
     }
 
@@ -707,25 +709,25 @@ const RevenueHub = ({
                   </th>
                   {timeFilter === 'FUTURE' ? (
                     <>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>APPT_ID</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOKEN_NO</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SCHEDULED_FOR</th>
                          <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GENERATED_AT</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_NAME</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textAlign: 'right' }}>PROJECTED_REV</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>EXTRA_CHARGES</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'right' }}>EST_CUT</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', textAlign: 'right' }}>EST_NET</th>
                     </>
                   ) : (
                     <>
-                      <th onClick={() => handleSort('displayId')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID {getSortIcon('displayId')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOKEN_NO</th>
                       <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY {getSortIcon('patientName')}</th>
-                      <th onClick={() => handleSort('referrerName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY {getSortIcon('referrerName')}</th>
                       <th onClick={() => handleSort('serviceDate')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_DATE {getSortIcon('serviceDate')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY : SERVICE</th>
                       <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS {getSortIcon('grossAmount')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', background: '#f8fafc', textAlign: 'right' }}>EXTRA_CHARGES</th>
                       <th onClick={() => handleSort('discountAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT {getSortIcon('discountAmount')}</th>
                       <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE {getSortIcon('totalAmount')}</th>
                       <th onClick={() => handleSort('commissionAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>CUT {getSortIcon('commissionAmount')}</th>
@@ -750,9 +752,13 @@ const RevenueHub = ({
                             style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
                           />
                         </td>
-                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{app.displayId}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</td>
+                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>
+                          {app.dailyTokenNumber != null ? `#${String(app.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
+                        </td>
+                        <td style={{ padding: '20px 10px' }}>
+                          <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '9.5px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Referred by: {(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</div>
+                        </td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{formatDate(app.date || app.dateTime)}</td>
                           <td style={{ padding: '20px 10px', fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>TBD (Future)</td>
                         <td style={{ padding: '20px 10px' }}>
@@ -760,6 +766,7 @@ const RevenueHub = ({
                         </td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#1e293b' }}>{app.service}</td>
                         <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#0f52ba' }}>₹{getServicePrice(app.service).toLocaleString()}</td>
+                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#94a3b8' }}>—</td>
                         <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>
                           {getServiceCut(app) > 0 ? `₹${getServiceCut(app).toLocaleString()}` : '—'}
                         </td>
@@ -770,7 +777,7 @@ const RevenueHub = ({
                    ))}
                     {pagedInvoices.length > 0 && (
                      <tr style={{ background: '#f1f5f9' }}>
-                       <td colSpan="10" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
+                       <td colSpan="11" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
                      </tr>
                    )}
                     {pagedInvoices.map(inv => (
@@ -783,11 +790,15 @@ const RevenueHub = ({
                             style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
                           />
                         </td>
-                        <td style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{inv.displayId}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv.referrerName || 'SELF').toUpperCase()}</td>
+                        <td style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>
+                          {inv.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                        </td>
+                        <td style={{ padding: '15px 10px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>Referred by: {(inv.referrerName || 'SELF').toUpperCase()}</div>
+                        </td>
                         <td style={{ padding: '15px 10px', fontSize: '10px', color: '#0f52ba', fontWeight: 900 }}>BILLED</td>
-                        <td colSpan="2" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL_INVOICE_LEDGER</td>
+                        <td colSpan="4" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL_INVOICE_LEDGER</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#0f52ba' }}>₹{(inv.totalAmount || 0).toLocaleString()}</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹{(inv.commissionAmount || 0).toLocaleString()}</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#166534' }}>₹{(inv.totalAmount - (inv.commissionAmount || 0)).toLocaleString()}</td>
@@ -805,9 +816,13 @@ const RevenueHub = ({
                          style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
                        />
                      </td>
-                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv?.referrerName || 'SELF').toUpperCase()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>
+                       {inv?.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                     </td>
+                     <td style={{ padding: '20px 10px' }}>
+                       <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</div>
+                       <div style={{ fontSize: '9.5px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Referred by: {(inv?.referrerName || 'SELF').toUpperCase()}</div>
+                     </td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{formatDate(inv?.serviceDate || inv?.createdAt, true)}</td>
                      {/* Modality : Service — one combined column. Each service is
                          grouped under its modality (modality first), one group per
@@ -863,6 +878,7 @@ const RevenueHub = ({
                        })()}
                      </td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>{(inv.additionalCharges || 0) > 0 ? `₹${(inv.additionalCharges || 0).toLocaleString()}` : '—'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '₹0'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{(inv?.totalAmount || 0).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px' }}>
