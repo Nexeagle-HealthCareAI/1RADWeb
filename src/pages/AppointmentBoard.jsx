@@ -1553,24 +1553,26 @@ export default function AppointmentBoard() {
     } : {};
 
     const lines = getServiceLines(app);
+    const primaryService = lines[0] || { serviceName: '', modality: app.modality || 'X-RAY', amount: 0, referralCutValue: 0, id: null };
+    const remainingServices = lines.slice(1);
 
     const { value: ageVal, unit: ageUnitVal } = parsePatientAge(app.patientAge || app.age);
 
     const initialEditing = {
       ...app,
       ...refProfile,
-      modality:         app.modality || 'X-RAY',
-      service:          '',
-      amount:           0,
-      referralCutValue: 0,
-      _primaryServiceId: null,
+      modality:         primaryService.modality,
+      service:          primaryService.serviceName,
+      amount:           primaryService.amount,
+      referralCutValue: primaryService.referralCutValue,
+      _primaryServiceId: primaryService.id,
       patientAgeValue:  ageVal || '',
       patientAgeUnit:   ageUnitVal || 'Y',
     };
 
     setEditingAppointment(initialEditing);
 
-    setEditServices(lines.map(l => ({
+    setEditServices(remainingServices.map(l => ({
       id:               l.id || null,
       serviceName:      l.serviceName,
       modality:         l.modality,
@@ -2528,11 +2530,11 @@ export default function AppointmentBoard() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0, flex: 1 }}>
               <div style={{
                 flexShrink: 0,
-                width: '34px', height: '34px', borderRadius: '8px',
-                background: 'rgba(15, 82, 186, 0.08)', color: '#0f52ba',
+                minWidth: '44px', height: '34px', padding: '0 8px', borderRadius: '8px',
+                background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: '#ffffff',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 950, fontSize: '13px',
-                border: '1.5px solid rgba(15, 82, 186, 0.18)',
+                fontWeight: 950, fontSize: '13px', letterSpacing: '0.5px',
+                boxShadow: '0 4px 10px rgba(15, 82, 186, 0.25)',
               }}>
                 {app.tokenNo != null ? formatToken(app.tokenNo) : '—'}
               </div>
@@ -3103,7 +3105,7 @@ export default function AppointmentBoard() {
                 letterSpacing: isMobile ? '0.5px' : '1px',
                 margin: 0,
               }}>
-                Phase {bookingStep}: {isStep1 ? 'Patient Identity' : 'Clinical Configuration'}
+                Step {bookingStep}: {isStep1 ? 'Patient Details' : 'Appointment Details'}
               </p>
             </div>
             <button className="btn-close" style={{ color: 'white', fontSize: '28px', flexShrink: 0 }} onClick={() => setIsBookingOpen(false)}>✕</button>
@@ -3135,7 +3137,7 @@ export default function AppointmentBoard() {
                   {/* Left Column: Patient Details */}
                   <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DETAILS</label>
                       
                       <div style={{ 
                         display: 'grid', 
@@ -3924,7 +3926,7 @@ export default function AppointmentBoard() {
                             setShowBookingValidation(false);
                           }}
                         >
-                          PROCEED {'\u2192'} CLINICAL CONFIG
+                          PROCEED {'\u2192'} APPOINTMENT DETAILS
                         </button>
                         {isPatientStepIncomplete && (
                           <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textAlign: 'center' }}>
@@ -4465,7 +4467,7 @@ export default function AppointmentBoard() {
                     <div style={{ background: 'white', padding: '12px 14px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                       <div style={{ marginBottom: '6px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', margin: 0 }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                          <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', margin: 0 }}>5. APPOINTMENT DATE <span style={{ color: '#e74c3c' }}>*</span></label>
                           <button 
                             onClick={(e) => {
                               e.preventDefault();
@@ -4578,7 +4580,7 @@ export default function AppointmentBoard() {
                       </div>
 
                       <div style={{ marginTop: '8px', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>6. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>6. ASSIGN SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
                           {doctors.map((d, idx) => (
                             <div key={`${d}_${idx}`} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
@@ -4681,7 +4683,7 @@ export default function AppointmentBoard() {
                         }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <div style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.2px' }}>
-                              Final Mission Briefing Summary
+                              Booking Summary
                             </div>
                             {_summaryLines.length > 1 && (
                               <span style={{
@@ -4846,7 +4848,7 @@ export default function AppointmentBoard() {
                         }
                         onClick={handleBookAppointment}
                       >
-                        {isMobile ? '🚀 BOOK' : '🚀 DEPLOY MISSION'}
+                        {isMobile ? '🚀 BOOK' : '🚀 BOOK APPOINTMENT'}
                       </button>
                     </div>
                   </div>
@@ -6285,8 +6287,7 @@ export default function AppointmentBoard() {
       <div className="appt-page-top">
         <div className="appt-page-header">
           <div className="appt-page-title-block">
-            <h1 className="appt-page-title">Appointment Command</h1>
-            <p className="appt-page-subtitle">Strategic Clinical Mission Control</p>
+            <h1 className="appt-page-title">Appointment Board</h1>
           </div>
 
           <div className="appt-page-actions">
@@ -6312,7 +6313,7 @@ export default function AppointmentBoard() {
             </div>
             
             <button className="appt-new-mission-btn" onClick={() => { resetBooking(); setIsBookingOpen(true); }}>
-              + New Mission
+              + Add Appointment
             </button>
           </div>
         </div>
@@ -6338,7 +6339,7 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Volume</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Appointments</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', fontFamily: 'monospace' }}>{stats.total}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#10b981', fontWeight: 800 }}>
             ↑ {activeRate}% Active
@@ -6360,7 +6361,7 @@ export default function AppointmentBoard() {
           <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? 'No Show' : 'Expected Today'}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: activeTab === 'PAST' ? '#dc2626' : '#475569', fontFamily: 'monospace' }}>{activeTab === 'PAST' ? stats.noShow : stats.expected}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>
-            {activeTab === 'PAST' ? 'Did Not Attend' : 'Intake Pending'}
+            {activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting to Check-in'}
           </div>
         </div>
 
@@ -6379,7 +6380,7 @@ export default function AppointmentBoard() {
           <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>Arrived In Hall</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#059669', fontFamily: 'monospace' }}>{stats.arrived}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#059669', fontWeight: 800 }}>
-            Queue Waiting
+            Waiting in Clinic
           </div>
         </div>
 
@@ -6440,7 +6441,7 @@ export default function AppointmentBoard() {
           <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>Delivered Reports</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#0284c7', fontFamily: 'monospace' }}>{stats.delivered}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>
-            Handed Over ({completionRate}% Efficacy)
+            Handed to Patient
           </div>
         </div>
 
@@ -6460,7 +6461,7 @@ export default function AppointmentBoard() {
             <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>Cancelled</span>
             <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#e11d48', fontFamily: 'monospace' }}>{stats.cancelled}</div>
             <div className="intel-trend" style={{ fontSize: '10px', color: '#be123c', fontWeight: 800 }}>
-              Aborted Missions
+              Cancelled Appointments
             </div>
           </div>
         )}

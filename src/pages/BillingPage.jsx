@@ -2759,9 +2759,8 @@ export default function BillingPage() {
           {billingViewMode === 'REFERRAL_CUTS' && (
             <h3 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.3px', margin: 0 }}>Referral Settlements</h3>
           )}
-          {/* Global "Search invoices or patients" removed — each tab (Revenue,
-              Referrals, Expenses) now has its own table-level search input. */}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
+             <div id="billing-header-actions-portal"></div>
              {localStorage.getItem('1rad_invoices') && (
                <button
                  onClick={handleSyncLegacyData}
@@ -2775,20 +2774,7 @@ export default function BillingPage() {
                  {isSyncing ? 'Syncing...' : 'Sync Local'}
                </button>
              )}
-             {/* "+ New Invoice" only makes sense on the Revenue Hub (INVOICES) tab;
-                  hide it on Expenses, Referrals, Analytics, Finance. */}
-             {billingViewMode === 'INVOICES' && (
-               <button
-                 onClick={() => setIsNewInvoiceDrawerOpen(true)}
-                 style={{
-                   padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white',
-                   fontWeight: 600, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.2)',
-                   width: isMobile ? '100%' : 'auto'
-                 }}
-               >
-                 + New Invoice
-               </button>
-             )}
+
           </div>
         </div>
       </div>
@@ -2900,6 +2886,7 @@ export default function BillingPage() {
           referrers={referrers}
           setSelectedInvoice={setSelectedInvoice}
           setIsInvoiceDrawerOpen={setIsInvoiceDrawerOpen}
+          setIsNewInvoiceDrawerOpen={setIsNewInvoiceDrawerOpen}
           sortConfig={sortConfig}
           handleSort={handleSort}
           futureAppointments={futureAppointments}

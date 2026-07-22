@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx-js-style';
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
 import { celebrate } from '../../utils/celebrate';
 
@@ -115,6 +116,7 @@ const RevenueHub = ({
   referrers,
   setSelectedInvoice,
   setIsInvoiceDrawerOpen,
+  setIsNewInvoiceDrawerOpen,
   sortConfig,
   handleSort,
   futureAppointments,
@@ -123,6 +125,11 @@ const RevenueHub = ({
 }) => {
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' });
+  const [actionsPortalNode, setActionsPortalNode] = useState(null);
+
+  useEffect(() => {
+    setActionsPortalNode(document.getElementById('billing-header-actions-portal'));
+  }, []);
 
   // Whether the referrer's commission for this invoice is already PAID. Once it
   // is, "Update payout" is locked by default — money has already changed hands,
@@ -592,44 +599,70 @@ const RevenueHub = ({
             </div>
          </div>
 
-          <div style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isMobile ? 'center' : 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
-              <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
-                {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (invoiceTotalCount || 0)) : (invoiceTotalCount || 0)}
-              </span>
-            </div>
+          {(() => {
+            const actionsBlock = (
+              <div style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isMobile ? 'center' : 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
+                  <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
+                    {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (invoiceTotalCount || 0)) : (invoiceTotalCount || 0)}
+                  </span>
+                </div>
 
-            <button
-              onClick={handleExportToExcel}
-              style={{
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: 'white',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '10px',
-                fontSize: '9px',
-                fontWeight: 950,
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-                whiteSpace: 'nowrap'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-              }}
-            >
-              <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT EXCEL'}</span>
-            </button>
-          </div>
+                <button
+                  onClick={handleExportToExcel}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                  }}
+                >
+                  <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT EXCEL'}</span>
+                </button>
+                
+                {setIsNewInvoiceDrawerOpen && (
+                  <button
+                    onClick={() => setIsNewInvoiceDrawerOpen(true)}
+                    style={{
+                      padding: '8px 16px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)', color: 'white',
+                      fontWeight: 950, fontSize: '9px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.25)',
+                      display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(29,78,216,0.35)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(29,78,216,0.25)';
+                    }}
+                  >
+                    + Add Manual Invoice
+                  </button>
+                )}
+              </div>
+            );
+            return actionsPortalNode ? createPortal(actionsBlock, actionsPortalNode) : actionsBlock;
+          })()}
       </div>
 
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(6, 1fr)', gap: '15px', marginBottom: '40px' }}>

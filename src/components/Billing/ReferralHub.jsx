@@ -537,23 +537,23 @@ const ReferralHub = ({
       sElig += g.eligible; sAwaiting += g.awaiting;
       return {
         'Partner':               g.name,
-        'Total Payouts':         g.count,
+        'Total Incentives':      g.count,
         'Total Amount (INR)':    g.total,
         'Settled (INR)':         g.paid,
         'Outstanding (INR)':     g.unpaid,
-        'Eligible to Pay (INR)': g.eligible,
-        'Non-eligible (INR)':    g.awaiting,
+        'Ready to Pay (INR)':    g.eligible,
+        'Pending Patient Payment (INR)': g.awaiting,
       };
     });
     summaryRows.push({});
     summaryRows.push({
       'Partner':               'TOTAL',
-      'Total Payouts':         sPayouts,
+      'Total Incentives':      sPayouts,
       'Total Amount (INR)':    sTotal,
       'Settled (INR)':         sPaid,
       'Outstanding (INR)':     sUnpaid,
-      'Eligible to Pay (INR)': sElig,
-      'Non-eligible (INR)':    sAwaiting,
+      'Ready to Pay (INR)':    sElig,
+      'Pending Patient Payment (INR)': sAwaiting,
     });
 
     const sumWs = XLSX.utils.json_to_sheet(summaryRows);
@@ -1046,7 +1046,7 @@ const ReferralHub = ({
                       )}
                     </div>
                     <div>
-                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>{group.deficit > 0 ? 'NET PAYABLE' : 'TOTAL PAYOUTS'}</div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>{group.deficit > 0 ? 'NET PAYABLE' : 'TOTAL INCENTIVES'}</div>
                       <div style={{ fontSize: '22px', fontWeight: 950, color: group.total < 0 ? '#ea580c' : '#1e293b' }}>₹{group.total.toLocaleString()}{group.total < 0 ? ' (owes)' : ''}</div>
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
@@ -1061,11 +1061,11 @@ const ReferralHub = ({
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px' }}>ELIGIBLE</div>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px' }}>READY TO PAY</div>
                         <div style={{ fontSize: '12px', fontWeight: 950, color: group.eligible > 0 ? '#1d4ed8' : '#cbd5e1', marginTop: '2px' }}>₹{group.eligible.toLocaleString()}</div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px' }}>NON-ELIGIBLE</div>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px' }}>PENDING PATIENT PAYMENT</div>
                         <div style={{ fontSize: '12px', fontWeight: 950, color: group.awaiting > 0 ? '#c2410c' : '#cbd5e1', marginTop: '2px' }}>₹{group.awaiting.toLocaleString()}</div>
                       </div>
                     </div>
@@ -1082,7 +1082,7 @@ const ReferralHub = ({
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px', fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
-                      <span>{group.count} payout{group.count !== 1 ? 's' : ''}</span>
+                      <span>{group.count} incentive{group.count !== 1 ? 's' : ''}</span>
                       <span style={{ color: '#e11d48', fontWeight: 950, letterSpacing: '0.5px' }}>VIEW →</span>
                     </div>
                   </button>
@@ -1097,12 +1097,12 @@ const ReferralHub = ({
                   <thead>
                     <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'left' }}>Referred Person</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Total Payouts</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Total Incentives</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Paid</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Unpaid</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient has paid — ready to disburse">Eligible</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient not paid yet — not eligible">Non-eligible</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Number of Payouts</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient has paid — ready to disburse">Ready to Pay</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient not paid yet — not eligible">Pending Patient Payment</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Number of Incentives</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
                       <th style={{ padding: '12px 14px', textAlign: 'right' }}></th>
                     </tr>
@@ -1261,7 +1261,7 @@ const ReferralHub = ({
                     onChange={toggleSelectAllInDrawer}
                     style={{ width: '18px', height: '18px', accentColor: '#e11d48' }}
                   />
-                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>Select All Eligible ({selectableDrawerCuts.length})</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>Select All Ready to Pay ({selectableDrawerCuts.length})</span>
                 </div>
               )}
 
@@ -1317,7 +1317,7 @@ const ReferralHub = ({
                         </div>
 
                         <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 14px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #f1f5f9' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>PATIENT PMT</span>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>PATIENT PAYMENT</span>
                           {cut?.patientPaymentStatus ? (
                             <span style={{
                               padding: '5px 10px', borderRadius: '8px',
