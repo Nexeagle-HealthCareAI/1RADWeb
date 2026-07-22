@@ -19,6 +19,10 @@ export const fetchAppointments = async ({
   updatedAfter,
   includeDeleted = false,
   startDate,
+  pageSize,
+  cursor,
+  modality,
+  doctor
 } = {}) => {
   const params = {};
   if (search)        params.search        = search;
@@ -26,6 +30,10 @@ export const fetchAppointments = async ({
   if (updatedAfter)  params.updatedAfter  = updatedAfter;
   if (includeDeleted) params.includeDeleted = includeDeleted;
   if (startDate)     params.startDate     = startDate;
+  if (pageSize)      params.pageSize      = pageSize;
+  if (cursor)        params.cursor        = cursor;
+  if (modality)      params.modality      = modality;
+  if (doctor)        params.doctor        = doctor;
 
   const res = await apiClient.get('/appointments', { params });
   return res.data;

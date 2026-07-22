@@ -20,6 +20,7 @@ import { useExpenseActions } from '../hooks/billing/useExpenseActions';
 import { usePayoutActions }  from '../hooks/billing/usePayoutActions';
 import { useInvoiceActions } from '../hooks/billing/useInvoiceActions';
 import { useBillingData }    from '../hooks/billing/useBillingData';
+import { useArchiveData } from '../hooks/billing/useArchiveData';
 
 // Extracted pure utilities
 import { printA4Invoice, printReceiptSlip, printThermalSlip, ghostPrint } from '../utils/billing/printHandlers';
@@ -159,6 +160,56 @@ export default function BillingPage() {
 
   const resetInvoicePage = useCallback(() => setInvoicePageSize(25), []);
   const resetExpensePage = useCallback(() => setExpensePageSize(25), []);
+
+  // ── Archive Mode (Server-side Pagination for >30 days) ───────────────────
+  const isArchive = timeFilter === 'CUSTOM';
+  const { 
+    archiveData: archiveInvoices, 
+    archiveTotal: archiveInvoicesTotal, 
+    archiveLoading: archiveInvoicesLoading, 
+    hasMore: archiveInvoicesHasMore, 
+    loadMore: loadMoreArchiveInvoices 
+  } = useArchiveData({
+    endpoint: '/finance/invoices',
+    active: isArchive && billingViewMode === 'INVOICES',
+    startDate,
+    endDate,
+    searchTerm,
+    statusFilter,
+    modalityFilter,
+    pageSize: 25
+  });
+
+  const { 
+    archiveData: archiveExpenses, 
+    archiveTotal: archiveExpensesTotal, 
+    archiveLoading: archiveExpensesLoading, 
+    hasMore: archiveExpensesHasMore, 
+    loadMore: loadMoreArchiveExpenses 
+  } = useArchiveData({
+    endpoint: '/finance/expenses',
+    active: isArchive && billingViewMode === 'EXPENSES',
+    startDate,
+    endDate,
+    searchTerm: expenseSearch,
+    statusFilter: expenseFilter, // Actually backend might not support this mapping exactly, but we'll try
+    pageSize: 25
+  });
+
+  const { 
+    archiveData: archiveCommissions, 
+    archiveTotal: archiveCommissionsTotal, 
+    archiveLoading: archiveCommissionsLoading, 
+    hasMore: archiveCommissionsHasMore, 
+    loadMore: loadMoreArchiveCommissions 
+  } = useArchiveData({
+    endpoint: '/referrers/commissions', // Needs to match backend endpoint
+    active: isArchive && billingViewMode === 'REFERRAL_CUTS',
+    startDate,
+    endDate,
+    searchTerm: referralSearch,
+    pageSize: 25
+  });
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
@@ -810,11 +861,11 @@ export default function BillingPage() {
           isMobile={isMobile}
           outflowStats={outflowStats}
           /* ── Cursor-pagination props (Phase 5) ──────────────────────── */
-          pagedExpenses={(filteredOutflow || []).slice(0, expensePageSize)}
-          expenseTotalCount={(filteredOutflow || []).length}
-          expenseHasMore={expensePageSize < (filteredOutflow || []).length}
-          onLoadMoreExpenses={loadMoreExpenses}
-          expenseLoadingMore={expenseLoadingMore}
+          pagedExpenses={isArchive ? archiveExpenses : (filteredOutflow || []).slice(0, expensePageSize)}
+          expenseTotalCount={isArchive ? archiveExpensesTotal : (filteredOutflow || []).length}
+          expenseHasMore={isArchive ? archiveExpensesHasMore : (expensePageSize < (filteredOutflow || []).length)}
+          onLoadMoreExpenses={isArchive ? loadMoreArchiveExpenses : loadMoreExpenses}
+          expenseLoadingMore={isArchive ? archiveExpensesLoading : expenseLoadingMore}
           /* ─────────────────────────────────────────────────────────────── */
           timeFilter={timeFilter}
           setTimeFilter={setTimeFilter}
@@ -864,11 +915,11 @@ export default function BillingPage() {
           endDate={endDate}
           setEndDate={setEndDate}
           /* ── Cursor-pagination props ───────────────────────────── */
-          pagedInvoices={(filteredInvoices || []).slice(0, invoicePageSize)}
-          invoiceTotalCount={(filteredInvoices || []).length}
-          invoiceHasMore={invoicePageSize < (filteredInvoices || []).length}
-          onLoadMoreInvoices={loadMoreInvoices}
-          invoiceLoadingMore={invoiceLoadingMore}
+          pagedInvoices={isArchive ? archiveInvoices : (filteredInvoices || []).slice(0, invoicePageSize)}
+          invoiceTotalCount={isArchive ? archiveInvoicesTotal : (filteredInvoices || []).length}
+          invoiceHasMore={isArchive ? archiveInvoicesHasMore : (invoicePageSize < (filteredInvoices || []).length)}
+          onLoadMoreInvoices={isArchive ? loadMoreArchiveInvoices : loadMoreInvoices}
+          invoiceLoadingMore={isArchive ? archiveInvoicesLoading : invoiceLoadingMore}
           /* ── Future-appointment section (unchanged) ───────────────── */
           paginatedFutureAppointments={futureAppointments}
           handleOpenInvoice={handleOpenInvoice}

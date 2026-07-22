@@ -151,6 +151,8 @@ export default function AppointmentBoard() {
   });
   const [archiveFilterMode, setArchiveFilterMode] = useState('YESTERDAY'); // 'ALL', 'YESTERDAY', or 'RANGE'
   const [appointments, setAppointments] = useState([]);
+  const [appointmentsNextCursor, setAppointmentsNextCursor] = useState(null);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   // ALL cached appointments (not the active-tab slice) — drives the historical
   // "most used services per modality" quick-picks in the booking modal.
   const [statsAppointments, setStatsAppointments] = useState([]);
@@ -581,12 +583,20 @@ export default function AppointmentBoard() {
   }, [bookingStep, doctors]);
 
   // --- API SYNC ---
-  const fetchAppointments = useCallback(async () => {
-    setLoading(true);
+  const fetchAppointments = useCallback(async (isLoadMore = false) => {
+    if (!isLoadMore) {
+      setLoading(true);
+    } else {
+      setIsFetchingMore(true);
+    }
+
     const params = {
       search: searchQuery,
       status: filters.status,
     };
+
+    if (filters.modality && filters.modality !== 'ALL') params.modality = filters.modality;
+    if (filters.doctor && filters.doctor !== 'ALL') params.doctor = filters.doctor;
 
     if (activeTab === 'TODAY') {
       params.date = getTodayString();
@@ -595,6 +605,10 @@ export default function AppointmentBoard() {
       params.startDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
     } else {
       params.isArchive = true;
+      params.pageSize = 25;
+      if (isLoadMore && appointmentsNextCursor) {
+        params.cursor = appointmentsNextCursor;
+      }
       if (archiveFilterMode === 'YESTERDAY') {
         params.startDate = YESTERDAY;
         params.endDate = YESTERDAY;
@@ -608,7 +622,10 @@ export default function AppointmentBoard() {
 
     try {
       const response = await apiClient.get('/appointments', { params });
-      let mappedData = response.data.map(a => {
+      const rawData = response.data.items || response.data;
+      const nextCursor = response.data.nextCursor || null;
+
+      let mappedData = rawData.map(a => {
         const appDate = a.date || (a.dateTime ? a.dateTime.split('T')[0] : null);
         const isFuture = appDate && appDate > getTodayString();
         const currentStatus = a.status ? a.status.toLowerCase() : 'scheduled';
@@ -630,18 +647,9 @@ export default function AppointmentBoard() {
       
       const itemsWithTokens = chronologicalData.map(item => ({
         ...item,
-        // Token is assigned by the server on ARRIVAL — surface it as-is and
-        // leave it blank (dash in the UI) until the patient arrives. No more
-        // fabricated sequential numbers for not-yet-arrived patients.
         tokenNo: item.dailyTokenNumber ?? null
       }));
       
-      // Worklist order: STAT → URGENT → ROUTINE, then token DESC. Priority
-      // is still the dominant key so a STAT walk-in surfaces above all
-      // routine tokens regardless of when it was booked; inside each
-      // priority bucket the LATEST tokens float to the top so the front
-      // desk sees newly-booked patients first when refreshing the board.
-      // (Time DESC as a tiebreaker for the rare same-token collision.)
       const PRIORITY_RANK = { STAT: 0, URGENT: 1, ROUTINE: 2 };
       const finalSortedData = itemsWithTokens.sort((a, b) => {
         const pa = PRIORITY_RANK[a.priority] ?? 2;
@@ -657,18 +665,38 @@ export default function AppointmentBoard() {
         return timeB - timeA;
       });
 
-      setAppointments(finalSortedData);
-      await nativeStorage.set(cacheKey, finalSortedData);
+      if (isLoadMore) {
+        setAppointments(prev => {
+          const merged = [...prev, ...finalSortedData];
+          // deduplicate just in case
+          const seen = new Set();
+          return merged.filter(app => {
+            if (seen.has(app.appointmentId)) return false;
+            seen.add(app.appointmentId);
+            return true;
+          });
+        });
+      } else {
+        setAppointments(finalSortedData);
+        if (activeTab === 'TODAY' || activeTab === 'FUTURE') {
+          await nativeStorage.set(cacheKey, finalSortedData);
+        }
+      }
+
+      setAppointmentsNextCursor(nextCursor);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
-      const cached = await nativeStorage.get(cacheKey);
-      if (cached) {
-        setAppointments(cached);
+      if (!isLoadMore) {
+        const cached = await nativeStorage.get(cacheKey);
+        if (cached) {
+          setAppointments(cached);
+        }
       }
     } finally {
       setLoading(false);
+      setIsFetchingMore(false);
     }
-  }, [searchQuery, filters.status, activeTab, pastDateRange, activeCenterId]);
+  }, [searchQuery, filters, activeTab, pastDateRange, archiveFilterMode, appointmentsNextCursor, activeCenterId]);
 
   // Patient search now goes through the offline-first cache. The actual
   // network pull is the SyncEngine's job; this function only exists to
@@ -1116,7 +1144,9 @@ export default function AppointmentBoard() {
 
   const itemsPerPage = 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
-  const paginatedAppointments = filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedAppointments = activeTab === 'PAST'
+    ? filteredAppointments
+    : filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const stats = {
     total: appointmentsForTab.length,
@@ -2406,6 +2436,22 @@ export default function AppointmentBoard() {
   //  PAGINATION RENDERER
   // ============================================================
   const renderPagination = () => {
+    if (activeTab === 'PAST') {
+      if (!appointmentsNextCursor) return null;
+      return (
+        <div style={{ textAlign: 'center', margin: '20px 0', width: '100%' }}>
+          <button 
+            className="filter-reset-btn"
+            style={{ padding: '8px 24px', cursor: 'pointer', opacity: isFetchingMore ? 0.7 : 1 }}
+            onClick={() => fetchAppointments(true)}
+            disabled={isFetchingMore}
+          >
+            {isFetchingMore ? 'Loading...' : 'Load More'}
+          </button>
+        </div>
+      );
+    }
+
     if (totalPages <= 1) return null;
 
     const itemStart = (currentPage - 1) * itemsPerPage + 1;

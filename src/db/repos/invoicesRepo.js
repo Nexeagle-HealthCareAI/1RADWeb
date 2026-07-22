@@ -140,40 +140,44 @@ export function watchInvoicesPage(filters = {}, { pageSize = PAGE_SIZE_INVOICES,
 
   return liveQuery(async () => {
     const t = tables.invoices();
-    let arr = await t.orderBy('createdAt').reverse().toArray();
+    let collection = t.orderBy('createdAt').reverse();
 
-    // Apply same filters as watchInvoices
-    if (status && status !== 'ALL') {
-      arr = arr.filter(r => (r.status || '').toUpperCase() === status.toUpperCase());
-    }
-    if (startDateIso) {
-      arr = arr.filter(r => (r.createdAt || '') >= startDateIso);
-    }
-    if (endDateIso) {
-      const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
-      arr = arr.filter(r => (r.createdAt || '') <= eod);
-    }
-    if (q) {
-      arr = arr.filter(r =>
-        (r.patientName  || '').toLowerCase().includes(q) ||
-        (r.displayId    || '').toLowerCase().includes(q) ||
-        (r.referrerName || '').toLowerCase().includes(q)
-      );
-    }
+    // Apply filters at the Dexie collection level so it evaluates via cursors
+    collection = collection.filter(r => {
+      if (status && status !== 'ALL' && (r.status || '').toUpperCase() !== status.toUpperCase()) return false;
+      if (startDateIso && (r.createdAt || '') < startDateIso) return false;
+      if (endDateIso) {
+        const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
+        if ((r.createdAt || '') > eod) return false;
+      }
+      if (q && !(r.patientName || '').toLowerCase().includes(q) && !(r.displayId || '').toLowerCase().includes(q) && !(r.referrerName || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
 
-    const totalCount = arr.length;
-
-    // Apply cursor — skip everything up to AND INCLUDING the last seen row.
+    const totalCount = await collection.clone().count();
+    
+    // Determine the offset index based on the cursor if provided
+    let offset = 0;
     if (cursor) {
-      const idx = arr.findIndex(
-        r => r.createdAt === cursor.createdAt && r.invoiceId === cursor.invoiceId
-      );
-      if (idx >= 0) arr = arr.slice(idx + 1);
+      // Find the absolute position of the cursor item in the filtered set.
+      // This is a bit slow for very deep pages, but infinitely more memory efficient than loading all rows.
+      let matchIdx = -1;
+      let i = 0;
+      await collection.clone().until((r) => {
+        if (r.createdAt === cursor.createdAt && r.invoiceId === cursor.invoiceId) {
+          matchIdx = i;
+          return true; // stop iterating
+        }
+        i++;
+        return false;
+      });
+      if (matchIdx >= 0) offset = matchIdx + 1;
     }
 
-    const page = arr.slice(0, pageSize);
+    const page = await collection.offset(offset).limit(pageSize).toArray();
+    
     const nextCursor =
-      arr.length > pageSize
+      (offset + page.length) < totalCount && page.length > 0
         ? { createdAt: page[page.length - 1].createdAt, invoiceId: page[page.length - 1].invoiceId }
         : null;
 

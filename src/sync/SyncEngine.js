@@ -41,10 +41,12 @@ import {
 import {
   applyServerDeltas as applyInvoiceDeltas,
   highWatermarkIso  as invoicesHighWatermarkIso,
+  evictOlderThan    as evictInvoices,
 } from '../db/repos/invoicesRepo';
 import {
   applyServerDeltas as applyExpenseDeltas,
   highWatermarkIso  as expensesHighWatermarkIso,
+  evictOlderThan    as evictExpenses,
 } from '../db/repos/expensesRepo';
 import {
   applyServerDeltas as applyReferrerDeltas,
@@ -53,6 +55,7 @@ import {
 import {
   applyServerDeltas as applyCommissionDeltas,
   highWatermarkIso  as commissionsHighWatermarkIso,
+  evictOlderThan    as evictReferralCommissions,
 } from '../db/repos/referralCommissionsRepo';
 import { snapshotPersonnel } from '../db/repos/personnelRepo';
 import { snapshotServiceCharges } from '../db/repos/serviceChargesRepo';
@@ -226,7 +229,7 @@ async function pullReports() {
 //   Phase B (background): the full-history pull runs after a short delay.
 //   Steady-state 30s tick: always uses updatedAfter watermark (tiny delta).
 
-const RECENT_DAYS_WINDOW = 60; // days to pull on a fast first-page load
+const RECENT_DAYS_WINDOW = 30; // days to pull on a fast first-page load
 
 async function pullInvoices({ recentOnly = false } = {}) {
   const since = await invoicesHighWatermarkIso();
@@ -525,7 +528,19 @@ async function runProgressivePulls() {
   await pullPatients();
   await pullReports();
 
-  // Phase A — finance data for the last 60 days. Fast.
+  // On boot, purge offline finance data older than 30 days to free up React memory.
+  // Historical data is loaded from the backend when users filter older dates.
+  try {
+    await evictInvoices(RECENT_DAYS_WINDOW);
+    await evictExpenses(RECENT_DAYS_WINDOW);
+    await evictReferralCommissions(RECENT_DAYS_WINDOW);
+  } catch (err) {
+    console.warn('[SYNC] Failed to evict old finance data', err);
+  }
+
+  // Phase A — finance data for the last 30 days. Fast.
+  // Note: We no longer pull full history (Phase B) to prevent browser memory crashes
+  // on massive clinics. Historical data is now paginated via server-side APIs in BillingPage.
   await pullInvoices({ recentOnly: true });
   await pullExpenses({ recentOnly: true });
   await pullReferralCommissions({ recentOnly: true });
@@ -534,22 +549,7 @@ async function runProgressivePulls() {
   try { await pullServiceCharges(); } catch (err) { console.warn('[SYNC] Price registry refresh failed', err?.message || err); }
   await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
 
-  console.info('[SYNC] Phase A complete — scheduling Phase B (full history) in 5 s');
-
-  // Phase B — silent background pull for full history (no UI block).
-  setTimeout(async () => {
-    if (!navigator.onLine) return;
-    try {
-      console.info('[SYNC] Phase B: pulling full invoice/expense/commission history');
-      await pullInvoices();
-      await pullExpenses();
-      await pullReferralCommissions();
-      await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
-      console.info('[SYNC] Phase B complete');
-    } catch (err) {
-      console.warn('[SYNC] Phase B background pull failed (will retry on next tick)', err?.message || err);
-    }
-  }, 5_000);
+  console.info('[SYNC] Progressive pulls complete (30-day offline window for finance)');
 }
 
 async function pullCycle() {
