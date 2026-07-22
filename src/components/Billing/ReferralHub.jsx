@@ -729,21 +729,42 @@ const ReferralHub = ({
          marginBottom: '35px' 
        }}>
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '15px' : '20px' }}>
-             <div style={{ position: 'relative' }}>
+             <div style={{ position: 'relative', flex: 1, maxWidth: isMobile ? '100%' : '500px' }}>
                 <div 
                   onClick={() => setIsPartnerDropdownOpen(!isPartnerDropdownOpen)}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none'; }}
                   style={{ 
-                    padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, 
-                    background: 'white', color: '#1e293b', width: '100%', minWidth: isMobile ? '0' : '200px', 
+                    padding: '8px 12px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '38px',
+                    background: 'white', color: '#1e293b', width: '100%', 
                     cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    transition: 'all 0.2s ease'
+                    transition: 'all 0.2s ease', gap: '8px'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#64748b' }}>👥</span>
-                    <span>{getPartnerLabel()}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', flex: 1 }}>
+                    <span style={{ color: '#64748b', fontSize: '12px', marginRight: '4px' }}>👥</span>
+                    {referrerFilter.includes('ALL') ? (
+                      <span style={{ fontSize: '10px', fontWeight: 800 }}>ALL PARTNERS (GLOBAL)</span>
+                    ) : (
+                      referrerFilter.map(id => {
+                        const ref = referrers?.find(r => r.referrerId === id);
+                        return (
+                          <span key={id} style={{
+                            background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+                            padding: '2px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800,
+                            display: 'flex', alignItems: 'center', gap: '4px'
+                          }}>
+                            {ref ? ref.name?.toUpperCase() : 'UNKNOWN'}
+                            <div 
+                              onClick={(e) => { e.stopPropagation(); toggleReferrer(id); }}
+                              style={{ cursor: 'pointer', padding: '0 2px', borderRadius: '4px' }}
+                              onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >✕</div>
+                          </span>
+                        );
+                      })
+                    )}
                   </div>
                   <span style={{ 
                     transform: isPartnerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', 

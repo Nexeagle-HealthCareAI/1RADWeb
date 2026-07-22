@@ -460,6 +460,21 @@ async function pushCycle() {
         try { await clearReportLocalDirty(item.payload.appointmentId); } catch (_) {}
       }
 
+      // An appointment booked OFFLINE never got the online booking path's
+      // full by-id fetch (AppointmentBoard.jsx returns before that runs when
+      // !isOnline) — so once this create finally pushes, the only thing that
+      // would otherwise populate its local row is the next worklist pull,
+      // which is the lean AppointmentSummaryDto. Fetch the full record now
+      // so Notes / Village / Block / District / Address / SourceOfInfo /
+      // referrer specialty & degree / SupportedByDoctor are cached from the
+      // start, same as an online booking gets.
+      if (item.type === 'APPOINTMENT_CREATE' && response?.data?.appointmentId) {
+        try {
+          const full = await apiClient.get(`/appointments/${response.data.appointmentId}`);
+          if (full?.data?.appointmentId) await applyAppointmentDeltas([full.data]);
+        } catch (_) { /* the next worklist pull still covers it, just with the lean shape until then */ }
+      }
+
       await outboxRemove(item.id);
       stats.sent++;
     } catch (err) {

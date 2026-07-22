@@ -35,7 +35,7 @@ const FinanceManager = ({
   const [financeViewMode, setFinanceViewMode] = useState('REGISTRY');
   const [showAutoBillConfirm, setShowAutoBillConfirm] = useState(false);
 
-  const [regModalityFilter, setRegModalityFilter] = useState('ALL');
+  const [regModalityFilters, setRegModalityFilters] = useState([]);
   const [regSearch, setRegSearch] = useState('');
   const [regSortConfig, setRegSortConfig] = useState({ key: 'modality', direction: 'asc' });
   const [regCurrentPage, setRegCurrentPage] = useState(1);
@@ -50,8 +50,8 @@ const FinanceManager = ({
 
   const getFilteredAndSortedRegistry = () => {
     let list = [...(servicePrices || [])];
-    if (regModalityFilter !== 'ALL') {
-      list = list.filter(item => item.modality === regModalityFilter);
+    if (regModalityFilters.length > 0) {
+      list = list.filter(item => regModalityFilters.includes(item.modality));
     }
     const q = regSearch.trim().toLowerCase();
     if (q) {
@@ -90,6 +90,28 @@ const FinanceManager = ({
 
   const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280', marginBottom: '8px' };
 
+  const handleExportPrices = () => {
+    const list = processedRegistry;
+    if (!list || list.length === 0) return;
+    const headers = ['Modality', 'Service', 'Charge', 'Referral Cut'];
+    const rows = list.map(s => [
+      s.modality || 'OTHER',
+      s.serviceName || 'Unnamed Service',
+      s.amount || 0,
+      s.referralCutValue || 0
+    ]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Service_Prices_Export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
   return (
     <div className="finance-view fade-in">
 
@@ -113,20 +135,77 @@ const FinanceManager = ({
         </div>
 
         {financeViewMode === 'REGISTRY' && (
-          <button
-            onClick={() => {
-              setEditPrice({ modality: '', serviceName: '', amount: 0, referralCutType: 'PERCENTAGE', referralCutValue: 0, referralCutInput: 0 });
-              setIsPriceDrawerOpen(true);
-            }}
-            style={{
-              width: isMobile ? '100%' : 'auto',
-              padding: '11px 20px', borderRadius: '8px', border: 'none',
-              background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(29,78,216,0.2)'
-            }}
-          >
-            + Add Service
-          </button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'center' : 'flex-end' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: isMobile ? 1 : 'none' }}>
+              <span style={{ position: 'absolute', left: '10px', fontSize: '12px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+              <input
+                type="text"
+                value={regSearch}
+                onChange={e => { setRegSearch(e.target.value); setRegCurrentPage(1); }}
+                placeholder="Search service…"
+                style={{ width: '100%', padding: '9px 28px 9px 30px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 500, color: '#1e293b', outline: 'none', background: 'white' }}
+              />
+              {regSearch && (
+                <button
+                  type="button"
+                  onClick={() => { setRegSearch(''); setRegCurrentPage(1); }}
+                  title="Clear search"
+                  style={{ position: 'absolute', right: '8px', border: 'none', background: 'transparent', color: '#94a3b8', fontSize: '13px', cursor: 'pointer', lineHeight: 1 }}
+                >✕</button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => {
+                const isSel = regModalityFilters.includes(m);
+                return (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setRegModalityFilters(prev => 
+                        prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
+                      );
+                      setRegCurrentPage(1);
+                    }}
+                    style={{
+                      padding: '7px 12px', borderRadius: '8px', border: `1px solid ${isSel ? '#1d4ed8' : '#e2e8f0'}`,
+                      background: isSel ? '#eff6ff' : 'white', color: isSel ? '#1d4ed8' : '#64748b',
+                      fontSize: '11px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                  >{m}</button>
+                );
+              })}
+              {regModalityFilters.length > 0 && (
+                 <button onClick={() => { setRegModalityFilters([]); setRegCurrentPage(1); }} style={{ background: 'transparent', border: 'none', fontSize: '11px', color: '#ef4444', cursor: 'pointer', fontWeight: 600, padding: '4px 8px' }}>Clear</button>
+              )}
+            </div>
+
+            <button
+              onClick={handleExportPrices}
+              style={{
+                width: isMobile ? '100%' : 'auto',
+                padding: '10px 16px', borderRadius: '8px', border: '1px solid #10b981',
+                background: '#ecfdf5', color: '#059669', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              📥 Export Excel
+            </button>
+
+            <button
+              onClick={() => {
+                setEditPrice({ modality: '', serviceName: '', amount: 0, referralCutType: 'PERCENTAGE', referralCutValue: 0, referralCutInput: 0 });
+                setIsPriceDrawerOpen(true);
+              }}
+              style={{
+                width: isMobile ? '100%' : 'auto',
+                padding: '11px 20px', borderRadius: '8px', border: 'none',
+                background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(29,78,216,0.2)'
+              }}
+            >
+              + Add Service
+            </button>
+          </div>
         )}
 
         {financeViewMode === 'EXPENSES' && (
@@ -153,37 +232,7 @@ const FinanceManager = ({
 
           {/* Service price table */}
           <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Modality</label>
-                <select
-                  value={regModalityFilter}
-                  onChange={e => { setRegModalityFilter(e.target.value); setRegCurrentPage(1); }}
-                  style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, color: '#1d4ed8', outline: 'none', background: 'white' }}
-                >
-                  <option value="ALL">All modalities</option>
-                  {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                {/* Search by service or modality name */}
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                  <span style={{ position: 'absolute', left: '10px', fontSize: '12px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
-                  <input
-                    type="text"
-                    value={regSearch}
-                    onChange={e => { setRegSearch(e.target.value); setRegCurrentPage(1); }}
-                    placeholder="Search service…"
-                    style={{ padding: '6px 28px 6px 30px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, color: '#1e293b', outline: 'none', background: 'white', width: isMobile ? '100%' : '200px' }}
-                  />
-                  {regSearch && (
-                    <button
-                      type="button"
-                      onClick={() => { setRegSearch(''); setRegCurrentPage(1); }}
-                      title="Clear search"
-                      style={{ position: 'absolute', right: '8px', border: 'none', background: 'transparent', color: '#94a3b8', fontSize: '13px', cursor: 'pointer', lineHeight: 1 }}
-                    >✕</button>
-                  )}
-                </div>
-              </div>
+            <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
               <div style={{ fontSize: '12px', color: '#94a3b8' }}>{processedRegistry.length} entries</div>
             </div>
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>

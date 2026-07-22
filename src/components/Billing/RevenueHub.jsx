@@ -925,16 +925,28 @@ const RevenueHub = ({
                          const items = inv.items || [];
                          const order = [];
                          const byMod = {};
+                         let gIdx = 1;
+                         const multi = items.length > 1;
+                         
+                         const getShortModality = (rawStr) => {
+                           let m = (String(rawStr || '').toUpperCase()) || 'OTHER';
+                           if (m === 'ULTRASOUND') return 'USG';
+                           if (m === 'MAMMOGRAPHY' || m === 'MG') return 'MAMMO';
+                           if (m === 'PET-CT') return 'PET';
+                           return m;
+                         };
+                         
                          for (const it of items) {
-                           const m = (String(it.modality || it.Modality || inv.modality || '').toUpperCase()) || 'OTHER';
+                           const m = getShortModality(it.modality || it.Modality || inv.modality);
                            const name = it.description || it.serviceName || 'Service';
                            const qty = Number(it.quantity) || 1;
-                           const label = name + (qty > 1 ? ` ×${qty}` : '');
+                           const baseLabel = name + (qty > 1 ? ` ×${qty}` : '');
+                           const label = multi ? `${gIdx++}. ${baseLabel}` : baseLabel;
                            if (!(m in byMod)) { byMod[m] = []; order.push(m); }
                            byMod[m].push(label);
                          }
                          if (order.length === 0) {
-                           const m = inv.modality ? String(inv.modality).toUpperCase() : '—';
+                           const m = inv.modality ? getShortModality(inv.modality) : '—';
                            return <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>{m}</span>;
                          }
                          return (
@@ -943,9 +955,13 @@ const RevenueHub = ({
                              {order.map((m, i) => {
                                const t = tintFor(m);
                                return (
-                                 <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', lineHeight: 1.3 }}>
-                                   <span style={{ flexShrink: 0, padding: '2px 7px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
-                                   <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e293b' }}>{byMod[m].join(', ')}</span>
+                                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', lineHeight: 1.3 }}>
+                                   <span style={{ flexShrink: 0, marginTop: '1px', padding: '2px 7px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
+                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                     {byMod[m].map((lbl, idx) => (
+                                       <span key={idx} style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e293b' }}>{lbl}</span>
+                                     ))}
+                                   </div>
                                  </div>
                                );
                              })}

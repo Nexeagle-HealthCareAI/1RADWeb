@@ -36,6 +36,18 @@ export function fromServerDto(dto) {
 
 // Bulk-upsert a page of server rows. Tombstones (DeletedAt != null) are
 // deleted locally so the worklist matches the server's view immediately.
+//
+// This pull hits the WORKLIST endpoint, which returns the lean
+// AppointmentSummaryDto — it doesn't carry detail-only fields (Notes,
+// Village/Block/District/Address, SourceOfInfo, referrer specialty/degree,
+// SupportedByDoctor, Services, ...). Those fields only ever arrive via the
+// booking form's optimistic insert or a full single-record fetch. So we
+// MERGE each incoming row onto whatever's already cached instead of
+// replacing it outright — otherwise the very next worklist sync (this runs
+// after every appointment mutation, including "mark arrived", plus every
+// 30s) blows away detail fields the summary DTO never carries, and the
+// edit drawer — which reads straight from this cache with no fresh
+// fetch — shows them blank.
 export async function applyServerDeltas(serverDtos) {
   const t = tables.appointments();
   const tombstones = [];
@@ -48,7 +60,11 @@ export async function applyServerDeltas(serverDtos) {
     }
   }
   if (tombstones.length) await t.bulkDelete(tombstones);
-  if (live.length)       await t.bulkPut(live);
+  if (live.length) {
+    const existing = await t.bulkGet(live.map(r => r.appointmentId));
+    const merged = live.map((row, i) => existing[i] ? { ...existing[i], ...row } : row);
+    await t.bulkPut(merged);
+  }
   return { applied: live.length, deleted: tombstones.length };
 }
 

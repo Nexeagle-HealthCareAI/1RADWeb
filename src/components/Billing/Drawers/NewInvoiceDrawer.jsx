@@ -393,7 +393,20 @@ export const NewInvoiceDrawer = ({
 
                             <div style={{ display: 'flex', justifyContent: isMobile ? 'flex-end' : 'flex-start', alignItems: 'center' }}>
                               {newInvoiceData.items.length > 1 && (
-                                <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: newInvoiceData.items.filter((_, i) => i !== idx) })} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}>✕</button>
+                                item.appointmentServiceId ? (
+                                  // This line came from a live AppointmentService on the appointment.
+                                  // The server now requires an appointment-linked invoice to cover
+                                  // every live service (one invoice per visit) — dropping it here would
+                                  // just get rejected on submit, or silently re-added by the next
+                                  // appointment edit. Removing the SERVICE from the appointment itself
+                                  // is the only real way to exclude it from billing.
+                                  <span
+                                    title="This service is on the appointment — an invoice must cover every live service on the visit. To exclude it, remove the service from the appointment (Edit), not from this invoice."
+                                    style={{ color: '#cbd5e1', fontSize: '13px', cursor: 'not-allowed' }}
+                                  >✕</span>
+                                ) : (
+                                  <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: newInvoiceData.items.filter((_, i) => i !== idx) })} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}>✕</button>
+                                )
                               )}
                             </div>
                          </div>

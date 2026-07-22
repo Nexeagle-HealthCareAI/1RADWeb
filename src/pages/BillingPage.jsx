@@ -761,8 +761,8 @@ export default function BillingPage() {
               { id: 'EXPENSES',      label: 'Expenses' },
               { id: 'REFERRAL_CUTS', label: 'Referral Incentives' },
               { id: 'SERVICES',      label: 'Scan & Service Metrics' },
-              { id: 'ANALYTICS',     label: 'Analytics' },
               { id: 'FINANCE',       label: 'Service Pricing' },
+              { id: 'ANALYTICS',     label: 'Analytics' },
             ].map(tab => (
               <button
                 key={tab.id}
