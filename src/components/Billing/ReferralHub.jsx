@@ -1364,12 +1364,11 @@ const ReferralHub = ({
                               // is cancelled. Self/walk-in never has a payout to edit.
                               const isPaid = cut?.status === 'PAID';
                               const isCancelled = String(cut?.status || '').toLowerCase() === 'cancelled';
-                              const editLocked = isSelf || isPaid || isCancelled;
-                              const lockLabel = isSelf ? '🔒 SELF' : isPaid ? '🔒 PAID' : isCancelled ? '🔒 CANCELLED' : 'EDIT';
+                              const editLocked = isSelf || isCancelled;
+                              const lockLabel = isSelf ? '🔒 SELF' : isCancelled ? '🔒 CANCELLED' : isPaid ? 'REVISE PAID' : 'EDIT';
                               const lockTitle = isSelf ? 'Self / walk-in earns no commission — nothing to update'
-                                : isPaid ? 'Commission already paid — to change it, revert via the PAID badge (needs admin approval)'
                                 : isCancelled ? 'Cancelled — payout is locked'
-                                : 'Edit this payout';
+                                : 'Revise this payout through admin approval';
                               return (
                                 <button
                                   disabled={editLocked}
@@ -1377,7 +1376,7 @@ const ReferralHub = ({
                                   onClick={() => {
                                     if (editLocked) return;
                                     setEditPayout({
-                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status, serviceAmount: netRevenueForCut(cut)
+                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, appointmentId: cut.appointmentId || null, status: cut.status, originalStatus: cut.status, serviceAmount: netRevenueForCut(cut)
                                     });
                                     setIsPayoutDrawerOpen(true);
                                   }}
@@ -1520,12 +1519,11 @@ const ReferralHub = ({
                               const isSelf = isSelfReferrer(cut.name);
                               const isPaid = cut?.status === 'PAID';
                               const isCancelled = String(cut?.status || '').toLowerCase() === 'cancelled';
-                              const editLocked = isSelf || isPaid || isCancelled;
-                              const lockLabel = isSelf ? '🔒 SELF' : isPaid ? '🔒 PAID' : isCancelled ? '🔒 CANCELLED' : 'UPDATE';
+                              const editLocked = isSelf || isCancelled;
+                              const lockLabel = isSelf ? '🔒 SELF' : isCancelled ? '🔒 CANCELLED' : isPaid ? 'REVISE PAID' : 'UPDATE';
                               const lockTitle = isSelf ? 'Self / walk-in earns no commission — nothing to update'
-                                : isPaid ? 'Commission already paid — to change it, revert via the PAID badge (needs admin approval)'
                                 : isCancelled ? 'Cancelled — payout is locked'
-                                : 'Update this payout';
+                                : 'Revise this payout through admin approval';
                               return (
                                 <button
                                   disabled={editLocked}
@@ -1540,6 +1538,7 @@ const ReferralHub = ({
                                       modality: cut.modality || 'MRI',
                                       remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
                                       invoiceId: cut.reference,
+                                      appointmentId: cut.appointmentId || null,
                                       status: cut.status,
                                       originalStatus: cut.status,
                                       serviceAmount: netRevenueForCut(cut)

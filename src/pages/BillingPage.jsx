@@ -261,13 +261,14 @@ export default function BillingPage() {
   }, []);
 
   const fetchAppointments = useCallback(async () => {
+    const today = getIstDateStr(new Date().toISOString());
     try {
-      const res = await apiClient.get('/appointments');
+      const res = await apiClient.get('/appointments', { params: { startDate: today } });
       setAppointments(res.data);
-      await nativeStorage.set('1rad_cache_billing_appointments', res.data);
+      await nativeStorage.set('1rad_cache_billing_upcoming_appointments', res.data);
     } catch (err) {
       console.error('[FINANCE] Appointment fetch failed', err);
-      const cached = await nativeStorage.get('1rad_cache_billing_appointments');
+      const cached = await nativeStorage.get('1rad_cache_billing_upcoming_appointments');
       if (cached) setAppointments(cached);
     }
   }, []);
@@ -324,20 +325,19 @@ export default function BillingPage() {
     return m;
   }, [outstandingCredits]);
 
-  const refreshAllFinancialData = useCallback(() => {
-    fetchInvoices();
-    fetchStats();
-    fetchRegistry();
-    fetchMatrix();
-    fetchExpenses();
-    fetchReferrers();
-    fetchCommissions();
-    fetchAppointments();
-    fetchPersonnel();
-    fetchPersonnel();
-    fetchOutstandingCredits();
-    loadApprovalMap();
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
+  const refreshAllFinancialData = useCallback(async () => {
+    // One sync refreshes invoices, expenses, referrers, and commissions. The
+    // previous implementation started four concurrent full syncs on each mount.
+    await Promise.allSettled([
+      fetchInvoices(),
+      fetchStats(),
+      fetchRegistry(),
+      fetchAppointments(),
+      fetchPersonnel(),
+      fetchOutstandingCredits(),
+      loadApprovalMap(),
+    ]);
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -346,18 +346,18 @@ export default function BillingPage() {
     };
     window.addEventListener('resize', handleResize);
 
-    fetchInvoices();
-    fetchStats();
-    fetchRegistry();
-    fetchMatrix();
-    fetchExpenses();
-    fetchReferrers();
-    fetchCommissions();
-    fetchAppointments();
-    fetchOutstandingCredits();
+    void refreshAllFinancialData();
 
     return () => window.removeEventListener('resize', handleResize);
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchOutstandingCredits]);
+  }, [refreshAllFinancialData]);
+
+  // The matrix aggregates the centre's financial history and is expensive on
+  // large tenants. Load it only for the two views that render it.
+  useEffect(() => {
+    if (billingViewMode === 'ANALYTICS' || billingViewMode === 'FINANCE') {
+      void fetchMatrix();
+    }
+  }, [billingViewMode, fetchMatrix]);
 
   // Reset page whenever filters change so 'Load more' resets to page 1
   useEffect(() => {
@@ -937,13 +937,14 @@ export default function BillingPage() {
 
     const lines = rawLines
       .map(l => ({
+        commissionId: l.commissionId || null,
         modality: l.modality || 'MRI',
-        amount: parseFloat(l.amount) || 0,
+        amount: l.amount === '' || l.amount === null || l.amount === undefined ? 0 : Number(l.amount),
         status: l.status || 'UNPAID',
         appointmentServiceId: l.appointmentServiceId || null,
         serviceAmount: parseFloat(l.serviceAmount) || 0,
       }))
-      .filter(l => l.amount > 0);
+      .filter(l => Number.isFinite(l.amount) && l.amount >= 0);
 
     if (!isSingle && lines.length === 0) {
       notify({ type: 'warning', message: 'Enter an amount for at least one service line.' });
@@ -964,40 +965,47 @@ export default function BillingPage() {
       return;
     }
 
-    // ── Edits to a recorded commission need admin sign-off (item 5) ──────────
+    // ── Edits to a recorded commission need admin sign-off ───────────────────
     // The single-line revise targets ONE existing commission; route the change
     // to Finance → Approvals with a mandatory reason instead of applying it
     // directly. (Batch recording of a brand-new payout below still applies now.)
-    if (isSingle) {
+    if (isSingle || editPayout.approvalEdit) {
       const reason = String(editPayout.approvalReason || '').trim();
       if (reason.length < 4) {
         notify({ type: 'warning', title: 'REASON REQUIRED', message: 'Enter a short reason for this payout change — edits to a recorded payout need admin approval.' });
         return;
       }
       
-      const approvalPayload = {
-        type: 'EDIT_COMMISSION',
-        title: `Payout edit — ${editPayout.referrerName || ''} · ₹${(parseFloat(editPayout.amount) || 0).toLocaleString()} ${editPayout.modality || ''}`.trim(),
-        appointmentId: editPayout.appointmentId || null,
-        payload: JSON.stringify({
-          commissionId: editPayout.commissionId,
-          amount: parseFloat(editPayout.amount) || 0,
-          modality: editPayout.modality || '',
-          status: editPayout.status || 'UNPAID',
-          remarks: editPayout.remarks || '',
-        }),
-        reason,
-      };
+      const approvals = isSingle
+        ? [{
+            type: 'EDIT_COMMISSION',
+            title: `Payout edit — ${editPayout.referrerName || ''} · ₹${Number(editPayout.amount) || 0} ${editPayout.modality || ''}`.trim(),
+            appointmentId: editPayout.appointmentId || null,
+            payload: JSON.stringify({ commissionId: editPayout.commissionId, amount: Number(editPayout.amount) || 0, modality: editPayout.modality || '', status: editPayout.status || 'UNPAID', remarks: editPayout.remarks || '' }),
+            reason,
+          }]
+        : lines.filter(line => line.commissionId).map(line => ({
+            type: 'EDIT_COMMISSION',
+            title: `Payout edit — ${editPayout.referrerName || ''} · ₹${line.amount.toLocaleString()} ${line.modality}`.trim(),
+            appointmentId: editPayout.appointmentId || null,
+            payload: JSON.stringify({ commissionId: line.commissionId, amount: line.amount, modality: line.modality, status: line.status, remarks: editPayout.remarks || '' }),
+            reason,
+          }));
+
+      if (approvals.length === 0) {
+        notify({ type: 'warning', title: 'NO PAYOUT FOUND', message: 'There is no recorded payout to revise for this invoice.' });
+        return;
+      }
 
       if (!isOnline) {
-        await addToOutbox('APPROVAL_CREATE', approvalPayload);
+        await Promise.all(approvals.map(approval => addToOutbox('APPROVAL_CREATE', approval)));
         notify({ type: 'info', title: 'Offline', message: 'Approval request added to offline queue.' });
         setIsPayoutDrawerOpen(false);
         return;
       }
       try {
         setIsSavingPayout(true);
-        await apiClient.post('/approvals', approvalPayload);
+        await Promise.all(approvals.map(approval => apiClient.post('/approvals', approval)));
         window.dispatchEvent(new Event('1rad_approvals_changed'));   // refresh the nav badge
         notify({ type: 'success', title: 'Sent for approval', message: 'The payout change will apply once an admin approves it.' });
         setIsPayoutDrawerOpen(false);
@@ -1521,6 +1529,11 @@ export default function BillingPage() {
     const today = getIstDateStr(new Date().toISOString());
     const safeInvoices = invoices || [];
     const safeApps = appointments || [];
+    const appointmentById = new Map(
+      safeApps
+        .filter(app => app?.appointmentId)
+        .map(app => [app.appointmentId, app])
+    );
     
     return safeInvoices.filter(inv => {
       if (!inv) return false;
@@ -1556,7 +1569,7 @@ export default function BillingPage() {
       }
 
       // Time Filter Logic - Respect Appointment Schedule for categorization
-      const linkedApp = safeApps.find(a => a.appointmentId === inv.appointmentId);
+      const linkedApp = appointmentById.get(inv.appointmentId);
       const appDateStr = linkedApp ? (linkedApp.date || (linkedApp.dateTime ? linkedApp.dateTime.split('T')[0] : null)) : null;
       const invDateStr = inv.createdAt ? getIstDateStr(inv.createdAt) : null;
       
@@ -2999,6 +3012,7 @@ export default function BillingPage() {
           handleCollectPayment={handleCollectPayment}
           handleApplyCredit={handleApplyCredit}
           onAdvanceRefunded={refreshAllFinancialData}
+          isOnline={isOnline}
           handlePrintA4={handlePrintA4}
           handlePrintThermal={handlePrintThermal}
           onApplyAdjustment={handleApplyAdjustment}

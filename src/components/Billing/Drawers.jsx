@@ -18,6 +18,7 @@ export const InvoiceDrawer = ({
   handleCollectPayment,
   handleApplyCredit,
   onAdvanceRefunded,
+  isOnline,
   handlePrintA4,
   handlePrintThermal,
   onApplyAdjustment,
@@ -30,6 +31,12 @@ export const InvoiceDrawer = ({
   const [referrerDisc, setReferrerDisc] = React.useState(() => Number(selectedInvoice?.referrerDiscount) || 0);
   const [deduction, setDeduction] = React.useState(() => Number(selectedInvoice?.institutionalDeduction) || 0);
   const [extraCharges, setExtraCharges] = React.useState(() => {
+    // The ExtraCharges DB rows (selectedInvoice.extraCharges) are the source of
+    // truth — prefer them over the additionalChargesReason string, which can
+    // fall out of sync (e.g. an older save that only touched the reason field).
+    if (Array.isArray(selectedInvoice?.extraCharges) && selectedInvoice.extraCharges.length > 0) {
+      return selectedInvoice.extraCharges;
+    }
     try {
       const parsed = JSON.parse(selectedInvoice?.additionalChargesReason || '[]');
       if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].amount !== undefined) return parsed;
@@ -88,6 +95,10 @@ export const InvoiceDrawer = ({
   const [refunding, setRefunding] = React.useState(false);
   const refundAdvance = async () => {
     const pid = selectedInvoice?.patientId;
+    if (!isOnline) {
+      notifyToast('Refunding a patient advance requires an internet connection.', 'warning');
+      return;
+    }
     if (!pid || !(walletBalance > 0) || refunding) return;
     setRefunding(true);
     try {
@@ -241,13 +252,14 @@ export const InvoiceDrawer = ({
   if (!selectedInvoice) return null;
 
   const totalDeductions = centreDisc + referrerDisc + deduction;
-  // Derive the items-only base from grossAmount. `grossAmount` is normally the
-  // pure items sum (set by all API handlers), but if a prior draft-save or
-  // partial-payment cycle didn't re-anchor it correctly it can drift to include
-  // the stored additionalCharges. Subtract the stale stored value before adding
-  // the current drawer-local value so the formula is idempotent regardless.
-  const storedAdditionalCharges = Number(selectedInvoice.additionalCharges) || 0;
-  const pureGross = Math.max(0, (selectedInvoice.grossAmount || 0) - storedAdditionalCharges);
+  // GrossAmount is the service-only total on the API. Prefer the individual
+  // line sum when available, then fall back to GrossAmount for legacy invoices;
+  // additional charges are applied exactly once below from the drawer state.
+  const itemGross = (selectedInvoice.items || []).reduce(
+    (sum, item) => sum + (Number(item.amount) || 0) * (Number(item.quantity) || 1),
+    0
+  );
+  const pureGross = itemGross > 0 ? itemGross : Math.max(0, Number(selectedInvoice.grossAmount) || 0);
   const netSettlement = pureGross + additionalCharges - totalDeductions;
 
   // Partial payments + advances. The biller types the cash tendered; the default
@@ -287,8 +299,7 @@ export const InvoiceDrawer = ({
     <div className="drawer-overlay" onClick={() => setIsInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
       <div className="drawer-content" style={{ 
         padding: 0, 
-        width: isMobile ? '100%' : '700px', 
-        height: isMobile ? '100%' : 'auto',
+        width: isMobile ? '100%' : '1150px', 
         height: '100%',
         background: 'white', 
         borderRadius: isMobile ? '0' : '24px 0 0 24px', 
@@ -346,8 +357,9 @@ export const InvoiceDrawer = ({
                          <div style={{ fontSize: '22px', fontWeight: 950, color: '#312e81', lineHeight: 1.1, marginTop: '2px' }}>₹{Number(walletBalance).toLocaleString()}</div>
                       </div>
                       {!confirmRefund && (
-                        <button onClick={() => setConfirmRefund(true)}
-                          style={{ padding: '9px 15px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg,#4f46e5,#4338ca)', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px -3px rgba(67,56,202,0.5)' }}>↩ Refund</button>
+                        <button onClick={() => setConfirmRefund(true)} disabled={!isOnline}
+                          title={!isOnline ? 'Internet connection required' : undefined}
+                          style={{ padding: '9px 15px', borderRadius: '10px', border: 'none', background: !isOnline ? '#94a3b8' : 'linear-gradient(135deg,#4f46e5,#4338ca)', color: 'white', fontSize: '11px', fontWeight: 950, cursor: !isOnline ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px -3px rgba(67,56,202,0.5)' }}>↩ Refund</button>
                       )}
                    </div>
                    {confirmRefund && (
@@ -637,215 +649,9 @@ export const InvoiceDrawer = ({
               {/* Post-payment concession lives inside the Edit window now
                   (Request Payment Edit) — a single place for all corrections. */}
 
-              {/* Print actions — invoice + thermal slip side by side at the foot
-                  of the left column (moved out of the actions panel). */}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                 <button onClick={() => handlePrintA4(selectedInvoice)} style={{ flex: 1, padding: '11px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '10px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
-                 <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ flex: 1, padding: '11px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>🧾 THERMAL SLIP</button>
-              </div>
-           </div>
-
-           {/* Right Column: Financial Summary & Actions */}
-           <div style={{ background: '#f8fafc', padding: isMobile ? '15px' : '20px', borderRadius: '20px', border: '1px solid #edf2f7' }}>
-              <div style={{ marginBottom: '20px' }}>
-                 {!isPaid && (
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px', padding: '12px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <div>
-                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>CONCESSION: CENTRE
-                              {centreCommission > 0 && <span style={{ color: '#0f52ba', marginLeft: '5px' }}>· MAX ₹{maxCentreDiscount.toLocaleString()}</span>}
-                            </span>
-                            <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
-                               {[10, 25, 50, 100].map(p => (
-                                 <button 
-                                   key={p} type="button"
-                                   onClick={() => handleSetCentreDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
-                                   style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
-                                 >{p}%</button>
-                               ))}
-                            </div>
-                         </div>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444' }}>₹</span>
-                            <input 
-                              type="number" value={centreDisc === 0 ? '' : centreDisc} placeholder="0" min="0" onChange={e => handleSetCentreDisc(Math.max(0, parseInt(e.target.value) || 0))}
-                              style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#ef4444' }}
-                            />
-                         </div>
-                      </div>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: (selectedInvoice.commissionAmount || 0) > 0 ? 1 : 0.5, pointerEvents: (selectedInvoice.commissionAmount || 0) > 0 ? 'auto' : 'none' }}>
-                         <div>
-                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>
-                              CONCESSION: REFERRAL
-                              <span style={{ color: '#0f52ba', marginLeft: '5px' }}>· ELIGIBLE ₹{(selectedInvoice.commissionAmount || 0).toLocaleString()}</span>
-                            </span>
-                            <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
-                               {[10, 25, 50, 100].map(p => (
-                                 <button 
-                                   key={p} type="button"
-                                   onClick={() => handleSetReferrerDisc(Math.round((selectedInvoice.commissionAmount || 0) * (p / 100)))}
-                                   style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
-                                 >{p}%</button>
-                               ))}
-                            </div>
-                         </div>
-
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹</span>
-                            <input
-                              type="number" value={referrerDisc === 0 ? '' : referrerDisc} placeholder="0" min="0" max={Math.max(0, (selectedInvoice.grossAmount || 0) - centreDisc - deduction)} onChange={e => handleSetReferrerDisc(Math.max(0, parseInt(e.target.value) || 0))}
-                              style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#e11d48' }}
-                            />
-                         </div>
-                      </div>
-
-                      {overCommissionChoice(referrerDisc - (selectedInvoice.commissionAmount || 0), selectedInvoice.referrerName, true)}
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>ADDITIONAL DISCOUNT</span>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b' }}>₹</span>
-                            <input 
-                              type="number" value={deduction === 0 ? '' : deduction} placeholder="0" min="0" onChange={e => handleSetDeduction(Math.max(0, parseInt(e.target.value) || 0))}
-                              style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#1e293b' }}
-                            />
-                         </div>
-                      </div>
-                       </div>
-                     )}
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>ADDITIONAL_CHARGES</div>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>+ ₹{(isPaid ? (selectedInvoice.additionalCharges || 0) : additionalCharges).toLocaleString()}</div>
-                 </div>
-
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>TOTAL_DEDUCTIONS</div>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444' }}>- ₹{(isPaid ? (selectedInvoice.discountAmount || 0) : totalDeductions).toLocaleString()}</div>
-                 </div>
-
-
-                 <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>NET_SETTLEMENT</div>
-                    <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{(isPaid ? selectedInvoice.totalAmount : netSettlement).toLocaleString()}</div>
-                 </div>
-
-                 {/* Re-collecting a partially-paid invoice — show what's in and
-                     what's still due so the biller takes the right amount. */}
-                 {!isPaid && paidSoFar > 0 && (
-                   <>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', letterSpacing: '1px' }}>ALREADY_PAID</div>
-                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#059669' }}>₹{paidSoFar.toLocaleString()}</div>
-                     </div>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#ea580c', letterSpacing: '1px' }}>BALANCE_DUE</div>
-                        <div style={{ fontSize: '13px', fontWeight: 950, color: '#ea580c' }}>₹{balanceDue.toLocaleString()}</div>
-                     </div>
-                   </>
-                 )}
-              </div>
-
-              {!isPaid ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                   <div>
-                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block' }}>PROTOCOL</span>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                         {['CASH', 'UPI', 'CARD'].map(m => (
-                           <button 
-                             key={m} onClick={() => setPaymentMethod(m)}
-                             style={{ 
-                               padding: '8px', borderRadius: '10px', border: paymentMethod === m ? '2px solid #0f52ba' : '1px solid #e2e8f0',
-                               background: paymentMethod === m ? '#f0f4ff' : 'white', color: paymentMethod === m ? '#0f52ba' : '#64748b',
-                               fontSize: '9px', fontWeight: 950, cursor: 'pointer'
-                             }}
-                           >{m}</button>
-                         ))}
-                      </div>
-                   </div>
-
-                   {/* Carry forward: this patient holds an advance — offer to apply
-                       it to this bill (settles without fresh cash). */}
-                   {walletBalance > 0.01 && balanceDue > 0.01 && (
-                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '12px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                       <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#1e3a8a' }}>💳 Patient has ₹{walletBalance.toLocaleString()} advance</div>
-                         <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#60a5fa', marginTop: '2px' }}>Apply ₹{Math.min(balanceDue, walletBalance).toLocaleString()} to this bill</div>
-                       </div>
-                       <button type="button" onClick={() => handleApplyCredit && handleApplyCredit(selectedInvoice.invoiceId, Math.min(balanceDue, walletBalance))}
-                         style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11.5px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap' }}>Apply advance</button>
-                     </div>
-                   )}
-
-                   {/* Amount received now — defaults to the full balance; type a
-                       lower number to take a part-payment (the rest stays due). */}
-                   <div>
-                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block' }}>AMOUNT RECEIVED NOW</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '4px 12px' }}>
-                         <span style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>₹</span>
-                         <input
-                           type="number"
-                           min="0"
-                           value={enteredAmount === null ? balanceDue : enteredAmount}
-                           onChange={(e) => {
-                             const v = e.target.value;
-                             setEnteredAmount(v === '' ? 0 : Math.max(0, parseFloat(v) || 0));
-                           }}
-                           style={{ flex: 1, padding: '8px 0', border: 'none', outline: 'none', fontSize: '18px', fontWeight: 950, color: '#0f52ba', minWidth: 0 }}
-                         />
-                         <button type="button" onClick={() => setEnteredAmount(null)} title="Set to full balance" style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff', border: 'none', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}>FULL</button>
-                      </div>
-                      {remainingAfter > 0 && (
-                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#ea580c', marginTop: '6px', lineHeight: 1.4 }}>
-                          Part-payment — ₹{remainingAfter.toLocaleString()} stays due after this. Invoice will be marked PARTIAL.
-                        </div>
-                      )}
-                      {advanceHeld > 0 && (
-                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '8px 10px', marginTop: '6px', lineHeight: 1.45 }}>
-                          💳 Advance held: ₹{advanceHeld.toLocaleString()} — kept as the patient&apos;s credit (refund later or apply to a future visit). Invoice is fully paid.
-                        </div>
-                      )}
-                   </div>
-                   {/* Over-commission discounts require an explicit confirmation
-                       popup (with a reason); everything else settles straight through. */}
-                   {overCentreDiscount && (
-                     <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '8px 10px', lineHeight: 1.45 }}>
-                       ⚠ Centre discount can&apos;t exceed ₹{maxCentreDiscount.toLocaleString()} — more would eat into the ₹{centreCommission.toLocaleString()} referral commission. Lower it to continue.
-                     </div>
-                   )}
-                   {/* Settlement + draft in one row. Print actions now live at the
-                       foot of the left column. */}
-                   <div style={{ display: 'flex', gap: '8px' }}>
-                     <button onClick={() => {
-                       if (overCentreDiscount || deficitNeedsReason) return;
-                       const excess = Math.max(0, referrerDisc - (selectedInvoice.commissionAmount || 0));
-                       const meta = excess > 0
-                         ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
-                         : {};
-                       handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason });
-                     }} disabled={overCentreDiscount || deficitNeedsReason} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
-                     <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason })} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
-                   </div>
-
-                </div>
-
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                   <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '12px', textAlign: 'center', border: '1px solid #d1fae5' }}>
-                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', textTransform: 'uppercase' }}>SETTLED</div>
-                   </div>
-
-                   {/* Scenario 03 — edit a settled invoice's concessions,
-                       admin-approved. (Referrer changes live on the appointment.) */}
-                   {onRequestApproval && (
-                     <button onClick={openEditRequest} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px dashed #cbd5e1', background: 'white', color: '#475569', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>✎ REQUEST PAYMENT EDIT</button>
-                   )}
-                </div>
-              )}
-
               {/* Scenario 07 — mark the whole visit FREE (always admin approval). */}
               {onRequestApproval && (
-                <div style={{ marginTop: '12px', borderTop: '1px dashed #e2e8f0', paddingTop: '12px' }}>
+                <div style={{ marginBottom: '16px', borderTop: '1px dashed #e2e8f0', paddingTop: '16px' }}>
                   {!freeReqOpen ? (
                     <button onClick={() => { setFreeServiceId(null); setFreeServiceLabel(''); setFreeReason(''); setFreeReqOpen(true); }} style={{ width: '100%', padding: '11px', borderRadius: '12px', border: '1px solid #99f6e4', background: '#f0fdfa', color: '#0d9488', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>🎁 MARK WHOLE VISIT FREE</button>
                   ) : (
@@ -920,6 +726,235 @@ export const InvoiceDrawer = ({
                        </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Print actions — invoice + thermal slip side by side at the foot
+                  of the left column (moved out of the actions panel). */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                 <button onClick={() => handlePrintA4(selectedInvoice)} style={{ flex: 1, padding: '11px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '10px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
+                 <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ flex: 1, padding: '11px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>🧾 THERMAL SLIP</button>
+              </div>
+           </div>
+
+           {/* Right Column: Financial Summary & Actions */}
+           <div style={{ background: '#f8fafc', padding: isMobile ? '15px' : '20px', borderRadius: '20px', border: '1px solid #edf2f7' }}>
+              <div style={{ marginBottom: '20px' }}>
+                 {!isPaid && (
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px', padding: '16px', background: 'linear-gradient(145deg, #f0f7ff, #ffffff)', borderRadius: '16px', border: '1px solid #dbeafe', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.05)' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                           🏷️ APPLY DISCOUNTS
+                        </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                         <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                               <span style={{ fontSize: '12px' }}>🏥</span>
+                               <span style={{ fontSize: '9.5px', fontWeight: 950, color: '#1e293b' }}>Discount from Clinic
+                                 {centreCommission > 0 && <span style={{ color: '#3b82f6', marginLeft: '5px', fontWeight: 800 }}>· MAX ₹{maxCentreDiscount.toLocaleString()}</span>}
+                               </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                               {[10, 25, 50, 100].map(p => (
+                                 <button 
+                                   key={p} type="button"
+                                   onClick={() => handleSetCentreDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
+                                   style={{ padding: '3px 6px', fontSize: '7.5px', fontWeight: 950, border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f8fafc', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
+                                   onMouseOver={(e) => { e.currentTarget.style.background = '#e2e8f0'; e.currentTarget.style.color = '#334155'; }}
+                                   onMouseOut={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.color = '#64748b'; }}
+                                 >{p}%</button>
+                               ))}
+                            </div>
+                         </div>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444' }}>₹</span>
+                            <input 
+                              type="number" value={centreDisc === 0 ? '' : centreDisc} placeholder="0" min="0" onChange={e => handleSetCentreDisc(Math.max(0, parseInt(e.target.value) || 0))}
+                              style={{ width: '65px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none', transition: 'border-color 0.2s' }}
+                              onFocus={(e) => e.target.style.borderColor = '#ef4444'}
+                              onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
+                            />
+                         </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', opacity: (selectedInvoice.commissionAmount || 0) > 0 ? 1 : 0.5, pointerEvents: (selectedInvoice.commissionAmount || 0) > 0 ? 'auto' : 'none' }}>
+                         <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                               <span style={{ fontSize: '12px' }}>👨‍⚕️</span>
+                               <span style={{ fontSize: '9.5px', fontWeight: 950, color: '#1e293b' }}>
+                                 Discount from Referring Person
+                                 <span style={{ color: '#3b82f6', marginLeft: '5px', fontWeight: 800 }}>· ELIGIBLE ₹{(selectedInvoice.commissionAmount || 0).toLocaleString()}</span>
+                               </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                               {[10, 25, 50, 100].map(p => (
+                                 <button 
+                                   key={p} type="button"
+                                   onClick={() => handleSetReferrerDisc(Math.round((selectedInvoice.commissionAmount || 0) * (p / 100)))}
+                                   style={{ padding: '3px 6px', fontSize: '7.5px', fontWeight: 950, border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f8fafc', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
+                                   onMouseOver={(e) => { e.currentTarget.style.background = '#e2e8f0'; e.currentTarget.style.color = '#334155'; }}
+                                   onMouseOut={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.color = '#64748b'; }}
+                                 >{p}%</button>
+                               ))}
+                            </div>
+                         </div>
+
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48' }}>₹</span>
+                            <input
+                              type="number" value={referrerDisc === 0 ? '' : referrerDisc} placeholder="0" min="0" max={Math.max(0, (selectedInvoice.grossAmount || 0) - centreDisc - deduction)} onChange={e => handleSetReferrerDisc(Math.max(0, parseInt(e.target.value) || 0))}
+                              style={{ width: '65px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#e11d48', outline: 'none', transition: 'border-color 0.2s' }}
+                              onFocus={(e) => e.target.style.borderColor = '#e11d48'}
+                              onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
+                            />
+                         </div>
+                      </div>
+
+                      {overCommissionChoice(referrerDisc - (selectedInvoice.commissionAmount || 0), selectedInvoice.referrerName, true)}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '12px' }}>✨</span>
+                            <span style={{ fontSize: '9.5px', fontWeight: 950, color: '#1e293b' }}>Other Discount</span>
+                         </div>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 950, color: '#64748b' }}>₹</span>
+                            <input 
+                              type="number" value={deduction === 0 ? '' : deduction} placeholder="0" min="0" onChange={e => handleSetDeduction(Math.max(0, parseInt(e.target.value) || 0))}
+                              style={{ width: '65px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#1e293b', outline: 'none', transition: 'border-color 0.2s' }}
+                              onFocus={(e) => e.target.style.borderColor = '#1e293b'}
+                              onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
+                            />
+                         </div>
+                      </div>
+                       </div>
+                     )}
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>ADDITIONAL_CHARGES</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>+ ₹{(isPaid ? (selectedInvoice.additionalCharges || 0) : additionalCharges).toLocaleString()}</div>
+                 </div>
+
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>TOTAL_DEDUCTIONS</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444' }}>- ₹{(isPaid ? (selectedInvoice.discountAmount || 0) : totalDeductions).toLocaleString()}</div>
+                 </div>
+
+
+                 <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>NET_SETTLEMENT</div>
+                    <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{(isPaid ? selectedInvoice.totalAmount : netSettlement).toLocaleString()}</div>
+                 </div>
+
+                 {/* Re-collecting a partially-paid invoice — show what's in and
+                     what's still due so the biller takes the right amount. */}
+                 {!isPaid && paidSoFar > 0 && (
+                   <>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', letterSpacing: '1px' }}>ALREADY_PAID</div>
+                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#059669' }}>₹{paidSoFar.toLocaleString()}</div>
+                     </div>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#ea580c', letterSpacing: '1px' }}>BALANCE_DUE</div>
+                        <div style={{ fontSize: '13px', fontWeight: 950, color: '#ea580c' }}>₹{balanceDue.toLocaleString()}</div>
+                     </div>
+                   </>
+                 )}
+              </div>
+
+              {!isPaid ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                   <div>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block' }}>PROTOCOL</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                         {['CASH', 'UPI', 'CARD'].map(m => (
+                           <button 
+                             key={m} onClick={() => setPaymentMethod(m)}
+                             style={{ 
+                               padding: '8px', borderRadius: '10px', border: paymentMethod === m ? '2px solid #0f52ba' : '1px solid #e2e8f0',
+                               background: paymentMethod === m ? '#f0f4ff' : 'white', color: paymentMethod === m ? '#0f52ba' : '#64748b',
+                               fontSize: '9px', fontWeight: 950, cursor: 'pointer'
+                             }}
+                           >{m}</button>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* Carry forward: this patient holds an advance — offer to apply
+                       it to this bill (settles without fresh cash). */}
+                   {walletBalance > 0.01 && balanceDue > 0.01 && (
+                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '12px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                       <div style={{ minWidth: 0 }}>
+                         <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#1e3a8a' }}>💳 Patient has ₹{walletBalance.toLocaleString()} advance</div>
+                         <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#60a5fa', marginTop: '2px' }}>Apply ₹{Math.min(balanceDue, walletBalance).toLocaleString()} to this bill</div>
+                       </div>
+                       <button type="button" disabled={!isOnline} title={!isOnline ? 'Internet connection required' : undefined}
+                         onClick={() => handleApplyCredit && handleApplyCredit(selectedInvoice.invoiceId, Math.min(balanceDue, walletBalance))}
+                         style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: !isOnline ? '#94a3b8' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11.5px', fontWeight: 950, cursor: !isOnline ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>Apply advance</button>
+                     </div>
+                   )}
+
+                   {/* Amount received now — defaults to the full balance; type a
+                       lower number to take a part-payment (the rest stays due). */}
+                   <div>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block' }}>AMOUNT RECEIVED NOW</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '4px 12px' }}>
+                         <span style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>₹</span>
+                         <input
+                           type="number"
+                           min="0"
+                           value={enteredAmount === null ? balanceDue : enteredAmount}
+                           onChange={(e) => {
+                             const v = e.target.value;
+                             setEnteredAmount(v === '' ? 0 : Math.max(0, parseFloat(v) || 0));
+                           }}
+                           style={{ flex: 1, padding: '8px 0', border: 'none', outline: 'none', fontSize: '18px', fontWeight: 950, color: '#0f52ba', minWidth: 0 }}
+                         />
+                         <button type="button" onClick={() => setEnteredAmount(null)} title="Set to full balance" style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff', border: 'none', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}>FULL</button>
+                      </div>
+                      {remainingAfter > 0 && (
+                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#ea580c', marginTop: '6px', lineHeight: 1.4 }}>
+                          Part-payment — ₹{remainingAfter.toLocaleString()} stays due after this. Invoice will be marked PARTIAL.
+                        </div>
+                      )}
+                      {advanceHeld > 0 && (
+                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '8px 10px', marginTop: '6px', lineHeight: 1.45 }}>
+                          💳 Advance held: ₹{advanceHeld.toLocaleString()} — kept as the patient&apos;s credit (refund later or apply to a future visit). Invoice is fully paid.
+                        </div>
+                      )}
+                   </div>
+                   {/* Over-commission discounts require an explicit confirmation
+                       popup (with a reason); everything else settles straight through. */}
+                   {overCentreDiscount && (
+                     <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '8px 10px', lineHeight: 1.45 }}>
+                       ⚠ Centre discount can&apos;t exceed ₹{maxCentreDiscount.toLocaleString()} — more would eat into the ₹{centreCommission.toLocaleString()} referral commission. Lower it to continue.
+                     </div>
+                   )}
+                   {/* Settlement + draft in one row. Print actions now live at the
+                       foot of the left column. */}
+                   <div style={{ display: 'flex', gap: '8px' }}>
+                     <button onClick={() => {
+                       if (overCentreDiscount || deficitNeedsReason) return;
+                       const excess = Math.max(0, referrerDisc - (selectedInvoice.commissionAmount || 0));
+                       const meta = excess > 0
+                         ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
+                         : {};
+                       handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason });
+                     }} disabled={overCentreDiscount || deficitNeedsReason} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
+                     <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason })} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+                   </div>
+
+                </div>
+
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                   <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '12px', textAlign: 'center', border: '1px solid #d1fae5' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', textTransform: 'uppercase' }}>SETTLED</div>
+                   </div>
+
+                   {/* Scenario 03 — edit a settled invoice's concessions,
+                       admin-approved. (Referrer changes live on the appointment.) */}
+                   {onRequestApproval && (
+                     <button onClick={openEditRequest} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px dashed #cbd5e1', background: 'white', color: '#475569', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>✎ REQUEST PAYMENT EDIT</button>
+                   )}
                 </div>
               )}
            </div>
@@ -1215,7 +1250,7 @@ export const NewInvoiceDrawer = ({
       <style>{`@keyframes nxDrawerIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }`}</style>
       <div className="drawer-content" style={{
         padding: 0,
-        width: isMobile ? '100%' : '560px',
+        width: isMobile ? '100%' : '750px',
         height: '100vh',
         maxHeight: '100vh',
         maxWidth: 'none',
@@ -1760,9 +1795,10 @@ export const PayoutDrawer = ({
   //  • Multi-service PAYOUT — covers ALL services on an invoice, one line per
   //    modality/service. Lines live on editPayout.lines.
   const isSingle = !!editPayout.commissionId;
+  const isApprovalEdit = isSingle || !!editPayout.approvalEdit;
   const lines = Array.isArray(editPayout.lines) && editPayout.lines.length > 0
     ? editPayout.lines
-    : [{ modality: editPayout.modality || 'MRI', amount: editPayout.amount || '', status: editPayout.status || 'UNPAID', serviceName: '' }];
+    : [{ modality: editPayout.modality || 'MRI', amount: editPayout.amount ?? '', status: editPayout.status || 'UNPAID', serviceName: '' }];
 
   const updateLine = (idx, patch) => {
     const next = lines.map((l, i) => (i === idx ? { ...l, ...patch } : l));
@@ -1780,7 +1816,7 @@ export const PayoutDrawer = ({
       <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '480px', maxWidth: '100vw', background: 'white' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: isMobile ? '22px 20px' : '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
            <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
-           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{isSingle ? 'REVISE REFERRAL RECORD' : 'RECORD REFERRAL PAYOUT'}</div>
+           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{isApprovalEdit ? 'REVISE REFERRAL PAYOUT' : 'RECORD REFERRAL PAYOUT'}</div>
            {!isSingle && editPayout.invoiceId && (
              <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.7)', marginTop: '6px' }}>
                Invoice {editPayout.invoiceId} · {editPayout.patientName || 'Patient'}
@@ -1936,6 +1972,21 @@ export const PayoutDrawer = ({
                         <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TOTAL PAYOUT</span>
                         <span style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>₹{linesTotal.toLocaleString()}</span>
                       </div>
+                      {isApprovalEdit && (
+                        <div className="form-group" style={{ marginTop: '20px' }}>
+                          <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>REASON FOR CHANGE <span style={{ color: '#e11d48' }}>*</span></label>
+                          <textarea
+                            value={editPayout.approvalReason || ''}
+                            onChange={e => setEditPayout({ ...editPayout, approvalReason: e.target.value })}
+                            placeholder="Why are these payout amounts being changed? An admin must approve it."
+                            rows={2}
+                            style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                          />
+                          <div style={{ marginTop: '6px', fontSize: '9px', fontWeight: 700, color: '#7c3aed', lineHeight: 1.4 }}>
+                            Edits, including a ₹0 correction, apply only after admin approval.
+                          </div>
+                        </div>
+                      )}
                    </div>
                  )}
               </div>
@@ -1943,7 +1994,7 @@ export const PayoutDrawer = ({
               <div style={{ marginTop: isMobile ? '28px' : '40px', display: 'flex', gap: '12px' }}>
                  <button type="button" onClick={() => setIsPayoutDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>CANCEL</button>
                  <button type="submit" disabled={isSavingPayout} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
-                   {isSavingPayout ? 'COMMITING...' : 'AUTHORIZE DISBURSEMENT →'}
+                   {isSavingPayout ? 'SENDING...' : isApprovalEdit ? 'SEND FOR APPROVAL →' : 'AUTHORIZE DISBURSEMENT →'}
                  </button>
               </div>
            </form>

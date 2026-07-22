@@ -1805,6 +1805,7 @@ export default function AppointmentBoard() {
         patientGender: editingAppointment.patientGender,
         address: editingAppointment.address || '',
         village: editingAppointment.village || '',
+        block: editingAppointment.block || '',
         district: editingAppointment.district || '',
         sourceOfInfo: editingAppointment.sourceOfInfo || '',
     };
@@ -1845,17 +1846,17 @@ export default function AppointmentBoard() {
       // PREVIOUS services/billing until the 30s background poll (whose pull is
       // skipped when one is already running — pullCycle guards on `pulling`).
       const editedApptId = editingAppointment.appointmentId;
-      apiClient.get(`/appointments/${editedApptId}`)
-        .then(full => { if (full?.data?.appointmentId) return applyServerDeltas([full.data]); })
-        .catch(() => { /* the next sync still reconciles */ });
-
-      // Same for THIS visit's invoice — pull the canonical bill (all reconciled
-      // line items, not just the watermark delta) straight into the invoice cache
-      // so the Revenue Hub's "modality : service" column shows the full set of
-      // services immediately after an add/remove, instead of lagging a sync.
-      apiClient.get('/finance/invoices', { params: { appointmentId: editedApptId } })
-        .then(r => { if (Array.isArray(r?.data) && r.data.length) return applyInvoiceDeltas(r.data); })
-        .catch(() => { /* the next sync still reconciles */ });
+      // Wait for both cache writes before reporting success. Previously these
+      // background requests raced the user navigating to Revenue, which could
+      // expose the pre-edit cached invoice until the next sync cycle.
+      await Promise.all([
+        apiClient.get(`/appointments/${editedApptId}`)
+          .then(full => full?.data?.appointmentId ? applyServerDeltas([full.data]) : undefined)
+          .catch(() => undefined),
+        apiClient.get('/finance/invoices', { params: { appointmentId: editedApptId } })
+          .then(r => Array.isArray(r?.data) && r.data.length ? applyInvoiceDeltas(r.data) : undefined)
+          .catch(() => undefined),
+      ]);
 
       // Build a precise "what changed" summary (pre-edit snapshot vs saved state)
       // for the success popup.
