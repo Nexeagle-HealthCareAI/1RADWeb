@@ -1553,25 +1553,24 @@ export default function AppointmentBoard() {
     } : {};
 
     const lines = getServiceLines(app);
-    const [primary, ...rest] = lines;
 
     const { value: ageVal, unit: ageUnitVal } = parsePatientAge(app.patientAge || app.age);
 
     const initialEditing = {
       ...app,
       ...refProfile,
-      modality:         primary?.modality || app.modality || 'X-RAY',
-      service:          primary?.serviceName || app.service || '',
-      amount:           primary?.amount || app.amount || 0,
-      referralCutValue: primary?.referralCutValue || app.referralCutValue || 0,
-      _primaryServiceId: primary?.id || null,
+      modality:         app.modality || 'X-RAY',
+      service:          '',
+      amount:           0,
+      referralCutValue: 0,
+      _primaryServiceId: null,
       patientAgeValue:  ageVal || '',
       patientAgeUnit:   ageUnitVal || 'Y',
     };
 
     setEditingAppointment(initialEditing);
 
-    setEditServices(rest.map(l => ({
+    setEditServices(lines.map(l => ({
       id:               l.id || null,
       serviceName:      l.serviceName,
       modality:         l.modality,
@@ -5226,8 +5225,8 @@ export default function AppointmentBoard() {
                     setEditServices(prev => [
                       ...prev,
                       {
-                        // No id — new line. Server inserts on reconcile.
-                        id:               null,
+                        // Preserve the ID if this is an existing service line
+                        id:               editingAppointment._primaryServiceId || null,
                         serviceName:      String(editingAppointment.service || '').trim(),
                         modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
                         amount:           Number(editingAppointment.amount) || 0,
@@ -5243,6 +5242,7 @@ export default function AppointmentBoard() {
                       service: '',
                       amount: 0,
                       referralCutValue: 0,
+                      _primaryServiceId: null,
                     }));
                   };
 
