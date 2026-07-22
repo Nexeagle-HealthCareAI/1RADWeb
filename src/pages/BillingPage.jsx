@@ -2729,9 +2729,10 @@ export default function BillingPage() {
             {[
               { id: 'INVOICES',      label: 'Revenue' },
               { id: 'EXPENSES',      label: 'Expenses' },
-              { id: 'REFERRAL_CUTS', label: 'Referrals' },
+              { id: 'REFERRAL_CUTS', label: 'Referral Incentives' },
+              { id: 'SERVICES',      label: 'Scan & Service Metrics' },
               { id: 'ANALYTICS',     label: 'Analytics' },
-              { id: 'FINANCE',       label: 'Control' },
+              { id: 'FINANCE',       label: 'Service Pricing' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -2757,7 +2758,7 @@ export default function BillingPage() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
           {billingViewMode === 'REFERRAL_CUTS' && (
-            <h3 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.3px', margin: 0 }}>Referral Settlements</h3>
+            <></>
           )}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
              <div id="billing-header-actions-portal"></div>
@@ -2926,6 +2927,27 @@ export default function BillingPage() {
           setModalityFilter={setModalityFilter}
         />
 
+      )}
+
+      {billingViewMode === 'SERVICES' && matrix && (
+        <AnalyticsHub 
+          isMobile={isMobile}
+          liveStats={liveStats}
+          outflowStats={outflowStats}
+          matrix={matrix}
+          timeFilter={timeFilter}
+          setTimeFilter={setTimeFilter}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          endDate={endDate}
+          setEndDate={setEndDate}
+          invoices={filteredInvoices}
+          expenses={expenses}
+          referrers={referrers}
+          referralCommissions={referralCommissions}
+          appointments={appointments}
+          forceSection="SERVICES"
+        />
       )}
 
       {billingViewMode === 'ANALYTICS' && matrix && (

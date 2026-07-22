@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
@@ -95,6 +96,12 @@ const ReferralHub = ({
   approvalMap = { rows: [] }
 }) => {
   const [isPartnerDropdownOpen, setIsPartnerDropdownOpen] = useState(false);
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [actionsPortalNode, setActionsPortalNode] = useState(null);
+
+  useEffect(() => {
+    setActionsPortalNode(document.getElementById('billing-header-actions-portal'));
+  }, []);
 
   const toggleReferrer = (id) => {
     if (id === 'ALL') {
@@ -753,8 +760,20 @@ const ReferralHub = ({
                     maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '8px',
                     animation: 'fadeIn 0.2s ease-out'
                   }}>
+                    <input 
+                      type="text" 
+                      placeholder="Search partners..." 
+                      value={partnerSearch} 
+                      onChange={(e) => setPartnerSearch(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', 
+                        fontSize: '10px', fontWeight: 800, marginBottom: '8px', width: '100%', 
+                        outline: 'none', background: '#f8fafc', color: '#1e293b'
+                      }}
+                    />
                     <div 
-                      onClick={() => { toggleReferrer('ALL'); setIsPartnerDropdownOpen(false); }}
+                      onClick={() => { toggleReferrer('ALL'); setIsPartnerDropdownOpen(false); setPartnerSearch(''); }}
                       onMouseEnter={(e) => { if (!referrerFilter.includes('ALL')) e.currentTarget.style.background = '#f8fafc'; }}
                       onMouseLeave={(e) => { if (!referrerFilter.includes('ALL')) e.currentTarget.style.background = 'transparent'; }}
                       style={{
@@ -776,10 +795,10 @@ const ReferralHub = ({
                       ALL PARTNERS (GLOBAL)
                     </div>
                     <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #e2e8f0, transparent)', margin: '6px 0' }} />
-                    {(referrers || []).map(ref => (
+                    {(referrers || []).filter(ref => !partnerSearch || ref.name?.toLowerCase().includes(partnerSearch.toLowerCase())).map(ref => (
                       <div 
                         key={ref.referrerId}
-                        onClick={() => toggleReferrer(ref.referrerId)}
+                        onClick={() => { toggleReferrer(ref.referrerId); setPartnerSearch(''); }}
                         onMouseEnter={(e) => { if (!referrerFilter.includes(ref.referrerId)) e.currentTarget.style.background = '#f8fafc'; }}
                         onMouseLeave={(e) => { if (!referrerFilter.includes(ref.referrerId)) e.currentTarget.style.background = 'transparent'; }}
                         style={{
@@ -875,50 +894,76 @@ const ReferralHub = ({
              </div>
 
              {timeFilter === 'CUSTOM' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s', width: isMobile ? '100%' : 'auto' }}>
-                 <input 
-                   type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                   style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                 />
-                 <input 
-                   type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                   style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                 />
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                background: 'white',
+                border: '1px solid #cbd5e1',
+                borderRadius: '10px',
+                padding: '2px',
+                animation: 'fadeIn 0.2s', 
+                width: isMobile ? '100%' : 'auto',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+              }}>
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                   <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: '#94a3b8', pointerEvents: 'none' }}>START</span>
+                   <input 
+                     type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                     style={{ flex: 1, padding: '8px 10px 8px 45px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer' }}
+                   />
+                 </div>
+                 
+                 <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 4px' }}></div>
+                 
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                   <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: '#94a3b8', pointerEvents: 'none' }}>END</span>
+                   <input 
+                     type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                     style={{ flex: 1, padding: '8px 10px 8px 36px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer' }}
+                   />
+                 </div>
               </div>
              )}
           </div>
           
-           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-              <button
-                onClick={handleExportToExcel}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '8px 16px',
-                  borderRadius: '10px',
-                  fontSize: '9px',
-                  fontWeight: 950,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-                }}
-              >
-                <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
-              </button>
-           </div>
+           {(() => {
+              const exportBtn = (
+                <button
+                  onClick={handleExportToExcel}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                  }}
+                >
+                  <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
+                </button>
+              );
+              return actionsPortalNode ? createPortal(exportBtn, actionsPortalNode) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                  {exportBtn}
+                </div>
+              );
+           })()}
        </div>
 
        <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '18px', marginBottom: '40px' }}>

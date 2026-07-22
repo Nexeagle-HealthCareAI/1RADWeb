@@ -16,10 +16,12 @@ const AnalyticsHub = ({
   expenses = [],
   referrers = [],
   referralCommissions = [],
-  appointments = []
+  appointments = [],
+  forceSection = null
 }) => {
   // Current active dashboard tab
   const [activeSection, setActiveSection] = useState('REVENUE'); // 'REVENUE', 'DISCOUNTS', 'MODALITIES', 'TRENDS'
+  const currentSection = forceSection || activeSection;
   const isEmpty = invoices.length === 0 && expenses.length === 0 && referralCommissions.length === 0;
 
   // Dynamic interactive tooltip state for charts
@@ -1008,15 +1010,34 @@ const AnalyticsHub = ({
                     ))}
                 </div>
                 {timeFilter === 'CUSTOM' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: isMobile ? '100%' : 'auto' }}>
-                    <input 
-                      type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                      style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                    />
-                    <input 
-                      type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                      style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                    />
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    background: 'white',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '2px',
+                    animation: 'fadeIn 0.2s', 
+                    width: isMobile ? '100%' : 'auto',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }}>
+                     <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                       <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: '#94a3b8', pointerEvents: 'none' }}>START</span>
+                       <input 
+                         type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                         style={{ flex: 1, padding: '8px 10px 8px 45px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer' }}
+                       />
+                     </div>
+                     
+                     <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 4px' }}></div>
+                     
+                     <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                       <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: '#94a3b8', pointerEvents: 'none' }}>END</span>
+                       <input 
+                         type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                         style={{ flex: 1, padding: '8px 10px 8px 36px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer' }}
+                       />
+                     </div>
                   </div>
                 )}
               </div>
@@ -1024,35 +1045,36 @@ const AnalyticsHub = ({
       </div>
 
       {/* CORE CLINICAL TAB SWITCHER */}
-      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
-        {[
-          { id: 'REVENUE', label: '💰 REVENUE & COLLECTIONS' },
-          { id: 'DISCOUNTS', label: '🏷️ DISCOUNT & REFERRAL' },
-          { id: 'MODALITIES', label: '🔬 MODALITY PERFORMANCE' },
-          { id: 'SERVICES', label: '📊 SERVICE PERFORMANCE' },
-          { id: 'TRENDS', label: '👥 PATIENT & REFERRAL TRENDS' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveSection(tab.id)}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '12px',
-              border: 'none',
-              fontSize: '10px',
-              fontWeight: 950,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.3s',
-              background: activeSection === tab.id ? '#0f52ba' : 'transparent',
-              color: activeSection === tab.id ? 'white' : '#64748b',
-              boxShadow: activeSection === tab.id ? '0 4px 12px rgba(15, 82, 186, 0.15)' : 'none'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {!forceSection && (
+        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
+          {[
+            { id: 'REVENUE', label: '💰 REVENUE & COLLECTIONS' },
+            { id: 'DISCOUNTS', label: '🏷️ DISCOUNT & REFERRAL' },
+            { id: 'MODALITIES', label: '🔬 MODALITY PERFORMANCE' },
+            { id: 'TRENDS', label: '👥 PATIENT & REFERRAL TRENDS' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSection(tab.id)}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '12px',
+                border: 'none',
+                fontSize: '10px',
+                fontWeight: 950,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.3s',
+                background: currentSection === tab.id ? '#0f52ba' : 'transparent',
+                color: currentSection === tab.id ? 'white' : '#64748b',
+                boxShadow: currentSection === tab.id ? '0 4px 12px rgba(15, 82, 186, 0.15)' : 'none'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* MAIN DYNAMIC PRESENTATION SURFACE */}
       <div style={{ 
@@ -1182,7 +1204,7 @@ const AnalyticsHub = ({
             {/* ======================================================== */}
             {/* DASHBOARD 1: REVENUE & COLLECTIONS */}
             {/* ======================================================== */}
-            {activeSection === 'REVENUE' && (
+            {currentSection === 'REVENUE' && (
               <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '30px' }}>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.7fr 1fr', gap: '30px' }}>
@@ -1336,7 +1358,7 @@ const AnalyticsHub = ({
             {/* ======================================================== */}
             {/* DASHBOARD 2: DISCOUNT & REFERRAL */}
             {/* ======================================================== */}
-            {activeSection === 'DISCOUNTS' && (
+            {currentSection === 'DISCOUNTS' && (
               <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '30px' }}>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: '30px' }}>
@@ -1427,7 +1449,7 @@ const AnalyticsHub = ({
             {/* ======================================================== */}
             {/* DASHBOARD 3: SERVICE PERFORMANCE */}
             {/* ======================================================== */}
-            {activeSection === 'MODALITIES' && (
+            {currentSection === 'MODALITIES' && (
               <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '30px' }}>
                 
                 <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
@@ -1575,7 +1597,7 @@ const AnalyticsHub = ({
             {/* ======================================================== */}
             {/* DASHBOARD 3.5: SERVICES SPECIFIC PERFORMANCE */}
             {/* ======================================================== */}
-            {activeSection === 'SERVICES' && (
+            {currentSection === 'SERVICES' && (
               <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
@@ -1729,7 +1751,7 @@ const AnalyticsHub = ({
             {/* ======================================================== */}
             {/* DASHBOARD 4: PATIENT & REFERRAL TRENDS */}
             {/* ======================================================== */}
-            {activeSection === 'TRENDS' && (
+            {currentSection === 'TRENDS' && (
               <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '30px' }}>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.3fr', gap: '30px' }}>

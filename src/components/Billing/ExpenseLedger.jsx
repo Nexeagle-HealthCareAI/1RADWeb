@@ -379,16 +379,33 @@ const ExpenseLedger = ({
             ]}
           />
           {timeFilter === 'CUSTOM' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${C.border}`, fontSize: '12px', color: C.textPrimary }}
-              />
-              <span style={{ fontSize: '11px', color: C.textTertiary }}>→</span>
-              <input
-                type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${C.border}`, fontSize: '12px', color: C.textPrimary }}
-              />
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              background: 'white',
+              border: `1px solid ${C.border}`,
+              borderRadius: '10px',
+              padding: '2px',
+              animation: 'fadeIn 0.2s', 
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+            }}>
+               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                 <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: C.textTertiary, pointerEvents: 'none' }}>START</span>
+                 <input 
+                   type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                   style={{ padding: '8px 10px 8px 45px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: C.textPrimary, outline: 'none', cursor: 'pointer' }}
+                 />
+               </div>
+               
+               <div style={{ width: '1px', height: '20px', background: C.border, margin: '0 4px' }}></div>
+               
+               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                 <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: C.textTertiary, pointerEvents: 'none' }}>END</span>
+                 <input 
+                   type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                   style={{ padding: '8px 10px 8px 36px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: C.textPrimary, outline: 'none', cursor: 'pointer' }}
+                 />
+               </div>
             </div>
           )}
 

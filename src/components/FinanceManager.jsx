@@ -94,34 +94,42 @@ const FinanceManager = ({
     <div className="finance-view fade-in">
 
       {/* Sub-navigation */}
-      <div style={{
-        display: 'flex', gap: '6px', marginBottom: '28px',
-        padding: '5px', background: '#f1f5f9', borderRadius: '12px',
-        width: isMobile ? '100%' : 'fit-content',
-        overflowX: isMobile ? 'auto' : 'visible',
-        scrollbarWidth: 'none', msOverflowStyle: 'none'
-      }}>
-        {[
+      {(() => {
+        const visibleTabs = [
           { id: 'REGISTRY', label: 'Services' },
           { id: 'EXPENSES', label: 'Expenses' },
           { id: 'LEDGER',   label: 'Overview' }
-        ].filter(tab => !hideTabs.includes(tab.id)).map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setFinanceViewMode(tab.id)}
-            style={{
-              padding: '10px 20px', borderRadius: '8px', border: 'none',
-              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-              background: financeViewMode === tab.id ? 'white' : 'transparent',
-              color: financeViewMode === tab.id ? '#1d4ed8' : '#6b7280',
-              boxShadow: financeViewMode === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.2s', whiteSpace: 'nowrap'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+        ].filter(tab => !hideTabs.includes(tab.id));
+        
+        if (visibleTabs.length <= 1) return null;
+
+        return (
+          <div style={{
+            display: 'flex', gap: '6px', marginBottom: '28px',
+            padding: '5px', background: '#f1f5f9', borderRadius: '12px',
+            width: isMobile ? '100%' : 'fit-content',
+            overflowX: isMobile ? 'auto' : 'visible',
+            scrollbarWidth: 'none', msOverflowStyle: 'none'
+          }}>
+            {visibleTabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setFinanceViewMode(tab.id)}
+                style={{
+                  padding: '10px 20px', borderRadius: '8px', border: 'none',
+                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                  background: financeViewMode === tab.id ? 'white' : 'transparent',
+                  color: financeViewMode === tab.id ? '#1d4ed8' : '#6b7280',
+                  boxShadow: financeViewMode === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.2s', whiteSpace: 'nowrap'
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Section header + primary action */}
       <div style={{
