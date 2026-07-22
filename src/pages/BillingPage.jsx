@@ -425,6 +425,7 @@ export default function BillingPage() {
 
   // Reset page whenever filters change so 'Load more' resets to page 1
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     resetInvoicePage();
   }, [statusFilter, searchTerm, startDate, endDate, timeFilter, modalityFilter, approvalFilter, resetInvoicePage]);
 
@@ -439,6 +440,7 @@ export default function BillingPage() {
 
   // ── Expense Ledger Pagination ─────────────────────────────────────────────
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     resetExpensePage();
   }, [expenseFilter, expenseSearch, startDate, endDate, timeFilter, modalityFilter, resetExpensePage]);
 
@@ -511,7 +513,10 @@ export default function BillingPage() {
   }, [searchTerm]);
 
   // Load the approval-request map on mount (powers the Revenue approval column).
-  useEffect(() => { loadApprovalMap(); }, [loadApprovalMap]);
+  useEffect(() => { 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadApprovalMap(); 
+  }, [loadApprovalMap]);
 
   // Load the real Auto-Bill setting from the server so the toggle in the
   // Control tab reflects what is actually persisted in the database.
@@ -662,12 +667,9 @@ export default function BillingPage() {
   const {
     filteredInvoices,
     futureAppointments,
-    upcomingReferralCuts,
     liveStats,
     combinedReferralCuts,
     recordedPayouts,
-    todayReferralTotal,
-    globalOutflow,
     filteredOutflow,
     outflowStats,
     filteredReferralCuts
@@ -686,29 +688,8 @@ export default function BillingPage() {
     billingViewMode === 'INVOICES' ? (timeFilter === 'FUTURE' ? (futureAppointments || []).length : (filteredInvoices || []).length) :
     billingViewMode === 'EXPENSES' ? (filteredOutflow || []).length :
     (filteredReferralCuts || []).length;
-  const recordLabel =
-    billingViewMode === 'INVOICES' ? (timeFilter === 'FUTURE' ? 'appointments' : 'invoices') :
-    billingViewMode === 'EXPENSES' ? 'expenses' :
-    'commissions';
-  const totalPages = Math.ceil(totalRecords / itemsPerPage);
 
-  const renderPagination = () => (
-    <Pagination
-      currentPage={currentPage}
-      totalPages={totalPages}
-      totalItems={totalRecords}
-      itemsPerPage={itemsPerPage}
-      onPageChange={setCurrentPage}
-      isMobile={isMobile}
-      itemLabel={recordLabel}
-    />
-  );
-
-  const paginatedInvoices = useMemo(() => (filteredInvoices || []).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [filteredInvoices, currentPage, itemsPerPage]);
-  const paginatedFutureAppointments = useMemo(() => (futureAppointments || []).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [futureAppointments, currentPage, itemsPerPage]);
   const paginatedReferralCuts = useMemo(() => (filteredReferralCuts || []).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [filteredReferralCuts, currentPage, itemsPerPage]);
-
-  const paginatedOutflow = useMemo(() => (filteredOutflow || []).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [filteredOutflow, currentPage, itemsPerPage]);
 
   // ── Payout / commission actions (extracted hook) ───────────────────────
   const {
@@ -723,6 +704,7 @@ export default function BillingPage() {
 
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1);
   }, [searchTerm, referralSearch, expenseSearch, expenseFilter, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
 

@@ -978,27 +978,27 @@ const ReferralHub = ({
 
        <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '18px', marginBottom: '40px' }}>
           <div style={{ background: 'white', padding: '18px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL PAYOUTS</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL PAYOUT</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e293b' }}>₹{referralStats.total.toLocaleString()}</div>
           </div>
 
           <div style={{ background: '#f0fdf4', padding: '18px', borderRadius: '20px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '8px' }}>SETTLED · PAID OUT</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '8px' }}>ALREADY PAID</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#14532d' }}>₹{referralStats.paid.toLocaleString()}</div>
           </div>
 
           <div style={{ background: '#eff6ff', padding: '18px', borderRadius: '20px', border: '1px solid #bfdbfe', boxShadow: '0 4px 20px rgba(29,78,216,0.05)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>ELIGIBLE TO PAY</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>READY TO PAY</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e3a8a' }}>₹{referralStats.eligibleToPay.toLocaleString()}</div>
              <div style={{ fontSize: '9px', fontWeight: 700, color: '#60a5fa', marginTop: '6px', lineHeight: 1.4 }}>
-               patient paid · ready to disburse{referralStats.eligiblePartial > 0 ? ` · incl. ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
+               Patient has paid{referralStats.eligiblePartial > 0 ? ` · includes ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
              </div>
           </div>
 
           <div style={{ background: '#fff7ed', padding: '18px', borderRadius: '20px', border: '1px solid #fed7aa', boxShadow: '0 4px 20px rgba(194,65,12,0.05)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '1px', marginBottom: '8px' }}>AWAITING PATIENT PMT</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '1px', marginBottom: '8px' }}>WAITING ON PATIENT</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#9a3412' }}>₹{referralStats.awaitingPatient.toLocaleString()}</div>
-             <div style={{ fontSize: '9px', fontWeight: 700, color: '#fb923c', marginTop: '6px', lineHeight: 1.4 }}>not eligible until the patient pays</div>
+             <div style={{ fontSize: '9px', fontWeight: 700, color: '#fb923c', marginTop: '6px', lineHeight: 1.4 }}>Patient must pay first</div>
           </div>
        </div>
 

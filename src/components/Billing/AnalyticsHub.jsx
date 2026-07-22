@@ -653,13 +653,13 @@ const AnalyticsHub = ({
     
     // Compute X, Y coordinates
     const pointsBilled = data.map((d, i) => {
-      const x = paddingX + (i * chartWidth) / (data.length - 1);
+      const x = paddingX + (data.length > 1 ? (i * chartWidth) / (data.length - 1) : chartWidth / 2);
       const y = paddingY + chartHeight - (d.billed * chartHeight) / maxVal;
       return { x, y, val: d.billed, label: d.label, type: 'Billed' };
     });
 
     const pointsCollected = data.map((d, i) => {
-      const x = paddingX + (i * chartWidth) / (data.length - 1);
+      const x = paddingX + (data.length > 1 ? (i * chartWidth) / (data.length - 1) : chartWidth / 2);
       const y = paddingY + chartHeight - (d.collected * chartHeight) / maxVal;
       return { x, y, val: d.collected, label: d.label, type: 'Collected' };
     });
