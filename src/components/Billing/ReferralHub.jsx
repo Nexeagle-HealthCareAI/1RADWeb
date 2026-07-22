@@ -897,29 +897,39 @@ const ReferralHub = ({
               <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
-                background: 'white',
-                border: '1px solid #cbd5e1',
-                borderRadius: '10px',
-                padding: '2px',
-                animation: 'fadeIn 0.2s', 
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '4px',
+                animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)', 
                 width: isMobile ? '100%' : 'auto',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-              }}>
-                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
-                   <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: '#94a3b8', pointerEvents: 'none' }}>START</span>
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)'; }}
+              >
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                      onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                      onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                   <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#3b82f6', letterSpacing: '1px', pointerEvents: 'none' }}>FROM</span>
                    <input 
                      type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                     style={{ flex: 1, padding: '8px 10px 8px 45px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer' }}
+                     style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
                    />
                  </div>
                  
-                 <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 4px' }}></div>
+                 <div style={{ width: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#94a3b8', fontSize: '14px', fontWeight: 300 }}>
+                   →
+                 </div>
                  
-                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
-                   <span style={{ position: 'absolute', left: '10px', fontSize: '9px', fontWeight: 900, color: '#94a3b8', pointerEvents: 'none' }}>END</span>
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                      onFocus={(e) => e.currentTarget.style.borderColor = '#ec4899'}
+                      onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                   <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#ec4899', letterSpacing: '1px', pointerEvents: 'none' }}>UNTIL</span>
                    <input 
                      type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                     style={{ flex: 1, padding: '8px 10px 8px 36px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer' }}
+                     style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
                    />
                  </div>
               </div>

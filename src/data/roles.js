@@ -67,7 +67,7 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'doctor', 'technician'],
   },
   {
-    label: 'Referrals',
+    label: 'Referral Incentives',
     route: '/referrals',
     allowedRoles: ['admindoctor', 'admin'],
     requiredModule: 'RIS',

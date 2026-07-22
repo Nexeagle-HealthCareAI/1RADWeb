@@ -1561,18 +1561,18 @@ export default function AppointmentBoard() {
     const initialEditing = {
       ...app,
       ...refProfile,
-      modality:         primaryService.modality,
-      service:          primaryService.serviceName,
-      amount:           primaryService.amount,
-      referralCutValue: primaryService.referralCutValue,
-      _primaryServiceId: primaryService.id,
+      modality:         lines.length > 0 ? lines[lines.length-1].modality : (app.modality || 'X-RAY'),
+      service:          '',
+      amount:           0,
+      referralCutValue: 0,
+      _primaryServiceId: null,
       patientAgeValue:  ageVal || '',
       patientAgeUnit:   ageUnitVal || 'Y',
     };
 
     setEditingAppointment(initialEditing);
 
-    setEditServices(remainingServices.map(l => ({
+    setEditServices(lines.map(l => ({
       id:               l.id || null,
       serviceName:      l.serviceName,
       modality:         l.modality,
@@ -5249,6 +5249,33 @@ export default function AppointmentBoard() {
                     }));
                   };
 
+                  const editLine = (idx) => {
+                    const line = editServices[idx];
+                    const currentDraft = draftHasService ? {
+                      id:               editingAppointment._primaryServiceId || null,
+                      serviceName:      String(editingAppointment.service || '').trim(),
+                      modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+                      amount:           Number(editingAppointment.amount) || 0,
+                      referralCutValue: Number(editingAppointment.referralCutValue) || 0,
+                    } : null;
+
+                    setEditServices(prev => {
+                      const copy = [...prev];
+                      copy.splice(idx, 1);
+                      if (currentDraft) copy.push(currentDraft);
+                      return copy;
+                    });
+                    
+                    setEditingAppointment(prev => ({
+                      ...prev,
+                      service: line.serviceName,
+                      modality: line.modality,
+                      amount: line.amount,
+                      referralCutValue: line.referralCutValue,
+                      _primaryServiceId: line.id
+                    }));
+                  };
+
                   const removeLine = (idx) => {
                     setEditServices(prev => prev.filter((_, i) => i !== idx));
                   };
@@ -5325,6 +5352,18 @@ export default function AppointmentBoard() {
                                 <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
                                   ₹{Number(line.amount || 0).toLocaleString()}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() => editLine(idx)}
+                                  aria-label={`Edit ${line.serviceName}`}
+                                  title="Edit this service"
+                                  style={{
+                                    width: '22px', height: '22px', borderRadius: '6px',
+                                    background: '#eff6ff', border: '1px solid #bfdbfe',
+                                    color: '#1d4ed8', cursor: 'pointer', fontSize: '11px', fontWeight: 900,
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  }}
+                                >✎</button>
                                 <button
                                   type="button"
                                   onClick={() => removeLine(idx)}
