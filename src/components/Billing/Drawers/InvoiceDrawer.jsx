@@ -160,6 +160,20 @@ export const InvoiceDrawer = ({
     }
   };
 
+  // Guards "Commit settlement" / "Save as draft" / "Confirm & collect" against a
+  // double-click (or an impatient second click on a slow connection). Each call
+  // to handleCollectPayment/handleSaveInvoice mints its own fresh idempotency
+  // key client-side, so the server's dedupe can't catch two overlapping clicks
+  // as "the same request" — without this guard both fire, and each
+  // independently runs its own delete-old/insert-new cycle on
+  // InvoiceExtraCharges, doubling the extra-charge lines (and the payment).
+  const [isSettling, setIsSettling] = React.useState(false);
+  const runSettlement = async (fn) => {
+    if (isSettling) return;
+    setIsSettling(true);
+    try { await fn(); } finally { setIsSettling(false); }
+  };
+
   // Scenario 07 — mark the whole visit FREE (no bill, no commission, no income).
   // Always admin-approved, whether or not payment was collected.
   const [freeReqOpen, setFreeReqOpen] = React.useState(false);
@@ -932,14 +946,14 @@ export const InvoiceDrawer = ({
                        foot of the left column. */}
                    <div style={{ display: 'flex', gap: '8px' }}>
                      <button onClick={() => {
-                       if (overCentreDiscount || deficitNeedsReason) return;
+                       if (overCentreDiscount || deficitNeedsReason || isSettling) return;
                        const excess = Math.max(0, referrerDisc - (selectedInvoice.commissionAmount || 0));
                        const meta = excess > 0
                          ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
                          : {};
-                       handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason });
-                     }} disabled={overCentreDiscount || deficitNeedsReason} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
-                     <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason })} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+                       runSettlement(() => handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason }));
+                     }} disabled={overCentreDiscount || deficitNeedsReason || isSettling} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason || isSettling) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason || isSettling) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason || isSettling) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{isSettling ? 'PROCESSING…' : (remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT')}</button>
+                     <button onClick={() => runSettlement(() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason }))} disabled={isSettling} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: isSettling ? 'not-allowed' : 'pointer', background: isSettling ? '#f1f5f9' : 'white' }}>{isSettling ? 'SAVING…' : 'SAVE AS DRAFT'}</button>
                    </div>
 
                 </div>
@@ -1135,16 +1149,16 @@ export const InvoiceDrawer = ({
               <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
                 <button
                   onClick={() => {
-                    if (!canConfirm) return;
+                    if (!canConfirm || isSettling) return;
                     const meta = fundingChoice === 'centre'
                       ? { absorbToCentre: true }
                       : { deficitReason: deficitReason.trim() };
-                    handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason });
+                    runSettlement(() => handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason }));
                     setShowDeficitModal(false);
                   }}
-                  disabled={!canConfirm}
-                  style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: canConfirm ? (fundingChoice === 'centre' ? '#0f52ba' : '#ea580c') : '#cbd5e1', color: 'white', fontWeight: 950, fontSize: '11px', cursor: canConfirm ? 'pointer' : 'not-allowed' }}
-                >CONFIRM &amp; COLLECT</button>
+                  disabled={!canConfirm || isSettling}
+                  style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: (canConfirm && !isSettling) ? (fundingChoice === 'centre' ? '#0f52ba' : '#ea580c') : '#cbd5e1', color: 'white', fontWeight: 950, fontSize: '11px', cursor: (canConfirm && !isSettling) ? 'pointer' : 'not-allowed' }}
+                >{isSettling ? 'PROCESSING…' : 'CONFIRM & COLLECT'}</button>
                 <button onClick={() => setShowDeficitModal(false)} style={{ padding: '12px 18px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 950, fontSize: '11px', cursor: 'pointer' }}>CANCEL</button>
               </div>
             </div>
