@@ -1570,7 +1570,32 @@ export default function AppointmentBoard() {
     setShowBookingValidation(false);
   };
 
-  const startEditingAppointment = (app) => {
+  const startEditingAppointment = async (appIn) => {
+    let app = appIn;
+
+    // The worklist row (Dexie cache, fed by the summary endpoint) can have a
+    // stale or missing services[] — e.g. the post-booking healing GET
+    // (handleBookAppointment above) is fire-and-forget and may never have
+    // landed, leaving services[].id = null for an already-invoiced service.
+    // The routine 30s poll can't repair this either: the summary DTO it pulls
+    // doesn't carry services at all. Submitting a null id for an EXISTING
+    // service makes the backend treat it as removed + re-added as new,
+    // desyncing the invoice total from what's actually paid. So refetch the
+    // canonical, id-bearing appointment here before building the edit form —
+    // this is the one place editing actually depends on those ids being real.
+    if (isOnline && appIn?.appointmentId) {
+      try {
+        const full = await apiClient.get(`/appointments/${appIn.appointmentId}`);
+        if (full?.data?.appointmentId) {
+          app = { ...appIn, ...full.data };
+          applyServerDeltas([full.data]).catch(() => {});
+        }
+      } catch {
+        // Offline blip / request failure — fall back to the cached row below
+        // rather than blocking the edit entirely.
+      }
+    }
+
     const matchedRef = (referrers || []).find(r => (r.name || '').toLowerCase() === (app.referredBy || '').toLowerCase());
     const apptSupportDoc = app.supportedByDoctor || (matchedRef && matchedRef.isDoctor === false ? matchedRef.supportedByDoctor : '') || '';
     const supportDoc = apptSupportDoc
