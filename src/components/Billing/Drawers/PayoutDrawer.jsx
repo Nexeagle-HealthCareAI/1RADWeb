@@ -38,7 +38,7 @@ export const PayoutDrawer = ({
     <div className="drawer-overlay" onClick={() => setIsPayoutDrawerOpen(false)} style={{ backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000, justifyContent: 'flex-end', alignItems: 'stretch', padding: 0 }}>
       <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '480px', maxWidth: '100vw', background: 'white', height: '100vh', borderRadius: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', margin: 0 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: isMobile ? '22px 20px' : '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-           <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
+           <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Referral Payout</h2>
            <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{isApprovalEdit ? 'REVISE REFERRAL PAYOUT' : 'RECORD REFERRAL PAYOUT'}</div>
            {!isSingle && editPayout.invoiceId && (
              <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.7)', marginTop: '6px' }}>
@@ -51,7 +51,7 @@ export const PayoutDrawer = ({
            <form onSubmit={handleSavePayout} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', flex: 1 }}>
                  <div className="form-group">
-                    <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PARTNER_IDENTITY</label>
+                    <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>REFERRER NAME</label>
                     <input
                        type="text" disabled
                        value={editPayout.referrerName?.toUpperCase()}
@@ -63,7 +63,7 @@ export const PayoutDrawer = ({
                    <>
                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '16px' : '20px' }}>
                         <div className="form-group">
-                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DISBURSEMENT_AMOUNT (₹)</label>
+                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYOUT AMOUNT (₹)</label>
                            <input
                               type="number" required min="0" step="1" placeholder="0"
                               max={Number(editPayout.serviceAmount) > 0 ? editPayout.serviceAmount : undefined}
@@ -81,7 +81,7 @@ export const PayoutDrawer = ({
                            />
                         </div>
                         <div className="form-group">
-                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CLINICAL_MODALITY</label>
+                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MODALITY</label>
                            <select
                               value={editPayout.modality}
                               onChange={e => setEditPayout({...editPayout, modality: e.target.value})}
@@ -92,7 +92,7 @@ export const PayoutDrawer = ({
                         </div>
                      </div>
                      <div className="form-group">
-                        <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYMENT_STATUS</label>
+                        <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>STATUS</label>
                         <div style={{ display: 'flex', background: '#f8fafc', padding: '5px', borderRadius: '12px', border: '1px solid #eee' }}>
                            {['UNPAID', 'PAID'].map(s => {
                              // A commission that's already PAID can't be flipped back to
@@ -217,7 +217,7 @@ export const PayoutDrawer = ({
               <div style={{ marginTop: isMobile ? '28px' : '40px', display: 'flex', gap: '12px', paddingBottom: '20px' }}>
                  <button type="button" onClick={() => setIsPayoutDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer', background: 'white' }}>CANCEL</button>
                  <button type="submit" disabled={isSavingPayout} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.3)' }}>
-                   {isSavingPayout ? 'SENDING...' : isApprovalEdit ? 'SEND FOR APPROVAL →' : 'AUTHORIZE DISBURSEMENT →'}
+                   {isSavingPayout ? 'SENDING...' : isApprovalEdit ? 'SEND FOR APPROVAL →' : 'SAVE PAYOUT →'}
                  </button>
               </div>
            </form>

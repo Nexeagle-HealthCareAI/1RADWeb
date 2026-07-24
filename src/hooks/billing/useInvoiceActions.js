@@ -21,7 +21,7 @@
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // Retained for /approvals
 import { applyAdjustment, applyDiscount, collectPayment } from '../../api/billing/paymentApi';
-import { generateInvoice, deleteInvoice as apiDeleteInvoice } from '../../api/billing/invoiceApi';
+import { generateInvoice, deleteInvoice as apiDeleteInvoice, fetchInvoices } from '../../api/billing/invoiceApi';
 import { applyCredit } from '../../api/billing/creditApi';
 
 /**
@@ -111,20 +111,44 @@ export const useInvoiceActions = ({
     netAmount = null,
     meta = {}
   ) => {
+    // selectedInvoice is a point-in-time snapshot taken when the drawer opened
+    // (handleOpenInvoice) and never re-syncs while it's open. If a service was
+    // added/removed on this visit — or anything else changed the total — after
+    // the drawer opened, submitting against that stale totalAmount/paidAmount
+    // either rejects a genuine payment as "already settled" or collects
+    // against the wrong balance. Re-verify against the server immediately
+    // before computing what to charge — cheap insurance for a money-moving
+    // action that can't be undone by just refreshing the page. Only invoices
+    // tied to an appointment can be re-fetched this way (manual invoices have
+    // no cheap single-invoice lookup); those fall back to the snapshot, still
+    // protected by the server's own settle check.
+    let invoice = selectedInvoice;
+    if (isOnline && selectedInvoice.appointmentId) {
+      try {
+        const fresh = await fetchInvoices({ appointmentId: selectedInvoice.appointmentId });
+        const list = Array.isArray(fresh) ? fresh : (fresh?.items || []);
+        const match = list.find(i => i.invoiceId === selectedInvoice.invoiceId);
+        if (match) invoice = { ...selectedInvoice, ...match };
+      } catch {
+        // Transient read failure — fall back to the snapshot rather than
+        // blocking payment collection on it.
+      }
+    }
+
     // netAmount can legitimately be 0 (a discount that fully covers the bill), so a
     // falsy `||` fallback would wrongly re-bill the gross. Guard for null/undefined.
-    const currentNet  = (netAmount === null || netAmount === undefined) ? (selectedInvoice.totalAmount || 0) : netAmount;
-    const currentPaid = selectedInvoice.paidAmount || 0;
+    const currentNet  = (netAmount === null || netAmount === undefined) ? (invoice.totalAmount || 0) : netAmount;
+    const currentPaid = invoice.paidAmount || 0;
     const balance     = Math.max(0, currentNet - currentPaid);
     const paymentAmount = (meta.amountReceived === null || meta.amountReceived === undefined)
       ? balance
       : Math.max(0, Number(meta.amountReceived) || 0);
 
-    const commission       = selectedInvoice.commissionAmount || 0;
+    const commission       = invoice.commissionAmount || 0;
     const commissionDeficit = Math.max(0, referrerDiscount - commission);
 
     const payload = {
-      invoiceId:         selectedInvoice.invoiceId,
+      invoiceId:         invoice.invoiceId,
       amount:            paymentAmount,
       centreDiscount,
       referrerDiscount,
@@ -143,7 +167,7 @@ export const useInvoiceActions = ({
       if (!isOnline) {
         await addToOutbox('PAYMENT', payload, idemKey);
         setIsInvoiceDrawerOpen(false);
-        setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: selectedInvoice.patientName, invoiceId: selectedInvoice.displayId, offline: true });
+        setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: true });
         return;
       }
 
@@ -151,13 +175,13 @@ export const useInvoiceActions = ({
       celebrate();
       setIsInvoiceDrawerOpen(false);
       refreshAllFinancialData();
-      setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: selectedInvoice.patientName, invoiceId: selectedInvoice.displayId, offline: false });
+      setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: false });
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
       if (!err.response) {
         await addToOutbox('PAYMENT', payload, idemKey);
         setIsInvoiceDrawerOpen(false);
-        setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: selectedInvoice.patientName, invoiceId: selectedInvoice.displayId, offline: true });
+        setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: true });
       } else {
         // A real server rejection (e.g. "already settled", a stale invoice
         // total) used to be swallowed here — the drawer just sat there with
