@@ -10,7 +10,8 @@
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // retained for /hospitals
 import { recordExpense, updateExpense, deleteExpense as apiDeleteExpense, updateExpenseStatus } from '../../api/billing/expenseApi';
-import { createServiceCharge, updateServiceCharge, deleteServiceCharge as apiDeleteServiceCharge } from '../../api/billing/registryApi';
+import { fetchRegistry as fetchRegistryApi, createServiceCharge, updateServiceCharge, deleteServiceCharge as apiDeleteServiceCharge } from '../../api/billing/registryApi';
+import { useVerifiedBeforeSubmit } from './useVerifiedBeforeSubmit';
 
 /**
  * @param {object}   opts
@@ -53,6 +54,8 @@ export const useExpenseActions = ({
   billingSettings,
   setBillingSettings,
 }) => {
+  const { verifyFreshList } = useVerifiedBeforeSubmit(isOnline);
+
   // ── Save expense (create or update) ────────────────────────────────────────
   const handleSaveExpense = useCallback(async (e) => {
     e.preventDefault();
@@ -62,6 +65,14 @@ export const useExpenseActions = ({
       ...editExpense,
       description: (editExpense.description || '').trim() || (editExpense.vendorName || '').trim(),
     };
+
+    // editExpense is a drawer snapshot with no dirty-field tracking, so there's
+    // no well-defined way to "merge" a fresh copy without risking silently
+    // discarding whatever the user actually typed — and unlike invoices,
+    // there's no single-expense-by-id GET endpoint to verify existence
+    // against without fetching the whole (possibly large) list. Left as-is;
+    // if this becomes a real incident, the fix is a backend GET
+    // /finance/expenses/{id} endpoint, not a workaround here.
 
     const idemKey = crypto.randomUUID();
     if (!isOnline) {
@@ -187,6 +198,37 @@ export const useExpenseActions = ({
   // ── Save service price (create or update) ──────────────────────────────────
   const handleSavePrice = useCallback(async (e) => {
     e.preventDefault();
+
+    // The registry is small (a service catalogue, not a transactional log),
+    // so — unlike expenses — a full fresh fetch to verify against is cheap
+    // and reliable. Two real risks this catches: editing an entry someone
+    // else already deleted, and creating a duplicate for a modality/service
+    // someone else just added while this drawer was open.
+    const freshRegistry = await verifyFreshList(fetchRegistryApi);
+    if (freshRegistry) {
+      if (editPrice.id) {
+        if (!freshRegistry.some(s => s.id === editPrice.id)) {
+          notify({ type: 'error', title: 'Price Entry Not Found', message: 'This service price was deleted elsewhere. Refresh and try again.' });
+          return;
+        }
+      } else {
+        const dupe = freshRegistry.find(s =>
+          String(s.modality || '').toUpperCase() === String(editPrice.modality || '').toUpperCase()
+          && (s.serviceName || '').trim().toLowerCase() === (editPrice.serviceName || '').trim().toLowerCase()
+        );
+        if (dupe) {
+          notify({
+            type: 'warning',
+            title: 'Already Exists',
+            message: `${editPrice.serviceName} (${editPrice.modality}) was just added to the registry — edit that entry instead of creating a duplicate.`,
+          });
+          setIsPriceDrawerOpen(false);
+          fetchRegistry();
+          return;
+        }
+      }
+    }
+
     try {
       if (editPrice.id) {
         await updateServiceCharge(editPrice.id, editPrice);
@@ -199,7 +241,7 @@ export const useExpenseActions = ({
       console.error('[FINANCE] Price save failed', err);
       notify({ type: 'error', message: 'Failed to save service price.' });
     }
-  }, [editPrice, notify, setIsPriceDrawerOpen, fetchRegistry]);
+  }, [editPrice, notify, setIsPriceDrawerOpen, fetchRegistry, verifyFreshList]);
 
   // ── Delete service price ────────────────────────────────────────────────────
   const handleDeletePrice = useCallback((id) => {

@@ -21,8 +21,9 @@
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // Retained for /approvals
 import { applyAdjustment, applyDiscount, collectPayment } from '../../api/billing/paymentApi';
-import { generateInvoice, deleteInvoice as apiDeleteInvoice, fetchInvoices } from '../../api/billing/invoiceApi';
+import { generateInvoice, deleteInvoice as apiDeleteInvoice, fetchInvoices, fetchPendingBillables } from '../../api/billing/invoiceApi';
 import { applyCredit } from '../../api/billing/creditApi';
+import { useVerifiedBeforeSubmit } from './useVerifiedBeforeSubmit';
 
 /**
  * @param {object}   opts
@@ -65,6 +66,22 @@ export const useInvoiceActions = ({
   newInvoiceData,
   setNewInvoiceData,
 }) => {
+  const { verifyFresh } = useVerifiedBeforeSubmit(isOnline);
+
+  // Shared by every money-affecting invoice submit below: re-verify against
+  // the server (GET /finance/invoices?appointmentId=...) immediately before
+  // computing what to send, since selectedInvoice is a point-in-time drawer
+  // snapshot that never re-syncs while the drawer stays open. Only invoices
+  // tied to an appointment can be re-fetched this way (manual invoices have
+  // no cheap single-invoice lookup); those fall back to the snapshot, still
+  // protected by the server's own guards.
+  const verifyInvoice = useCallback((snapshot) => {
+    if (!snapshot.appointmentId) return Promise.resolve(snapshot);
+    return verifyFresh(snapshot, {
+      fetchFresh: () => fetchInvoices({ appointmentId: snapshot.appointmentId }),
+      findMatch: (list) => list.find(i => i.invoiceId === snapshot.invoiceId),
+    });
+  }, [verifyFresh]);
 
   // ── Invoice calculation ──────────────────────────────────────────────────────
   const recalculateInvoice = useCallback((inv) => {
@@ -112,28 +129,9 @@ export const useInvoiceActions = ({
     meta = {}
   ) => {
     // selectedInvoice is a point-in-time snapshot taken when the drawer opened
-    // (handleOpenInvoice) and never re-syncs while it's open. If a service was
-    // added/removed on this visit — or anything else changed the total — after
-    // the drawer opened, submitting against that stale totalAmount/paidAmount
-    // either rejects a genuine payment as "already settled" or collects
-    // against the wrong balance. Re-verify against the server immediately
-    // before computing what to charge — cheap insurance for a money-moving
-    // action that can't be undone by just refreshing the page. Only invoices
-    // tied to an appointment can be re-fetched this way (manual invoices have
-    // no cheap single-invoice lookup); those fall back to the snapshot, still
-    // protected by the server's own settle check.
-    let invoice = selectedInvoice;
-    if (isOnline && selectedInvoice.appointmentId) {
-      try {
-        const fresh = await fetchInvoices({ appointmentId: selectedInvoice.appointmentId });
-        const list = Array.isArray(fresh) ? fresh : (fresh?.items || []);
-        const match = list.find(i => i.invoiceId === selectedInvoice.invoiceId);
-        if (match) invoice = { ...selectedInvoice, ...match };
-      } catch {
-        // Transient read failure — fall back to the snapshot rather than
-        // blocking payment collection on it.
-      }
-    }
+    // (handleOpenInvoice) and never re-syncs while it's open — re-verify
+    // against the server immediately before computing what to charge.
+    const invoice = await verifyInvoice(selectedInvoice);
 
     // netAmount can legitimately be 0 (a discount that fully covers the bill), so a
     // falsy `||` fallback would wrongly re-bill the gross. Guard for null/undefined.
@@ -191,7 +189,7 @@ export const useInvoiceActions = ({
         notify({ type: 'error', title: 'Payment Not Recorded', message: detail });
       }
     }
-  }, [selectedInvoice, paymentMethod, isOnline, addToOutbox, notify, celebrate, refreshAllFinancialData, setIsInvoiceDrawerOpen, setPaymentSuccess]);
+  }, [selectedInvoice, paymentMethod, isOnline, verifyInvoice, addToOutbox, notify, celebrate, refreshAllFinancialData, setIsInvoiceDrawerOpen, setPaymentSuccess]);
 
   // ── Apply patient advance to invoice ────────────────────────────────────────
   const handleApplyCredit = useCallback(async (invoiceId, amount) => {
@@ -217,15 +215,47 @@ export const useInvoiceActions = ({
       return;
     }
 
-    const totalCommission = newInvoiceData.items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
+    // newInvoiceData.items came from a one-shot "pending billables" fetch when
+    // the drawer opened — it isn't kept live while the drawer stays open (it's
+    // not even Dexie-backed, just a plain cache). If another biller invoiced
+    // one of these appointment-linked services in the meantime, submitting the
+    // stale list would double-bill it. Re-verify against the patient's current
+    // pending list right before creating the invoice; freeform lines (no
+    // appointmentServiceId) can't collide this way and pass through unchanged.
+    let items = newInvoiceData.items;
+    if (isOnline) {
+      try {
+        const freshPending = await fetchPendingBillables(selectedPatient.patientId);
+        const freshIds = new Set((freshPending || []).map(p => p.appointmentServiceId).filter(Boolean));
+        const dropped = items.filter(it => it.appointmentServiceId && !freshIds.has(it.appointmentServiceId));
+        if (dropped.length > 0) {
+          items = items.filter(it => !it.appointmentServiceId || freshIds.has(it.appointmentServiceId));
+          notify({
+            type: 'warning',
+            title: 'Already Billed',
+            message: `${dropped.length} service(s) were already invoiced elsewhere and were removed from this bill: ${dropped.map(d => d.description).join(', ')}.`,
+          });
+        }
+      } catch {
+        // Transient read failure — fall back to the drafted list; the
+        // backend's own "one invoice per appointment" guard is the backstop.
+      }
+    }
+
+    if (items.length === 0) {
+      notify({ type: 'warning', title: 'Nothing To Bill', message: 'Every service on this draft was already invoiced elsewhere. Refresh and try again.' });
+      return;
+    }
+
+    const totalCommission = items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
     const payload = {
       patientId:        selectedPatient.patientId,
-      appointmentId:    newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
+      appointmentId:    items.find(it => it.appointmentId)?.appointmentId || null,
       referrerId:       newInvoiceData.referrerId || null,
       centreDiscount:   Number(newInvoiceData.centreDiscount || 0),
       referrerDiscount: Number(newInvoiceData.referrerDiscount || 0),
       commissionAmount: totalCommission,
-      items: newInvoiceData.items.map(it => ({
+      items: items.map(it => ({
         description:         it.description,
         amount:              Number(it.amount),
         quantity:            Number(it.quantity),
@@ -268,6 +298,11 @@ export const useInvoiceActions = ({
   // ── Save-as-draft (discount/charges only) ───────────────────────────────────
   const handleSaveInvoice = useCallback(async (draft = null) => {
     const hasBreakdown = draft && typeof draft === 'object' && 'centreDisc' in draft;
+    // Same staleness risk as payment collection: selectedInvoice is a
+    // point-in-time drawer snapshot. It matters most in the no-breakdown
+    // fallback below (it submits selectedInvoice.discountAmount as-is), so
+    // verify before reading from it either way.
+    const invoice = await verifyInvoice(selectedInvoice);
     const body = hasBreakdown
       ? {
           centreDiscount:          Number(draft.centreDisc) || 0,
@@ -278,10 +313,10 @@ export const useInvoiceActions = ({
           extraCharges:            draft.additionalChargesReason ? JSON.parse(draft.additionalChargesReason) : [],
           discountAmount:          (Number(draft.centreDisc) || 0) + (Number(draft.referrerDisc) || 0) + (Number(draft.deduction) || 0),
         }
-      : { discountAmount: selectedInvoice.discountAmount };
+      : { discountAmount: invoice.discountAmount };
 
     try {
-      await applyDiscount(selectedInvoice.invoiceId, body);
+      await applyDiscount(invoice.invoiceId, body);
       refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
       notify({ type: 'success', title: 'Draft Saved', message: 'Your changes were saved. Reopen the invoice to continue.' });
@@ -289,7 +324,7 @@ export const useInvoiceActions = ({
       console.error('[FINANCE] Discount application failed', err);
       notify({ type: 'error', title: 'Update Failed', message: 'Could not update the invoice. Please try again.' });
     }
-  }, [selectedInvoice, refreshAllFinancialData, setIsInvoiceDrawerOpen, notify]);
+  }, [selectedInvoice, verifyInvoice, refreshAllFinancialData, setIsInvoiceDrawerOpen, notify]);
 
   // ── Request admin approval ───────────────────────────────────────────────────
   const handleRequestApproval = useCallback(async ({ type, title, invoiceId, appointmentId, payload, reason }) => {

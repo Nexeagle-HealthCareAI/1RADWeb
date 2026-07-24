@@ -878,6 +878,7 @@ export default function BillingPage() {
 
       {billingViewMode === 'INVOICES' && (
         <RevenueHub
+          isOnline={isOnline}
           filteredInvoices={filteredInvoices}
           advanceByPatient={advanceByPatient}
           approvalMap={approvalMap}

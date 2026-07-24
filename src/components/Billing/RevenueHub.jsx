@@ -3,6 +3,8 @@ import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallba
 import { createPortal } from 'react-dom';
 import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
 import { celebrate } from '../../utils/celebrate';
+import { fetchCommissions } from '../../api/billing/payoutApi';
+import { useVerifiedBeforeSubmit } from '../../hooks/billing/useVerifiedBeforeSubmit';
 
 // One-time keyframe for the row-actions menu's "grow from the button" entrance.
 if (typeof document !== 'undefined' && !document.getElementById('row-actions-menu-kf')) {
@@ -79,6 +81,7 @@ function RowActionsMenu({ children, isMobile }) {
 }
 
 const RevenueHub = ({
+  isOnline,
   filteredInvoices,
   advanceByPatient = {},
   approvalMap = { byInvoice: {}, byAppointment: {} },
@@ -126,6 +129,7 @@ const RevenueHub = ({
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' });
   const [actionsPortalNode, setActionsPortalNode] = useState(null);
+  const { verifyFreshList } = useVerifiedBeforeSubmit(isOnline);
 
   useEffect(() => {
     setActionsPortalNode(document.getElementById('billing-header-actions-portal'));
@@ -1064,7 +1068,7 @@ const RevenueHub = ({
                          <div style={{ height: '1px', width: '100%', background: '#eef2f7', margin: '2px 0' }}></div>
                         {/* 3) Update payout — sits just before Delete. */}
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                              celebrate();
                              // Multi-stage referrer identity resolution
                              let refId = inv.referrerId;
@@ -1082,11 +1086,21 @@ const RevenueHub = ({
                                 return;
                              }
 
+                             // referralCommissions is a Dexie-backed cache that can lag the
+                             // server (a commission recorded on another device/tab, or not
+                             // yet pulled down by the 30s sync). Whether this invoice
+                             // "already has a payout" decides if the save below is routed
+                             // through admin approval — deciding that from a stale cache
+                             // could let a real, possibly PAID commission be silently
+                             // overwritten. Re-verify this referrer's live rows first.
+                             const freshList = await verifyFreshList(() => fetchCommissions({ referrerId: refId }));
+                             const commissionSource = freshList ?? referralCommissions ?? [];
+
                              // Build ONE payout line per service on the invoice so a
                              // multi-service visit pays the referrer per modality.
                              const items = inv.items || [];
                              const ref = inv.displayId;
-                             const existingForInvoice = (referralCommissions || []).filter(c =>
+                             const existingForInvoice = commissionSource.filter(c =>
                                c.appointmentId === inv.appointmentId
                                || (c.referenceNumber || c.reference) === ref
                                || c.id === inv.commissionId

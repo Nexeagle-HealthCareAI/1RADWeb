@@ -10,6 +10,24 @@
 import apiClient from '../apiClient';
 
 /**
+ * Fetch referral commissions with optional filters. Used to re-verify a
+ * referrer's live commission rows immediately before deciding whether a
+ * payout edit needs admin approval — the cached/synced list can be behind.
+ * @param {object} [opts]
+ * @param {string} [opts.referrerId]
+ */
+export const fetchCommissions = async ({ referrerId, startDate, endDate, updatedAfter, includeDeleted = false } = {}) => {
+  const params = {};
+  if (referrerId) params.referrerId = referrerId;
+  if (startDate) params.startDate = startDate;
+  if (endDate) params.endDate = endDate;
+  if (updatedAfter) params.updatedAfter = updatedAfter;
+  if (includeDeleted) params.includeDeleted = includeDeleted;
+  const res = await apiClient.get('/referrers/commissions', { params });
+  return res.data;
+};
+
+/**
  * Toggle the status of a specific commission (PAID ↔ UNPAID).
  * @param {string} id
  * @param {string} status
