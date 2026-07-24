@@ -158,9 +158,16 @@ export const useInvoiceActions = ({
         await addToOutbox('PAYMENT', payload, idemKey);
         setIsInvoiceDrawerOpen(false);
         setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: selectedInvoice.patientName, invoiceId: selectedInvoice.displayId, offline: true });
+      } else {
+        // A real server rejection (e.g. "already settled", a stale invoice
+        // total) used to be swallowed here — the drawer just sat there with
+        // no feedback, which reads as "nothing happened" and invites a
+        // confused retry. Surface it instead.
+        const detail = err.response?.data?.error || err.response?.data?.message || 'Please refresh the invoice and try again.';
+        notify({ type: 'error', title: 'Payment Not Recorded', message: detail });
       }
     }
-  }, [selectedInvoice, paymentMethod, isOnline, addToOutbox, celebrate, refreshAllFinancialData, setIsInvoiceDrawerOpen, setPaymentSuccess]);
+  }, [selectedInvoice, paymentMethod, isOnline, addToOutbox, notify, celebrate, refreshAllFinancialData, setIsInvoiceDrawerOpen, setPaymentSuccess]);
 
   // ── Apply patient advance to invoice ────────────────────────────────────────
   const handleApplyCredit = useCallback(async (invoiceId, amount) => {

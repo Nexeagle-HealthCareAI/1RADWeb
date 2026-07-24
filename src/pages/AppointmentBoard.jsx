@@ -1624,6 +1624,7 @@ export default function AppointmentBoard() {
       dateTime: app.dateTime || null,
       patientName: app.patientName || '',
       mobile: app.mobile || '',
+      priority: app.priority || 'ROUTINE',
     };
     setIsEditingOpen(true);
   };
@@ -1823,6 +1824,7 @@ export default function AppointmentBoard() {
         services: serviceLines,
         dateTime: editingAppointment.dateTime,
         doctor: editingAppointment.doctor,
+        priority: editingAppointment.priority || 'ROUTINE',
         notes: editingAppointment.notes,
         referredBy: withDoctorPrefix(editingAppointment.referredBy, editingAppointment.referrerIsDoctor),
         // Contact applies to both a doctor and an agent payee.
@@ -1836,7 +1838,7 @@ export default function AppointmentBoard() {
         referrerEmail: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerEmail || '') : '',
         referrerSpecialty: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerSpecialty || '') : '',
         referrerDegree: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerDegree || '') : '',
-        referredAddress: editingAppointment.referrerAddress || '',
+        referrerAddress: editingAppointment.referrerAddress || '',
         patientName: editingAppointment.patientName,
         mobile: editMobile,
         patientAge: buildPatientAge(editingAppointment.patientAgeValue, editingAppointment.patientAgeUnit),
@@ -1916,6 +1918,7 @@ export default function AppointmentBoard() {
         changes.push({ type: 'changed', text: `Date → ${new Date(editingAppointment.dateTime).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` });
       if ((orig.patientName || '') !== (editingAppointment.patientName || '')) changes.push({ type: 'changed', text: `Patient name → ${editingAppointment.patientName}` });
       if ((orig.mobile || '') !== (editMobile || '')) changes.push({ type: 'changed', text: `Mobile → ${editMobile}` });
+      if ((orig.priority || 'ROUTINE') !== (editingAppointment.priority || 'ROUTINE')) changes.push({ type: 'changed', text: `Priority → ${editingAppointment.priority || 'ROUTINE'}` });
       if (changes.length === 0) changes.push({ type: 'changed', text: 'Details refreshed' });
 
       // Distinct "edit saved" flourish (cooler shimmer, not the booking confetti).
@@ -5498,7 +5501,62 @@ export default function AppointmentBoard() {
 
               <div style={{ marginBottom: '25px' }}>
                 <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Routing & Notes</h4>
-                
+
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Appointment Date <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input
+                      type="date"
+                      required
+                      value={(() => {
+                        const raw = editingAppointment.dateTime || '';
+                        const m = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+                        return m ? m[1] : '';
+                      })()}
+                      onChange={e => {
+                        const newDate = e.target.value;
+                        if (!newDate) return;
+                        // Keep the existing time-of-day — only the day is meaningful
+                        // for rescheduling (re-tokenization / move-to-future refund
+                        // logic both key off the DATE, not the clock time).
+                        const prevD = editingAppointment.dateTime ? new Date(editingAppointment.dateTime) : null;
+                        const pad = n => String(n).padStart(2, '0');
+                        const timePart = prevD && !Number.isNaN(prevD.getTime())
+                          ? `${pad(prevD.getHours())}:${pad(prevD.getMinutes())}:${pad(prevD.getSeconds())}`
+                          : '00:00:00';
+                        setEditingAppointment({ ...editingAppointment, dateTime: `${newDate}T${timePart}` });
+                      }}
+                      style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', height: '44px' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Priority</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                      {[
+                        { id: 'STAT',    label: 'STAT',    color: '#dc2626' },
+                        { id: 'URGENT',  label: 'Urgent',  color: '#d97706' },
+                        { id: 'ROUTINE', label: 'Routine', color: '#16a34a' },
+                      ].map(opt => {
+                        const active = (editingAppointment.priority || 'ROUTINE') === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setEditingAppointment({ ...editingAppointment, priority: opt.id })}
+                            style={{
+                              height: '44px', borderRadius: '12px', cursor: 'pointer',
+                              border: `2px solid ${active ? opt.color : '#e2e8f0'}`,
+                              background: active ? opt.color : '#f8fafc',
+                              color: active ? 'white' : opt.color,
+                              fontWeight: 900, fontSize: '11px', letterSpacing: '0.3px',
+                            }}
+                          >{opt.label}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Lead Specialist <span style={{ color: '#ef4444' }}>*</span></label>
