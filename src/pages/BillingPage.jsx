@@ -221,14 +221,31 @@ export default function BillingPage() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+      setWindowWidth(window.innerWidth);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
 
   // B3 Slice 1 — invoices are now offline-first. The legacy fetchInvoices
   // function survives so post-mutation calls still work, but reading is
   // driven by the liveQuery subscription added in the useEffect below.
   // fetchInvoices reduces to a SyncEngine nudge that pulls the freshest
   // delta into the local cache; liveQuery re-emits and the table re-renders.
+  //
+  // Scoped to the financial entity group (invoices/expenses/referrers/
+  // referral commissions) — this is the call every billing action and the
+  // page's own mount funnel through via refreshAllFinancialData(), and none
+  // of them need appointments/reports/personnel/price-registry re-pulled
+  // (those are refreshed independently elsewhere in this file). Previously
+  // this was an unscoped syncNow() that pulled all 9 entities in sequence
+  // before invoices/expenses/commissions even started.
   const fetchInvoices = useCallback(async () => {
-    try { await syncNow(); } catch (_) { /* engine logs */ }
+    try { await syncNow(['invoices', 'expenses', 'referrers', 'referralCommissions']); } catch (_) { /* engine logs */ }
   }, []);
 
   const fetchStats = useCallback(async () => {
@@ -305,13 +322,13 @@ export default function BillingPage() {
   // fetchExpenses becomes a SyncEngine nudge so post-mutation refreshes
   // still work.
   const fetchExpenses = useCallback(async () => {
-    try { await syncNow(); } catch (_) {}
+    try { await syncNow(['expenses']); } catch (_) {}
   }, []);
 
   // B3 Slice 4 — referrers offline. fetchReferrers becomes a SyncEngine
   // nudge; rendering driven by the watchReferrers liveQuery effect below.
   const fetchReferrers = useCallback(async () => {
-    try { await syncNow(); } catch (_) {}
+    try { await syncNow(['referrers']); } catch (_) {}
   }, []);
 
   // B3 Slice 5 — referral commissions offline. NOTE: the legacy
@@ -321,7 +338,7 @@ export default function BillingPage() {
   // ledger endpoint cached separately is a future follow-up if a user
   // surface depends on its specific shape.
   const fetchCommissions = useCallback(async () => {
-    try { await syncNow(); } catch (_) {}
+    try { await syncNow(['referralCommissions']); } catch (_) {}
   }, []);
 
   const fetchAppointments = useCallback(async () => {
@@ -615,7 +632,6 @@ export default function BillingPage() {
     handleCreateManualInvoice,
     handleSaveInvoice,
     handleRequestApproval,
-    handleApplyAdjustment,
     handleDeleteInvoice,
   } = useInvoiceActions({
     isOnline, addToOutbox, notify, notifyToast, celebrate,
@@ -755,29 +771,52 @@ export default function BillingPage() {
             marginBottom: '8px',
             margin: 0
           }}>Finance</h1>
-          <div style={{ display: 'flex', gap: '6px', marginTop: '12px', flexWrap: 'wrap' }}>
+          <div className="billing-tabs" style={{ 
+            display: 'flex', 
+            marginTop: '20px', 
+            overflowX: 'auto', 
+            borderBottom: '1px solid #e2e8f0',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            marginRight: isMobile ? '-15px' : '0',
+            paddingRight: isMobile ? '15px' : '0'
+          }}>
+            <style>{`
+              .billing-tabs::-webkit-scrollbar { display: none; }
+            `}</style>
             {[
               { id: 'INVOICES',      label: 'Revenue' },
               { id: 'EXPENSES',      label: 'Expenses' },
-              { id: 'REFERRAL_CUTS', label: 'Referral Incentives' },
-              { id: 'SERVICES',      label: 'Scan & Service Metrics' },
-              { id: 'FINANCE',       label: 'Service Pricing' },
+              { id: 'REFERRAL_CUTS', label: 'Incentives' },
+              { id: 'SERVICES',      label: 'Metrics' },
+              { id: 'FINANCE',       label: 'Pricing' },
               { id: 'ANALYTICS',     label: 'Analytics' },
-            ].map(tab => (
+            ].map(tab => {
+              const active = billingViewMode === tab.id;
+              return (
               <button
                 key={tab.id}
                 onClick={() => setBillingViewMode(tab.id)}
                 style={{
-                  padding: '7px 16px', borderRadius: '8px', border: '1px solid #e2e8f0',
-                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                  background: billingViewMode === tab.id ? '#0a1628' : 'white',
-                  color: billingViewMode === tab.id ? 'white' : '#6b7280',
-                  transition: 'all 0.2s'
+                  padding: '12px 16px', 
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent',
+                  fontSize: '13px', 
+                  fontWeight: active ? 800 : 600, 
+                  cursor: 'pointer',
+                  color: active ? '#0f52ba' : '#64748b',
+                  transition: 'color 0.2s, border-color 0.2s',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
                 }}
               >
                 {tab.label}
               </button>
-            ))}
+            )})}
           </div>
           {!isMobile && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
@@ -1055,7 +1094,6 @@ export default function BillingPage() {
           isOnline={isOnline}
           handlePrintA4={handlePrintA4}
           handlePrintThermal={handlePrintThermal}
-          onApplyAdjustment={handleApplyAdjustment}
           onRequestApproval={handleRequestApproval}
         />
 

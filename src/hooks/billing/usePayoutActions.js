@@ -9,7 +9,7 @@
 
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // retained for /approvals
-import { batchSaveCommissions, updateCommissionStatus, updateCommission } from '../../api/billing/payoutApi';
+import { batchSaveCommissions, updateCommissionStatus } from '../../api/billing/payoutApi';
 
 /**
  * @param {object}   opts
@@ -224,15 +224,13 @@ export const usePayoutActions = ({
       return;
     }
 
-    const singlePayload = {
-      referrerId: editPayout.referrerId,
-      amount: parseFloat(editPayout.amount),
-      modality: editPayout.modality,
-      referenceNumber: editPayout.invoiceId,
-      remarks: editPayout.remarks,
-      status: editPayout.status || 'UNPAID',
-    };
-
+    // Only NEW multi-line payouts reach here — any edit to an existing
+    // commission (isSingle, or editPayout.approvalEdit) was already routed
+    // into the admin-approval branch above and returned. A direct single-
+    // commission update path used to live here too (updateCommission() +
+    // the PAYOUT_UPDATE outbox route); it was unreachable dead code since
+    // isSingle is guaranteed false by this point, so it's been removed —
+    // every edit to a recorded payout goes through approval, always.
     const batchPayload = {
       referrerId:      editPayout.referrerId,
       referenceNumber: editPayout.invoiceId,
@@ -245,11 +243,7 @@ export const usePayoutActions = ({
     const idemKey = crypto.randomUUID();
 
     if (!isOnline) {
-      if (isSingle) {
-        await addToOutbox('PAYOUT_UPDATE', { ...singlePayload, commissionId: editPayout.commissionId }, idemKey);
-      } else {
-        await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
-      }
+      await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
       notify({ type: 'info', title: 'Offline', message: 'Payout will sync when reconnected.' });
       setIsPayoutDrawerOpen(false);
       return;
@@ -257,24 +251,13 @@ export const usePayoutActions = ({
 
     try {
       setIsSavingPayout(true);
-      if (isSingle) {
-        await updateCommission(editPayout.commissionId, {
-          ...singlePayload,
-          commissionId: editPayout.commissionId,
-        }, idemKey);
-      } else {
-        await batchSaveCommissions(batchPayload, idemKey);
-      }
+      await batchSaveCommissions(batchPayload, idemKey);
       setIsPayoutDrawerOpen(false);
       refreshAllFinancialData();
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
-        if (isSingle) {
-          await addToOutbox('PAYOUT_UPDATE', { ...singlePayload, commissionId: editPayout.commissionId }, idemKey);
-        } else {
-          await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
-        }
+        await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
         notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
         setIsPayoutDrawerOpen(false);
       } else {

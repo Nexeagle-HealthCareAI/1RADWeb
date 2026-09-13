@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { registerStudy, uploadStudyAssetToStudy } from '../utils/azureUpload';
 import useOffline from '../hooks/useOffline';
+import { QRCodeSVG } from 'qrcode.react';
 
 /**
  * Cloud PACS-only worklist + Upload Center.
@@ -79,6 +80,12 @@ const fmtBytes = (b) => {
 
 export default function StudiesPage() {
   const navigate = useNavigate();
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 767);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 767);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const { isOnline, addToOutbox } = useOffline();
   const [tab, setTab] = useState(TABS.ALL);
   const [q, setQ] = useState('');
@@ -115,6 +122,9 @@ export default function StudiesPage() {
   const [shareLink, setShareLink] = useState('');
   const [shareBusy, setShareBusy] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+
+  // Mobile 3-dot menu
+  const [openMobileMenuId, setOpenMobileMenuId] = useState(null);
 
   // Delete confirm + toast
   const [deleteFor, setDeleteFor] = useState(null);
@@ -466,8 +476,11 @@ export default function StudiesPage() {
         @keyframes stPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
         @keyframes stShimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
         @keyframes stToastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes stSlideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes stSpin { to { transform: rotate(360deg); } }
 
         .st-page { background: #f8fafc; min-height: 100vh; padding: 32px 40px 60px; box-sizing: border-box; font-family: system-ui, 'Segoe UI', Roboto, sans-serif; }
+        .st-spinner { width: 48px; height: 48px; border: 4px solid #eef2f7; border-top-color: #1d4ed8; border-radius: 50%; animation: stSpin 0.8s linear infinite; }
 
         .st-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
         .st-header h1 { margin: 0 0 4px; font-size: 24px; font-weight: 800; color: #0a1628; letter-spacing: -0.5px; }
@@ -573,10 +586,52 @@ export default function StudiesPage() {
         .st-toast.ok { background: #0a1628; color: #34d399; }
         .st-toast.err { background: #0a1628; color: #f87171; }
 
-        @media (max-width: 720px) {
-          .st-page { padding: 20px 16px 48px; }
-          .st-header h1 { font-size: 20px; }
-          .st-search { max-width: none; }
+        @media (max-width: 767px) {
+          .st-page { padding: 16px 12px 100px; }
+          .st-header h1 { font-size: 22px; }
+          .st-header p { font-size: 12px; }
+          
+          /* Hide desktop specific elements */
+          .st-desktop-only { display: none !important; }
+          
+          /* Mobile Toolbar */
+          .st-toolbar { gap: 8px; margin-bottom: 16px; }
+          .st-seg { flex-shrink: 0; }
+          .st-search { min-width: 140px; flex-shrink: 0; }
+          .st-input.plain { min-width: 100px; flex-shrink: 0; }
+          .st-refresh { flex-shrink: 0; }
+          .st-count { flex-shrink: 0; white-space: nowrap; }
+
+          /* Mobile Bottom Sheet Modal */
+          .st-backdrop { align-items: flex-end; padding: 0; }
+          .st-modal { 
+            width: 100%; max-width: 100%; 
+            border-bottom-left-radius: 0; border-bottom-right-radius: 0; 
+            padding: 24px 20px 32px; 
+            animation: stSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); 
+            margin: 0; max-height: 90vh;
+          }
+
+          /* Mobile Cards */
+          .st-mobile-list { display: flex; flex-direction: column; gap: 12px; }
+          .st-m-card { background: white; border-radius: 16px; padding: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.03); transition: transform 0.15s; }
+          .st-m-card:active { transform: scale(0.98); }
+          .st-m-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+          
+          .st-m-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+          
+          .st-m-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #6b7280; margin-bottom: 16px; font-weight: 600; }
+          .st-m-meta-item { display: flex; align-items: center; gap: 4px; }
+          
+          .st-m-actions { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 14px; }
+          .st-m-btn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; background: #f8fafc; color: #475569; border: none; outline: none; -webkit-tap-highlight-color: transparent; }
+          .st-m-btn.primary { background: #eff6ff; color: #1d4ed8; }
+          .st-m-btn:active { background: #e2e8f0; }
+          .st-m-btn.primary:active { background: #dbeafe; }
+
+          /* Mobile Upload Button */
+          .st-m-upload-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border-radius: 14px; background: linear-gradient(135deg, #38bdf8, #1d4ed8); color: white; font-size: 15px; font-weight: 800; border: none; box-shadow: 0 8px 24px rgba(29,78,216,0.3); margin-bottom: 16px; outline: none; -webkit-tap-highlight-color: transparent; }
+          .st-m-upload-btn:active { transform: scale(0.98); }
         }
       `}</style>
 
@@ -589,22 +644,29 @@ export default function StudiesPage() {
       </div>
 
       {/* Upload Center */}
-      <div
-        className={`st-drop${dragOver ? ' over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <input
-          ref={fileInputRef} type="file" multiple accept=".zip,.dcm,.dicom,application/zip,application/dicom"
-          style={{ display: 'none' }}
-          onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
-        />
-        <div className="st-drop-icon"><Icons.Upload /></div>
-        <b>Drop DICOM ZIP / .dcm files here, or click to choose</b>
-        <span>Each upload creates a study; matching to a patient/visit runs automatically.</span>
-      </div>
+      {!isMobile ? (
+        <div
+          className={`st-drop${dragOver ? ' over' : ''} st-desktop-only`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <div className="st-drop-icon"><Icons.Upload /></div>
+          <b>Drop DICOM ZIP / .dcm files here, or click to choose</b>
+          <span>Each upload creates a study; matching to a patient/visit runs automatically.</span>
+        </div>
+      ) : (
+        <button className="st-m-upload-btn" onClick={() => fileInputRef.current?.click()}>
+          <Icons.Upload /> Upload Study
+        </button>
+      )}
+
+      <input
+        ref={fileInputRef} type="file" multiple accept=".zip,.dcm,.dicom,application/zip,application/dicom"
+        style={{ display: 'none' }}
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+      />
 
       {uploads.length > 0 && (
         <div className="st-uploads">
@@ -637,6 +699,9 @@ export default function StudiesPage() {
           <Icons.Search />
           <input className="st-input" placeholder="Search name / MRN / accession…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        
+        {isMobile && <div style={{ flexBasis: '100%', height: 0 }} />}
+
         <input className="st-input plain" style={{ width: 110 }} placeholder="Modality" value={modality} onChange={(e) => setModality(e.target.value)} />
         <div className="st-seg">
           {[{ k: 'all', label: 'All dates' }, { k: 'today', label: 'Today' }, { k: 'range', label: 'Date range' }].map((d) => (
@@ -670,8 +735,9 @@ export default function StudiesPage() {
       )}
 
       {/* Worklist */}
-      <div className="st-card" style={{ overflow: 'hidden' }}>
-        <div className="st-table-wrap">
+      {!isMobile ? (
+        <div className="st-card st-desktop-only" style={{ overflow: 'hidden' }}>
+          <div className="st-table-wrap">
           <table className="st-table">
             <thead>
               <tr>
@@ -768,7 +834,6 @@ export default function StudiesPage() {
                       {isInbox(s) && <button className="st-btn" onClick={() => setAssignFor(s)}>Assign</button>}
                       <button className="st-btn" disabled={s.status !== 'Ready'} title="Create a 24-hour secret link" onClick={() => openShare(s)}>Share</button>
                       <button className="st-btn" onClick={() => exportStudy(s)}>Export</button>
-                      {/* Delete is PACS-only (backend blocks appointment-linked studies). */}
                       {!s.appointmentId && <button className="st-btn st-btn-danger" onClick={() => setDeleteFor(s)}>Delete</button>}
                     </div>
                   </td>
@@ -778,7 +843,7 @@ export default function StudiesPage() {
           </table>
         </div>
 
-        {/* Pagination — numbered pages (up to 10 in a sliding window) */}
+        {/* Desktop Pagination */}
         {!loading && total > PAGE_SIZE && (
           <div className="st-pager">
             <span style={{ marginRight: 'auto' }}>
@@ -806,6 +871,107 @@ export default function StudiesPage() {
           </div>
         )}
       </div>
+      ) : (
+        <div className="st-mobile-list">
+          {loading && [...Array(4)].map((_, i) => (
+             <div key={`sk-${i}`} className="st-m-card">
+                <div className="st-m-top">
+                   <div className="st-patient">
+                     <div className="st-skel" style={{ width: 40, height: 40, borderRadius: 12 }} />
+                     <div>
+                       <div className="st-skel" style={{ width: 120, height: 16, marginBottom: 6 }} />
+                       <div className="st-skel" style={{ width: 80, height: 12 }} />
+                     </div>
+                   </div>
+                   <div className="st-skel" style={{ width: 50, height: 22, borderRadius: 8 }} />
+                </div>
+                <div className="st-skel" style={{ width: '100%', height: 40, borderRadius: 10 }} />
+             </div>
+          ))}
+
+          {!loading && studies.length === 0 && (
+             <div className="st-m-card" style={{ padding: '40px 20px', textAlign: 'center' }}>
+               <div className="st-empty-icon" style={{ margin: '0 auto 16px' }}>{tab === TABS.INBOX ? <Icons.Inbox /> : <Icons.Scan />}</div>
+               <b style={{ display: 'block', fontSize: 16, color: '#0a1628', marginBottom: 6 }}>{tab === TABS.INBOX ? 'Inbox zero' : 'No studies yet'}</b>
+               <span style={{ fontSize: 13, color: '#6b7280' }}>Tap upload to add DICOM files.</span>
+             </div>
+          )}
+
+          {!loading && studies.map((s) => (
+            <div key={s.imagingStudyId} className="st-m-card">
+              <div className="st-m-top">
+                <div className="st-patient">
+                  <div className="st-avatar" style={{ background: avatarColor(s.patientName), width: 40, height: 40, borderRadius: 12, fontSize: 14 }}>
+                    {initials(s.patientName)}
+                  </div>
+                  <div>
+                    <div className="st-pname" style={{ fontSize: 15 }}>{s.patientName || 'Unknown patient'}</div>
+                    <div className="st-sub" style={{ fontSize: 12 }}>{s.dicomPatientId ? `MRN ${s.dicomPatientId}` : 'No MRN'}</div>
+                  </div>
+                </div>
+                {s.modality && <span className="st-mod">{s.modality}</span>}
+              </div>
+
+              <div className="st-m-tags">
+                {statusPill(s)}
+                {reportPill(s)}
+                {linkPill(s)}
+              </div>
+
+              <div className="st-m-meta">
+                <div className="st-m-meta-item">📅 {fmtDate(s.studyDate)}</div>
+                {s.accessionNumber && <div className="st-m-meta-item">🎫 {s.accessionNumber}</div>}
+                <div className="st-m-meta-item">💾 {fmtBytes(s.sizeBytes)}</div>
+              </div>
+
+              <div className="st-m-actions">
+                <button className="st-m-btn primary" disabled={s.status !== 'Ready'} onClick={() => window.open(`/reporting?studyId=${s.imagingStudyId}&view=dicom`, '_blank')}>
+                   <Icons.Scan /> View
+                </button>
+                <button className="st-m-btn" disabled={s.status !== 'Ready'} onClick={() => openShare(s)}>Share</button>
+                
+                <div style={{ position: 'relative' }}>
+                  <button 
+                    className="st-m-btn" 
+                    style={{ width: '100%', padding: '10px 0', fontSize: '18px', lineHeight: 1 }} 
+                    onClick={() => setOpenMobileMenuId(openMobileMenuId === s.imagingStudyId ? null : s.imagingStudyId)}
+                  >
+                    ⋮
+                  </button>
+                  {openMobileMenuId === s.imagingStudyId && (
+                    <>
+                      <div style={{ position: 'fixed', inset: 0, zIndex: 1250 }} onClick={() => setOpenMobileMenuId(null)} />
+                      <div style={{
+                        position: 'absolute', bottom: 'calc(100% + 8px)', right: 0,
+                        background: 'white', borderRadius: '12px', padding: '6px',
+                        boxShadow: '0 10px 40px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0',
+                        zIndex: 1300, minWidth: '140px', display: 'flex', flexDirection: 'column', gap: '4px'
+                      }}>
+                        {isInbox(s) && (
+                          <button className="st-m-btn" style={{ justifyContent: 'flex-start' }} onClick={() => { setOpenMobileMenuId(null); setAssignFor(s); }}>Assign</button>
+                        )}
+                        <button className="st-m-btn" style={{ justifyContent: 'flex-start' }} onClick={() => { setOpenMobileMenuId(null); exportStudy(s); }}>Export</button>
+                        {!s.appointmentId && (
+                          <button className="st-m-btn" style={{ justifyContent: 'flex-start', color: '#dc2626' }} onClick={() => { setOpenMobileMenuId(null); setDeleteFor(s); }}>Delete</button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Mobile Pagination */}
+          {!loading && total > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+              <button className="st-page-btn" style={{ padding: '8px 16px', height: 'auto', borderRadius: 10 }} disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Prev</button>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#6b7280' }}>Page {page} of {totalPages}</span>
+              <button className="st-page-btn" style={{ padding: '8px 16px', height: 'auto', borderRadius: 10 }} disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Assign modal */}
       {assignFor && (
@@ -925,12 +1091,31 @@ export default function StudiesPage() {
             </div>
 
             {shareBusy ? (
-              <div className="st-sub" style={{ padding: '24px 0', textAlign: 'center' }}>Generating secure link…</div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: '16px' }}>
+                <div className="st-spinner" />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '16px', fontWeight: 800, color: '#0a1628', marginBottom: '4px' }}>Securing your study...</div>
+                  <div style={{ fontSize: '13px', color: '#64748b' }}>Generating 24-hour access link</div>
+                </div>
+              </div>
             ) : (
               <>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <input className="st-input plain" readOnly value={shareLink} onFocus={(e) => e.target.select()} style={{ flex: 1, fontSize: 12 }} />
-                  <button className="st-btn st-btn-primary" onClick={copyShare}>{shareCopied ? '✓ Copied' : 'Copy'}</button>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ 
+                    padding: '8px', background: 'white', borderRadius: '12px', 
+                    border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                  }}>
+                    <QRCodeSVG value={shareLink} size={isMobile ? 180 : 120} level="M" includeMargin={false} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input className="st-input plain" readOnly value={shareLink} onFocus={(e) => e.target.select()} style={{ flex: 1, fontSize: '12px' }} />
+                      <button className="st-btn st-btn-primary" onClick={copyShare}>{shareCopied ? '✓ Copied' : 'Copy'}</button>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, textAlign: isMobile ? 'center' : 'left' }}>
+                      Scan QR code with your mobile camera to instantly open this study.
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '10px 14px', fontSize: 12, color: '#92400e', lineHeight: 1.6, marginBottom: 14 }}>

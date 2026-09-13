@@ -356,6 +356,8 @@ function resolveRoute(item) {
     case 'EXPENSE_STATUS_UPDATE':return { method: 'PUT',    url: `/finance/expenses/${p.id}/status`,
                                           body: { status: p.status } };
     case 'PAYMENT':              return { method: 'POST',   url: '/finance/payments' };
+    case 'DISCOUNT':             return { method: 'POST',   url: `/finance/invoices/${p.invoiceId}/discount` };
+    case 'CREDIT':               return { method: 'POST',   url: '/finance/credit/apply' };
     case 'REPORT':               return { method: 'POST',   url: '/reporting/save' };
     case 'REPORT_FINALIZE':      return { method: 'POST',   url: '/reporting/report/finalize' };
     case 'REPORT_ADDENDUM':      return { method: 'POST',   url: '/reporting/report/addendum' };
@@ -516,20 +518,61 @@ async function pushCycle() {
   return stats;
 }
 
+// Entity key → puller, in priority order. Used both as "pull everything"
+// (default) and as the lookup table for a scoped subset (see runAllPulls).
+const ENTITY_PULLS = [
+  ['appointments',         'Appointments',         pullAppointments],
+  ['patients',             'Patients',             pullPatients],
+  ['reports',              'Reports',              pullReports],
+  ['invoices',             'Invoices',             pullInvoices],
+  ['expenses',             'Expenses',             pullExpenses],
+  ['referrers',            'Referrers',            pullReferrers],
+  ['referralCommissions',  'Referral commissions', pullReferralCommissions],
+  ['personnel',            'Personnel',            pullPersonnel],
+  ['serviceCharges',       'Price registry',       pullServiceCharges],
+];
+
 // Single coordinated pull cycle.
 // Steady-state: always uses updatedAfter watermarks for tiny delta scans.
-async function runAllPulls() {
-  await pullAppointments();
-  await pullPatients();
-  await pullReports();
-  await pullInvoices();
-  await pullExpenses();
-  await pullReferrers();
-  await pullReferralCommissions();
-  // Reference data last — lowest priority, tiny payloads.
-  try { await pullPersonnel(); }      catch (err) { console.warn('[SYNC] Personnel refresh failed', err?.message || err); }
-  try { await pullServiceCharges(); } catch (err) { console.warn('[SYNC] Price registry refresh failed', err?.message || err); }
-  await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+//
+// Each entity's pull is an independent round trip to a different endpoint
+// writing to a different Dexie table — nothing here depends on another
+// entity having pulled first. They used to run as 9 sequential `await`s,
+// which meant every syncNow() (fired after literally every appointment
+// action, every billing action, and every page mount) paid for the SUM of
+// all 9 requests' latency before Billing/Appointments could even see the
+// one entity that actually changed. Running them concurrently instead
+// bounds the wait to the SLOWEST single request. Promise.allSettled (not
+// Promise.all) so one bad endpoint can't block the other 8 from applying
+// their deltas.
+//
+// `scope` optionally restricts which entities are pulled — e.g. an
+// appointment status change only needs ['appointments', 'patients'], and a
+// billing action only needs the financial group. Omit it (or pass null) to
+// pull everything, which is what the steady-state auto-tick and boot still
+// do — this is purely an opt-in narrowing for callers that know exactly
+// what they just changed.
+async function runAllPulls(scope = null) {
+  const entities = scope && scope.length
+    ? ENTITY_PULLS.filter(([key]) => scope.includes(key))
+    : ENTITY_PULLS;
+
+  const results = await Promise.allSettled(entities.map(([, , pull]) => pull()));
+
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      const [, label] = entities[i];
+      console.warn(`[SYNC] ${label} pull failed`, result.reason?.message || result.reason);
+    }
+  });
+
+  // Only stamp a successful sync if every entity actually came down —
+  // matches the previous behaviour where a thrown error aborted the whole
+  // chain before this line was reached. A scoped call still only vouches
+  // for the entities it actually asked for.
+  if (results.every(r => r.status === 'fulfilled')) {
+    await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+  }
 }
 
 // Progressive cold-boot pull.
@@ -565,28 +608,6 @@ async function runProgressivePulls() {
   await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
 
   console.info('[SYNC] Progressive pulls complete (30-day offline window for finance)');
-}
-
-async function pullCycle() {
-  if (pulling) return;
-  if (!navigator.onLine) return;
-  // B2 Track 5 — don't waste a network request when there's no active
-  // hospital yet (post-logout window, or pre-centre-resolution boot).
-  // tables.* would silently no-op anyway, but the GET still goes out.
-  if (!getActiveHospitalId()) return;
-  pulling = true;
-  const startedAt = Date.now();
-  try {
-    await runAllPulls();
-    logEvent('pull.cycle', { ok: true, ms: Date.now() - startedAt });
-  } catch (err) {
-    // Surface but don't throw — the engine must survive a single bad pull.
-    // The next interval try will pick up wherever we left off.
-    console.warn('[SYNC] Pull cycle failed', err?.message || err);
-    logEvent('pull.failure', { ms: Date.now() - startedAt, message: err?.message || String(err) });
-  } finally {
-    pulling = false;
-  }
 }
 
 // The steady-state heartbeat (every PULL_INTERVAL_MS). Unlike the old
@@ -687,14 +708,39 @@ export function stopSyncEngine() {
   if (startSyncEngine._cleanup) startSyncEngine._cleanup();
 }
 
-// User-gesture refresh (pull-to-refresh on worklist, post-mutation nudge).
-// Runs the full push-then-pull cycle so a refresh tap also picks up any
-// queued mutations and pushes them.
-export async function syncNow() {
-  await pushAndPullCycle();
-  // Always fire a pull regardless of push outcome — the user gesture
-  // implies "show me the freshest state."
-  await pullCycle();
+// User-gesture refresh (pull-to-refresh on worklist, post-mutation nudge —
+// called after every appointment status change and every billing action).
+// Pushes any queued outbox items, then runs ONE parallel delta pull.
+//
+// This used to call pushAndPullCycle() (push + a quick appointments/
+// patients/reports pull) immediately followed by a second, separate full
+// pull covering all 9 entities including those same three again — so a
+// single user action paid for appointments/patients/reports twice in a
+// row before Billing's own entities (invoices/expenses/commissions, which
+// come later in the list) even started. Collapsed to a single push +
+// single pull, mirroring autoSyncTick's shape.
+//
+// `scope` (optional array of ENTITY_PULLS keys) lets a caller that knows
+// exactly what it just changed skip the other entities entirely — e.g.
+// an appointment status change doesn't need invoices/expenses/personnel
+// re-pulled. Omit it for the old "refresh everything" behaviour.
+export async function syncNow(scope = null) {
+  if (pulling) return;
+  if (!navigator.onLine) return;
+  if (!getActiveHospitalId()) return;
+  pulling = true;
+  const startedAt = Date.now();
+  try {
+    await outboxClearBackoff();
+    await pushCycle();
+    await runAllPulls(scope);
+    logEvent('pull.cycle', { ok: true, ms: Date.now() - startedAt, scope: scope || 'all' });
+  } catch (err) {
+    console.warn('[SYNC] syncNow failed', err?.message || err);
+    logEvent('pull.failure', { ms: Date.now() - startedAt, message: err?.message || String(err) });
+  } finally {
+    pulling = false;
+  }
 }
 
 // Lightweight nudge for the addToOutbox path: just drain the queue.

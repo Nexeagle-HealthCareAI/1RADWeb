@@ -208,7 +208,10 @@ const RevenueHub = ({
     if (app.referralCutValue) return app.referralCutValue;
     const service = serviceRegistry.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === app.service?.toLowerCase());
     if (service && service.referralCutValue) return service.referralCutValue;
-    if (app.referrerName || app.doctor) return getServicePrice(app.service) * 0.2;
+    // No cut configured on the appointment or the service registry — show
+    // "unknown" (0, rendered as "—" below) rather than guessing a flat 20%.
+    // A fabricated rate here would silently misstate EXPECTED INCENTIVE for
+    // any referrer whose real negotiated rate isn't exactly 20%.
     return 0;
   };
 
@@ -351,7 +354,7 @@ const RevenueHub = ({
       return [b ? b.short : (a.status || '--'), a.reason || ''];
     };
 
-    let totals = { gross: 0, discount: 0, net: 0, cut: 0, income: 0 };
+    let totals = { gross: 0, extra: 0, discount: 0, net: 0, cut: 0, income: 0 };
 
     if (timeFilter === 'FUTURE') {
       headers = [
@@ -492,28 +495,30 @@ const RevenueHub = ({
       }}>
          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
             <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
-            <div style={{ 
+            <div className="filter-tabs" style={{ 
               display: 'flex', 
               background: 'white', 
-              padding: '3px', 
-              borderRadius: '10px', 
+              padding: '4px', 
+              borderRadius: '999px', 
               border: '1px solid #e2e8f0',
               overflowX: 'auto',
-              width: isMobile ? '100%' : 'auto'
+              width: isMobile ? '100%' : 'auto',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              gap: '2px'
             }}>
-               {/* No FUTURE tab — future appointments never carry invoices (a paid
-                   visit moved to a future date is refunded + its bill voided), so
-                   there's nothing pre-billed to show here. */}
+               <style>{`.filter-tabs::-webkit-scrollbar { display: none; }`}</style>
                {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                  <button
                   key={t}
                   onClick={() => setTimeFilter(t)}
                   style={{ 
-                    padding: '8px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    padding: '8px 14px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                     background: timeFilter === t ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'transparent',
                     color: timeFilter === t ? 'white' : '#64748b',
                     cursor: 'pointer', transition: 'all 0.2s',
-                    flex: isMobile ? 1 : 'none',
+                    flex: isMobile ? '1 0 auto' : 'none',
                     whiteSpace: 'nowrap'
                   }}
                  >{t}</button>
@@ -568,17 +573,20 @@ const RevenueHub = ({
            <>
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS:</span>
-                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+                <div className="filter-tabs" style={{ 
+                  display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
+                }}>
                    {['ALL', 'PAID', 'PENDING'].map(s => (
                      <button 
                       key={s}
                       onClick={() => setStatusFilter(s)}
                       style={{ 
-                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                         background: statusFilter === s ? '#0f52ba' : 'transparent',
                         color: statusFilter === s ? 'white' : '#64748b',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none'
+                        flex: isMobile ? '1 0 auto' : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                      >{s}</button>
                    ))}
@@ -596,17 +604,20 @@ const RevenueHub = ({
 
          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
             <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MODALITY:</span>
-            <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+            <div className="filter-tabs" style={{ 
+              display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
+            }}>
                {['ALL', 'MRI', 'CT', 'X-RAY', 'USG'].map(m => (
                  <button 
                   key={m}
                   onClick={() => setModalityFilter(m)}
                   style={{ 
-                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                     background: modalityFilter === m ? '#0f52ba' : 'transparent',
                     color: modalityFilter === m ? 'white' : '#64748b',
                     cursor: 'pointer', transition: 'all 0.2s',
-                    flex: isMobile ? 1 : 'none'
+                    flex: isMobile ? '1 0 auto' : 'none',
+                    whiteSpace: 'nowrap'
                   }}
                  >{m}</button>
                ))}
@@ -708,7 +719,7 @@ const RevenueHub = ({
             </div>
             <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '12px' }}>TOTAL COLLECTED</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{(liveStats.netProfit + liveStats.totalCommission).toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{liveStats.totalCollected.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>CLINIC INCOME</p>
@@ -765,8 +776,9 @@ const RevenueHub = ({
                )}
              </div>
            </div>
-           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
+           <div style={{ overflowX: isMobile ? 'visible' : 'auto' }}>
+            {!isMobile ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
                   <th style={{ padding: '15px 10px', width: '40px', textAlign: 'center' }}>
@@ -877,7 +889,7 @@ const RevenueHub = ({
                         <td colSpan="4" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL INVOICE</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#0f52ba' }}>₹{(inv.totalAmount || 0).toLocaleString()}</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹{(inv.commissionAmount || 0).toLocaleString()}</td>
-                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#166534' }}>₹{(inv.totalAmount - (inv.commissionAmount || 0)).toLocaleString()}</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#166534' }}>₹{((inv.totalAmount || 0) - (inv.commissionAmount || 0)).toLocaleString()}</td>
                      </tr>
                    ))}
                  </>
@@ -1136,7 +1148,16 @@ const RevenueHub = ({
 
                              let lines = existingForInvoice.length > 0
                                ? existingForInvoice.map((commission, index) => {
-                                   const item = items.find(candidate =>
+                                   // Prefer the exact service this commission was earned on
+                                   // (appointmentServiceId) — modality-string matching alone
+                                   // collapses when a visit has two services of the same
+                                   // modality (e.g. two CT scans), silently attaching the
+                                   // wrong service's charge as this line's payout ceiling.
+                                   // Fall back to modality matching only for legacy rows
+                                   // recorded before AppointmentServiceId was tracked.
+                                   const item = (commission.appointmentServiceId
+                                     ? items.find(candidate => candidate.appointmentServiceId === commission.appointmentServiceId)
+                                     : null) || items.find(candidate =>
                                      String(candidate.modality || candidate.Modality || '').toUpperCase()
                                        === String(commission.modality || '').toUpperCase()) || items[index];
                                    return {
@@ -1220,6 +1241,325 @@ const RevenueHub = ({
                 )}
              </tbody>
            </table>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', paddingBottom: '20px' }}>
+                {timeFilter === 'FUTURE' ? (
+                  <>
+                    {paginatedFutureAppointments.map(app => (
+                      <div key={app.appointmentId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.has(app.appointmentId)} 
+                              onChange={() => toggleSelectRow(app.appointmentId)}
+                              style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#0f52ba' }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>
+                                {app.dailyTokenNumber != null ? `#${String(app.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
+                                {formatDate(app.date || app.dateTime)}
+                              </div>
+                            </div>
+                          </div>
+                          <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>{(app.modality || 'US').toUpperCase()}</span>
+                        </div>
+                        <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Ref: {(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</div>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginTop: '8px' }}>{app.service}</div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900 }}>BASE FEE</div>
+                            <div style={{ fontSize: '14px', color: '#0f52ba', fontWeight: 950 }}>₹{getServicePrice(app.service).toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#e11d48', fontWeight: 900 }}>INCENTIVE</div>
+                            <div style={{ fontSize: '14px', color: '#e11d48', fontWeight: 950 }}>{getServiceCut(app) > 0 ? `₹${getServiceCut(app).toLocaleString()}` : '—'}</div>
+                          </div>
+                        </div>
+                        <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: '#166534', fontWeight: 900 }}>CLINIC INCOME</span>
+                          <span style={{ fontSize: '16px', color: '#166534', fontWeight: 950 }}>₹{(getServicePrice(app.service) - getServiceCut(app)).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {pagedInvoices.length > 0 && (
+                      <div style={{ padding: '10px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textAlign: 'center' }}>PRE-BILLED APPOINTMENTS</div>
+                    )}
+                    {pagedInvoices.map(inv => (
+                      <div key={inv.invoiceId} style={{ background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', opacity: 0.85 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.has(inv.invoiceId)} 
+                              onChange={() => toggleSelectRow(inv.invoiceId)}
+                              style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#0f52ba' }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>
+                                {inv.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 900, marginTop: '2px' }}>BILLED</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Ref: {(inv.referrerName || 'SELF').toUpperCase()}</div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900 }}>BILLED (MANUAL)</div>
+                            <div style={{ fontSize: '14px', color: '#0f52ba', fontWeight: 950 }}>₹{(inv.totalAmount || 0).toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#e11d48', fontWeight: 900 }}>INCENTIVE</div>
+                            <div style={{ fontSize: '14px', color: '#e11d48', fontWeight: 950 }}>₹{(inv.commissionAmount || 0).toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: '#166534', fontWeight: 900 }}>CLINIC INCOME</span>
+                          <span style={{ fontSize: '16px', color: '#166534', fontWeight: 950 }}>₹{((inv.totalAmount || 0) - (inv.commissionAmount || 0)).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  pagedInvoices.map(inv => {
+                    const tintFor = (m) => {
+                      const k = String(m || '').toUpperCase();
+                      return ({
+                        'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                        CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                        MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                        ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                        USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                        MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                        MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                        DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                        PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                      }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+                    };
+                    const items = inv.items || [];
+                    const order = [];
+                    const byMod = {};
+                    let gIdx = 1;
+                    const multi = items.length > 1;
+                    
+                    const getShortModality = (rawStr) => {
+                      let m = (String(rawStr || '').toUpperCase()) || 'OTHER';
+                      if (m === 'ULTRASOUND') return 'USG';
+                      if (m === 'MAMMOGRAPHY' || m === 'MG') return 'MAMMO';
+                      if (m === 'PET-CT') return 'PET';
+                      return m;
+                    };
+                    
+                    for (const it of items) {
+                      const m = getShortModality(it.modality || it.Modality || inv.modality);
+                      const name = it.description || it.serviceName || 'Service';
+                      const qty = Number(it.quantity) || 1;
+                      const baseLabel = name + (qty > 1 ? ` ×${qty}` : '');
+                      const label = multi ? `${gIdx++}. ${baseLabel}` : baseLabel;
+                      if (!(m in byMod)) { byMod[m] = []; order.push(m); }
+                      byMod[m].push(label);
+                    }
+                    
+                    const ap = approvalForInvoice(approvalMap, inv);
+                    const b = ap && approvalBadge(ap.status);
+
+                    return (
+                      <div key={inv.invoiceId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.has(inv.invoiceId)} 
+                              onChange={() => toggleSelectRow(inv.invoiceId)}
+                              style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#0f52ba' }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>
+                                {inv?.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
+                                {formatDate(inv?.serviceDate || inv?.createdAt, true)}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                            <span style={{
+                              padding: '6px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: 950,
+                              background: inv?.status === 'PAID' ? '#ecfdf5' : inv?.status === 'CANCELLED' ? '#f1f5f9' : inv?.status === 'PARTIAL' ? '#fffbeb' : '#fff7ed',
+                              color: inv?.status === 'PAID' ? '#059669' : inv?.status === 'CANCELLED' ? '#64748b' : inv?.status === 'PARTIAL' ? '#b45309' : '#ea580c'
+                            }}>
+                              {inv?.status === 'CANCELLED' ? '🚫 CANCELLED' : inv?.status === 'PARTIAL' ? '◐ PARTIAL' : (inv?.status || 'PENDING')}
+                            </span>
+                            {b && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: b.bg, color: b.color, border: `1px solid ${b.bd}` }}>{b.icon} {b.short}</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</div>
+                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Ref: {(inv?.referrerName || 'SELF').toUpperCase()}</div>
+                            </div>
+                          </div>
+                          
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                            {order.length === 0 ? (
+                               <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>{inv.modality ? getShortModality(inv.modality) : '—'}</span>
+                            ) : (
+                              order.map((m, i) => {
+                                const t = tintFor(m);
+                                return (
+                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                    <span style={{ flexShrink: 0, padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', paddingTop: '2px' }}>
+                                      {byMod[m].map((lbl, idx) => (
+                                        <span key={idx} style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>{lbl}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                           <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '10px' }}>
+                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginBottom: '2px' }}>BASE FEE</div>
+                             <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 900 }}>₹{(inv.grossAmount || 0).toLocaleString()}</div>
+                             {(inv.additionalCharges || 0) > 0 && <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '2px' }}>+₹{(inv.additionalCharges || 0).toLocaleString()} extra</div>}
+                           </div>
+                           <div style={{ background: '#f0f4ff', padding: '12px', borderRadius: '10px' }}>
+                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, marginBottom: '2px' }}>PATIENT BILL</div>
+                             <div style={{ fontSize: '15px', color: '#0f52ba', fontWeight: 950 }}>₹{(inv?.totalAmount || 0).toLocaleString()}</div>
+                             {(inv?.discountAmount || 0) > 0 && <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 800, marginTop: '2px' }}>-₹{(inv.discountAmount || 0).toLocaleString()} disc</div>}
+                           </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0fdf4', padding: '14px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                             <span style={{ fontSize: '11px', color: '#166534', fontWeight: 900, marginBottom: '2px' }}>CLINIC INCOME</span>
+                             <span style={{ fontSize: '18px', color: '#14532d', fontWeight: 950 }}>₹{(Number(inv?.totalAmount || 0) - (Number(inv?.commissionAmount) || 0)).toLocaleString()}</span>
+                          </div>
+                          {(Number(inv?.commissionAmount) || 0) > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                               <span style={{ fontSize: '10px', color: '#e11d48', fontWeight: 900, marginBottom: '2px' }}>INCENTIVE</span>
+                               <span style={{ fontSize: '14px', color: '#e11d48', fontWeight: 950 }}>₹{(Number(inv?.commissionAmount) || 0).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '6px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {inv?.isFree && (
+                              <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4', display: 'inline-block' }}>🎁 FREE</span>
+                            )}
+                            {(Number(advanceByPatient[String(inv?.patientId)]) || 0) > 0 && (
+                              <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', display: 'inline-block' }}>
+                                💳 Adv <b style={{ fontWeight: 950 }}>₹{(Number(advanceByPatient[String(inv?.patientId)]) || 0).toLocaleString()}</b>
+                              </span>
+                            )}
+                            {inv?.status === 'CANCELLED' && (
+                              <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 800, background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa', display: 'inline-block' }}>Refunded</span>
+                            )}
+                          </div>
+                          
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <button
+                              onClick={() => { celebrate(); setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                              style={{ padding: '11px 20px', borderRadius: '12px', border: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '1px solid #cbd5e1' : 'none', background: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'white' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '#475569' : 'white', fontSize: '13px', fontWeight: 950, cursor: 'pointer', boxShadow: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '0 1px 3px rgba(0,0,0,0.06)' : '0 4px 12px -3px rgba(15,82,186,0.45)' }}
+                            >{(inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'VIEW' : 'PAYMENT'}</button>
+                            <RowActionsMenu isMobile={isMobile}>
+                               <button
+                                 onClick={() => { celebrate(); handlePrintA4(inv); }}
+                                 style={{ padding: '12px', borderRadius: '10px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
+                               >Invoice</button>
+                               {inv?.status === 'PAID' && (
+                                 <>
+                                   <button
+                                     onClick={() => { celebrate(); handlePrintThermal(inv); }}
+                                     style={{ padding: '12px', borderRadius: '10px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
+                                   >Thermal Receipt</button>
+                                   <button
+                                     onClick={() => { celebrate(); handlePrintReceipt(inv); }}
+                                     style={{ padding: '12px', borderRadius: '10px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
+                                   >Receipt</button>
+                                 </>
+                               )}
+                               <div style={{ height: '1px', width: '100%', background: '#eef2f7', margin: '4px 0' }}></div>
+                               <button
+                                 onClick={async () => {
+                                    celebrate();
+                                    let refId = inv.referrerId;
+                                    if (!refId && inv.referrerName) {
+                                       const match = referrers.find(r => r.name?.toLowerCase() === (inv.referrerName || '').toLowerCase());
+                                       if (match) refId = match.referrerId || match.id;
+                                    }
+                                    if (!refId) {
+                                       setErrorModal({ isOpen: true, title: "FISCAL COMPLIANCE WARNING", message: `Invoice ${inv.displayId} has no referral partner attached. Assign a referrer on the invoice before recording a payout.` });
+                                       return;
+                                    }
+                                    const freshList = await verifyFreshList(() => fetchCommissions({ referrerId: refId }));
+                                    const commissionSource = freshList ?? referralCommissions ?? [];
+                                    const items = inv.items || [];
+                                    const ref = inv.displayId;
+                                    const existingForInvoice = commissionSource.filter(c => c.appointmentId === inv.appointmentId || (c.referenceNumber || c.reference) === ref || c.id === inv.commissionId);
+                                    if (existingForInvoice.length === 0) {
+                                      setErrorModal({ isOpen: true, title: "NO RECORDED PAYOUT", message: `Invoice ${inv.displayId} has no existing referral payout to revise. Record the payout through the approved payout workflow first.` });
+                                      return;
+                                    }
+                                    const lineFromItem = (item) => {
+                                      const service = serviceRegistry?.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === item.description?.toLowerCase());
+                                      const modality = String(item.modality || item.Modality || service?.modality || inv.modality || 'MRI').toUpperCase();
+                                      const registryCut = (service?.referralCutValue || 0) * (item.quantity || 1);
+                                      const prior = existingForInvoice.find(c => String(c.modality || '').toUpperCase() === modality);
+                                      return { commissionId: prior?.id || null, modality, amount: prior?.amount ?? prior?.payoutAmount ?? (registryCut || ''), status: prior?.status || prior?.commissionStatus || 'UNPAID', serviceName: item.description || modality, appointmentServiceId: item.appointmentServiceId || null, serviceAmount: (Number(item.amount) || 0) * (Number(item.quantity) || 1) };
+                                    };
+                                    let lines = existingForInvoice.length > 0 ? existingForInvoice.map((commission, index) => {
+                                      // Prefer the exact service this commission was earned on
+                                      // (appointmentServiceId); modality-string matching alone
+                                      // collapses when a visit has two same-modality services.
+                                      // Fall back to modality matching for legacy rows recorded
+                                      // before AppointmentServiceId was tracked.
+                                      const item = (commission.appointmentServiceId ? items.find(candidate => candidate.appointmentServiceId === commission.appointmentServiceId) : null) || items.find(candidate => String(candidate.modality || candidate.Modality || '').toUpperCase() === String(commission.modality || '').toUpperCase()) || items[index];
+                                      return { commissionId: commission.id, modality: String(commission.modality || item?.modality || inv.modality || 'MRI').toUpperCase(), amount: commission.amount ?? commission.payoutAmount ?? 0, status: commission.status || commission.commissionStatus || 'UNPAID', serviceName: item?.description || `Service ${index + 1}`, serviceAmount: (Number(item?.amount) || 0) * (Number(item?.quantity) || 1) };
+                                    }) : items.length > 0 ? items.map(lineFromItem) : [{ modality: String(inv.modality || 'MRI').toUpperCase(), amount: inv.commissionAmount || '', status: 'UNPAID', serviceName: inv.modality || 'Service', appointmentServiceId: null, serviceAmount: Number(inv.totalAmount) || Number(inv.grossAmount) || 0 }];
+                                    setEditPayout({ commissionId: '', approvalEdit: existingForInvoice.length > 0, referrerId: refId, referrerName: inv.referrerName || 'DIRECT', invoiceId: ref, appointmentId: inv.appointmentId || null, patientName: inv.patientName || '', remarks: `Commission for ${inv.displayId} (${inv.patientName})`, lines });
+                                    setIsPayoutDrawerOpen(true);
+                                 }}
+                                 style={{ padding: '10px', borderRadius: '10px', border: 'none', background: isPayoutPaid(inv) ? '#ecfdf5' : '#fff1f2', color: isPayoutPaid(inv) ? '#166534' : '#e11d48', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 5px rgba(225,29,72,0.1)' }} 
+                               >{isPayoutPaid(inv) ? 'REVISE PAID PAYOUT' : 'UPDATE PAYOUT'}</button>
+
+                               {inv?.status === 'PAID' ? (
+                                  <span style={{ padding: '10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '11px', fontWeight: 950, cursor: 'not-allowed', textAlign: 'center' }}>🔒 LOCKED (DEL)</span>
+                                ) : inv?.appointmentId ? (
+                                  <span onClick={() => setErrorModal({ isOpen: true, title: 'TIED TO AN APPOINTMENT', message: `Invoice ${inv.displayId || 'N/A'} is linked to an appointment, so it can't be deleted here.` })} style={{ padding: '10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '11px', fontWeight: 950, cursor: 'pointer', textAlign: 'center' }}>🔒 LOCKED (DEL)</span>
+                                ) : (
+                                  <button onClick={() => setDeleteConfirmModal({ isOpen: true, invoiceId: inv.invoiceId, commissionId: inv.commissionId, displayId: inv.displayId || 'N/A' })} style={{ padding: '10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>DELETE</button>
+                                )}
+                            </RowActionsMenu>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                {(timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)) === 0 && (
+                  <div style={{ padding: '80px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '14px', fontWeight: 700, background: 'white', borderRadius: '16px', border: '1px dashed #cbd5e1' }}>NO DATA DETECTED IN ACTIVE SCOPE</div>
+                )}
+              </div>
+            )}
                 {/* ── Load More / Showing count ────────────────────────────── */}
              {(timeFilter !== 'FUTURE') && (
                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '20px 0 8px' }}>

@@ -157,7 +157,7 @@ export default function TechnicianPage() {
   // sync; the liveQuery above then re-renders from the refreshed cache. Offline,
   // this is a no-op and the cached worklist stays on screen.
   const fetchWorklist = useCallback(async () => {
-    try { await syncNow(); } catch (err) { console.warn('[TECH] manual sync failed', err?.message || err); }
+    try { await syncNow(['appointments', 'patients']); } catch (err) { console.warn('[TECH] manual sync failed', err?.message || err); }
   }, []);
 
   // Warm the personnel snapshot; the doctor list renders from watchPersonnel

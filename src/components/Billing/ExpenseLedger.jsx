@@ -732,9 +732,13 @@ const CategoryBreakdown = ({ categories, total }) => {
 };
 
 const FilterGroup = ({ label, value, onChange, options }) => (
-  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-    <span style={{ fontSize: '11px', color: C.textSecondary, fontWeight: 600 }}>{label}:</span>
-    <div style={{ display: 'inline-flex', background: C.surfaceAlt, padding: '3px', borderRadius: '8px', border: `1px solid ${C.border}` }}>
+  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', maxWidth: '100%' }}>
+    <span style={{ fontSize: '11px', color: C.textSecondary, fontWeight: 600, flexShrink: 0 }}>{label}:</span>
+    <div className="filter-group-tabs" style={{ 
+      display: 'inline-flex', background: C.surfaceAlt, padding: '4px', borderRadius: '999px', border: `1px solid ${C.border}`,
+      overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch'
+    }}>
+      <style>{`.filter-group-tabs::-webkit-scrollbar { display: none; }`}</style>
       {options.map(opt => {
         const active = value === opt.key;
         return (
@@ -743,12 +747,13 @@ const FilterGroup = ({ label, value, onChange, options }) => (
             type="button"
             onClick={() => onChange(opt.key)}
             style={{
-              padding: '5px 10px', borderRadius: '6px', border: 'none',
+              padding: '6px 14px', borderRadius: '999px', border: 'none',
               background: active ? C.surface : 'transparent',
               color: active ? C.textPrimary : C.textSecondary,
-              fontSize: '12px', fontWeight: active ? 600 : 500,
+              fontSize: '12px', fontWeight: active ? 700 : 600,
               cursor: 'pointer', transition: 'all 0.15s',
-              boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+              boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+              whiteSpace: 'nowrap', flexShrink: 0
             }}
           >{opt.label}</button>
         );

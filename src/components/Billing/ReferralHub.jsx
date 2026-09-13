@@ -848,7 +848,7 @@ const ReferralHub = ({
 
              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS:</span>
-                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', flexWrap: 'wrap' }}>
+                <div className="filter-tabs" style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px' }}>
                    {[
                      { id: 'ALL', label: 'ALL' },
                      { id: 'SETTLED', label: 'SETTLED' },
@@ -859,11 +859,12 @@ const ReferralHub = ({
                       key={s.id}
                       onClick={() => toggleSettlementFilter(s.id)}
                       style={{ 
-                        padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                         background: settlementFilter.includes(s.id) ? '#e11d48' : 'transparent',
                         color: settlementFilter.includes(s.id) ? 'white' : '#64748b',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none'
+                        flex: isMobile ? '1 0 auto' : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                      >{s.label}</button>
                    ))}
@@ -872,42 +873,45 @@ const ReferralHub = ({
 
              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>MODALITY:</span>
-                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+                <div className="filter-tabs" style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px' }}>
                    {['ALL', 'MRI', 'CT', 'X-RAY', 'USG'].map(m => (
                      <button 
                       key={m}
                       onClick={() => setModalityFilter(m)}
                       style={{ 
-                        padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                         background: modalityFilter === m ? '#e11d48' : 'transparent',
                         color: modalityFilter === m ? 'white' : '#64748b',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none'
+                        flex: isMobile ? '1 0 auto' : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                      >{m}</button>
                    ))}
                 </div>
              </div>
 
-             <div style={{ 
+             <div className="filter-tabs" style={{ 
                display: 'flex', 
                background: '#f1f5f9', 
-               padding: '3px', 
-               borderRadius: '10px', 
+               padding: '4px', 
+               borderRadius: '999px', 
                border: '1px solid #e2e8f0',
                overflowX: 'auto',
-               width: isMobile ? '100%' : 'auto'
+               width: isMobile ? '100%' : 'auto',
+               WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
              }}>
+               <style>{`.filter-tabs::-webkit-scrollbar { display: none; }`}</style>
                 {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                   <button
                     key={t}
                     onClick={() => setTimeFilter(t)}
                     style={{
-                      padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                      padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                       background: timeFilter === t ? '#e11d48' : 'transparent',
                       color: timeFilter === t ? 'white' : '#64748b',
                       cursor: 'pointer', transition: 'all 0.2s',
-                      flex: isMobile ? 1 : 'none',
+                      flex: isMobile ? '1 0 auto' : 'none',
                       whiteSpace: 'nowrap'
                     }}
                   >{t}</button>

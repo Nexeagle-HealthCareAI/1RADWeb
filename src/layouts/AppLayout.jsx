@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import MobileMenuSheet from './MobileMenuSheet';
 import MobileHeader from './MobileHeader';
+import MobileBottomNav from './MobileBottomNav';
+import { syncEngine } from '../offline/SyncEngine';
 import useAuth from '../auth/useAuth';
 import '../styles/global.css';
 
@@ -17,7 +20,7 @@ export default function AppLayout() {
   const { currentUser, logout, showTimeoutModal, timeoutCountdown, resetIdleTimer, subscription, refreshSubscription } = useAuth();
   const location = useLocation();
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pageContentRef = useRef(null);
 
   const { isOnline, pendingCount } = useOffline();
@@ -28,6 +31,10 @@ export default function AppLayout() {
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000); // Update every minute
+    
+    // Drain the offline outbox on boot in case the app was closed while offline
+    syncEngine.flushOutbox();
+
     return () => clearInterval(timer);
   }, []);
 
@@ -58,7 +65,7 @@ export default function AppLayout() {
 
   // Reset scroll and close mobile sidebar on route change
   useEffect(() => {
-    setIsMobileSidebarOpen(false);
+    setIsMobileMenuOpen(false);
     if (pageContentRef.current) {
       pageContentRef.current.scrollTop = 0;
     }
@@ -126,30 +133,20 @@ export default function AppLayout() {
       {(['/technician', '/doctor-board'].includes(location.pathname)
         || location.pathname.startsWith('/reporting')) && <PrefetchStatusIndicator />}
 
-      {/* Mobile Backdrop Overlay */}
-      {isMobileSidebarOpen && (
-        <div 
-          onClick={() => setIsMobileSidebarOpen(false)}
-          className="mobile-backdrop"
-          style={{ 
-            position: 'fixed', 
-            top: 0, left: 0, right: 0, bottom: 0, 
-            background: 'rgba(0,0,0,0.5)', 
-            zIndex: 1090,
-            backdropFilter: 'blur(3px)'
-          }}
-        />
-      )}
-
       <MobileHeader 
-        onMenuToggle={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)} 
-        isSidebarOpen={isMobileSidebarOpen}
+        onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+        isSidebarOpen={isMobileMenuOpen}
         currentTime={currentTime}
       />
 
       <Sidebar 
-        isMobileOpen={isMobileSidebarOpen} 
-        onMobileClose={() => setIsMobileSidebarOpen(false)} 
+        isMobileOpen={false} 
+        onMobileClose={() => {}} 
+      />
+
+      <MobileMenuSheet 
+        isOpen={isMobileMenuOpen} 
+        onClose={() => setIsMobileMenuOpen(false)} 
       />
 
       <div className="main-content">
@@ -159,6 +156,12 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      <MobileBottomNav 
+        onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+        isMenuOpen={isMobileMenuOpen}
+        onTabClick={() => setIsMobileMenuOpen(false)} 
+      />
 
       {/* Floating RadAI help desk — on every authenticated page */}
       <RadAI />

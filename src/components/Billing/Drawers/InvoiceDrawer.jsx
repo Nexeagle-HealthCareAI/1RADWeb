@@ -21,7 +21,6 @@ export const InvoiceDrawer = ({
   isOnline,
   handlePrintA4,
   handlePrintThermal,
-  onApplyAdjustment,
   onRequestApproval
 }) => {
   // Lazy-init from the invoice so a previously-saved draft (discount breakdown)
@@ -109,7 +108,12 @@ export const InvoiceDrawer = ({
         notifyToast(data?.error || 'Could not process the refund.', 'error');
       } else {
         notifyToast(`Refunded ₹${Number(walletBalance).toLocaleString()} advance ✓`, 'success');
-        setWalletBalance(0);
+        // Use the server's post-refund balance, not a hardcoded 0 — if the
+        // patient's balance changed between opening the drawer (when
+        // walletBalance was fetched) and confirming the refund, only the
+        // requested amount is refunded and a real remaining balance can stay
+        // on the wallet. Hardcoding 0 hid that leftover balance from the UI.
+        setWalletBalance(Number(data?.newBalance) || 0);
         setConfirmRefund(false);
         if (onAdvanceRefunded) onAdvanceRefunded();
       }
@@ -900,9 +904,9 @@ export const InvoiceDrawer = ({
                          <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#1e3a8a' }}>💳 Patient has ₹{walletBalance.toLocaleString()} advance</div>
                          <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#60a5fa', marginTop: '2px' }}>Apply ₹{Math.min(balanceDue, walletBalance).toLocaleString()} to this bill</div>
                        </div>
-                       <button type="button" disabled={!isOnline} title={!isOnline ? 'Internet connection required' : undefined}
-                         onClick={() => handleApplyCredit && handleApplyCredit(selectedInvoice.invoiceId, Math.min(balanceDue, walletBalance))}
-                         style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: !isOnline ? '#94a3b8' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11.5px', fontWeight: 950, cursor: !isOnline ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>Apply advance</button>
+                       <button type="button" disabled={!isOnline || isSettling} title={!isOnline ? 'Internet connection required' : undefined}
+                         onClick={() => handleApplyCredit && runSettlement(() => handleApplyCredit(selectedInvoice.invoiceId, Math.min(balanceDue, walletBalance)))}
+                         style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: (!isOnline || isSettling) ? '#94a3b8' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11.5px', fontWeight: 950, cursor: (!isOnline || isSettling) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>{isSettling ? 'Applying…' : 'Apply advance'}</button>
                      </div>
                    )}
 
@@ -953,7 +957,7 @@ export const InvoiceDrawer = ({
                          : {};
                        runSettlement(() => handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived, additionalCharges, additionalChargesReason }));
                      }} disabled={overCentreDiscount || deficitNeedsReason || isSettling} style={{ flex: 2, padding: '13px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason || isSettling) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason || isSettling) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason || isSettling) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{isSettling ? 'PROCESSING…' : (remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'SAVE PAYMENT')}</button>
-                     <button onClick={() => runSettlement(() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason }))} disabled={isSettling} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: isSettling ? 'not-allowed' : 'pointer', background: isSettling ? '#f1f5f9' : 'white' }}>{isSettling ? 'SAVING…' : 'SAVE AS DRAFT'}</button>
+                     <button onClick={() => runSettlement(() => handleSaveInvoice({ centreDisc, referrerDisc, deduction, additionalCharges, additionalChargesReason }))} disabled={isSettling} style={{ flex: 1, padding: '13px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: isSettling ? 'not-allowed' : 'pointer', background: isSettling ? '#f1f5f9' : 'white' }}>{isSettling ? 'SAVING…' : (isOnline ? 'SAVE AS DRAFT' : 'SAVE AS DRAFT (OFFLINE)')}</button>
                    </div>
 
                 </div>

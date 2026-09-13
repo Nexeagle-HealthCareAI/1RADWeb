@@ -309,7 +309,7 @@ export default function RegisterPage() {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 'clamp(16px, 3vw, 40px)', boxSizing: 'border-box',
       }}>
-        <div style={{
+        <div className="register-glass-card" style={{
           width: '100%', maxWidth: '900px',
           background: 'rgba(15,23,42,0.85)',
           backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)',

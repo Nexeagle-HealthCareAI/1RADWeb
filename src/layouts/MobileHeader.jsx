@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import '../styles/global.css';
 
@@ -8,26 +9,43 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
   // Multi-hospital switcher — the desktop TopNav switcher is hidden on mobile,
   // so the diagnostic-centre selector has to live here too. Only renders the
   // interactive affordance when the user is mapped to more than one hospital.
-  const { activeCenter, centers, switchCenter } = useAuth();
+  const { currentUser, activeCenter, centers, switchCenter, logout } = useAuth();
+  const navigate = useNavigate();
   const hasMultipleHospitals = (centers?.length || 0) > 1;
+  
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const [isSwitchingCenter, setIsSwitchingCenter] = useState(false);
   const switcherRef = useRef(null);
 
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+
+  const displayName = currentUser?.name || currentUser?.username || currentUser?.email?.split('@')[0] || 'User';
+  const initial = displayName.slice(0, 1).toUpperCase();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   useEffect(() => {
-    if (!isSwitcherOpen) return undefined;
     const onClickOutside = (e) => {
-      if (switcherRef.current && !switcherRef.current.contains(e.target)) {
+      if (isSwitcherOpen && switcherRef.current && !switcherRef.current.contains(e.target)) {
         setIsSwitcherOpen(false);
       }
+      if (isProfileMenuOpen && profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setIsProfileMenuOpen(false);
+      }
     };
-    document.addEventListener('mousedown', onClickOutside);
-    document.addEventListener('touchstart', onClickOutside);
+    if (isSwitcherOpen || isProfileMenuOpen) {
+      document.addEventListener('mousedown', onClickOutside);
+      document.addEventListener('touchstart', onClickOutside);
+    }
     return () => {
       document.removeEventListener('mousedown', onClickOutside);
       document.removeEventListener('touchstart', onClickOutside);
     };
-  }, [isSwitcherOpen]);
+  }, [isSwitcherOpen, isProfileMenuOpen]);
 
   const handleSwitchCenter = async (id) => {
     const normalizedActive = String(activeCenter?.id || '').toLowerCase();
@@ -50,8 +68,8 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
       style={{
         display: 'none',         // shown via .mobile-header CSS class on small screens
         height: '56px',
-        background: '#0a1628',   // matches sidebar deep navy
-        borderBottom: '1px solid #1e3a5f',
+        background: '#ffffff',
+        borderBottom: '1px solid #e2e8f0',
         padding: '0 14px',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -61,116 +79,68 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
         boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
       }}
     >
-      {/* Left: hamburger + brand/centre switcher */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
-        <button
-          onClick={onMenuToggle}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '36px', height: '36px', flexShrink: 0,
-            background: 'rgba(255,255,255,0.07)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '8px', cursor: 'pointer',
-            color: 'rgba(255,255,255,0.80)',
-            transition: 'background 0.13s',
-          }}
-          aria-label={isSidebarOpen ? 'Close menu' : 'Open menu'}
-        >
-          {isSidebarOpen ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <line x1="4" y1="4" x2="20" y2="20"/>
-              <line x1="20" y1="4" x2="4"  y2="20"/>
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="3" y1="7"  x2="21" y2="7"/>
-              <line x1="3" y1="12" x2="21" y2="12"/>
-              <line x1="3" y1="17" x2="21" y2="17"/>
-            </svg>
-          )}
-        </button>
+      {/* Left: Brand */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <img
+          src={`${import.meta.env.BASE_URL}Logo.png`}
+          alt="1Rad"
+          style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+        />
+        <span style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>1Rad</span>
+      </div>
 
-        {/* Logo + active centre (tap to switch when multi-hospital) */}
-        <div ref={switcherRef} style={{ position: 'relative', minWidth: 0, flex: 1 }}>
+      {/* Right: Switcher + Profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        
+        {/* Centre Switcher */}
+        <div ref={switcherRef} style={{ position: 'relative' }}>
           <button
             type="button"
-            onClick={() => hasMultipleHospitals && setIsSwitcherOpen(o => !o)}
-            disabled={!hasMultipleHospitals}
-            aria-haspopup={hasMultipleHospitals ? 'listbox' : undefined}
-            aria-expanded={hasMultipleHospitals ? isSwitcherOpen : undefined}
+            onClick={() => setIsSwitcherOpen(o => !o)}
+            aria-haspopup="listbox"
+            aria-expanded={isSwitcherOpen}
             style={{
-              display: 'flex', alignItems: 'center', gap: '9px',
-              background: 'transparent', border: 'none', padding: 0,
-              cursor: hasMultipleHospitals ? 'pointer' : 'default',
-              fontFamily: 'inherit', minWidth: 0, maxWidth: '100%',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: '#f8fafc', border: '1px solid #e2e8f0',
+              padding: '6px 12px', borderRadius: '20px', cursor: 'pointer',
+              outline: 'none', WebkitTapHighlightColor: 'transparent',
+              transition: 'all 0.2s ease',
             }}
           >
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <img
-                src={`${import.meta.env.BASE_URL}Logo.png`}
-                alt="NexEagle"
-                style={{ width: '28px', height: '28px', objectFit: 'contain', borderRadius: '6px' }}
-              />
-              {hasMultipleHospitals && (
-                <span style={{
-                  position: 'absolute', bottom: '-3px', right: '-3px',
-                  minWidth: '14px', height: '14px', padding: '0 3px',
-                  borderRadius: '7px', background: '#34d399',
-                  color: '#0a1628', fontSize: '8px', fontWeight: 950,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: '1.5px solid #0a1628', lineHeight: 1,
-                }}>{centers.length}</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0, textAlign: 'left' }}>
-              <span style={{
-                fontSize: '8px', fontWeight: 800,
-                color: '#60a5fa', letterSpacing: '0.4px', textTransform: 'uppercase',
-                fontFamily: '"Segoe UI", system-ui, sans-serif',
-              }}>{hasMultipleHospitals ? 'Active centre' : '1Rad'}</span>
-              <span style={{
-                fontSize: '12.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px',
-                color: 'rgba(255,255,255,0.92)', letterSpacing: '-0.2px',
-                fontFamily: '"Segoe UI", system-ui, sans-serif',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {activeCenter?.name || 'NexEagle'}
-                </span>
-                {hasMultipleHospitals && (
-                  <span style={{
-                    fontSize: '10px', color: '#94a3b8', flexShrink: 0,
-                    transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.18s ease',
-                  }}>▾</span>
-                )}
-              </span>
-            </div>
+            <span style={{
+              fontSize: '13px', fontWeight: 700, color: '#475569',
+              maxWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+            }}>
+              {activeCenter?.name || 'NexEagle'}
+            </span>
+            <span style={{
+              fontSize: '10px', color: '#64748b', flexShrink: 0,
+              transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
+            }}>▾</span>
           </button>
 
-          {isSwitcherOpen && hasMultipleHospitals && (
+          {isSwitcherOpen && (
             <div
               role="listbox"
-              aria-label="Authorized hospitals"
               style={{
-                position: 'absolute', top: 'calc(100% + 12px)', left: '-40px',
-                width: '78vw', maxWidth: '320px', maxHeight: '64vh', overflowY: 'auto',
+                position: 'absolute', top: 'calc(100% + 12px)', right: 0,
+                width: '240px', maxHeight: '60vh', overflowY: 'auto',
                 background: 'white', border: '1px solid #e2e8f0',
-                borderRadius: '14px', padding: '10px',
-                boxShadow: '0 18px 50px rgba(0,0,0,0.35)',
-                zIndex: 1300,
+                borderRadius: '16px', padding: '8px',
+                boxShadow: '0 14px 40px rgba(0,0,0,0.12)',
+                zIndex: 1300, transformOrigin: 'top right',
+                animation: 'stFadeIn 0.2s ease'
               }}
             >
               <div style={{
-                padding: '4px 8px 10px', fontSize: '9px', fontWeight: 950,
-                color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px',
+                padding: '4px 8px 10px', fontSize: '10px', fontWeight: 800,
+                color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px',
                 borderBottom: '1px solid #f1f5f9', marginBottom: '8px',
                 display: 'flex', justifyContent: 'space-between',
               }}>
-                <span>Switch centre</span>
-                <span style={{ opacity: 0.5 }}>{centers.length}</span>
+                <span>Switch Centre</span>
+                <span style={{ opacity: 0.6 }}>{centers.length}</span>
               </div>
               {centers.map(center => {
                 const isActive = String(activeCenter?.id || '').toLowerCase() === String(center.id).toLowerCase();
@@ -184,69 +154,114 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
                     aria-selected={isActive}
                     style={{
                       width: '100%', textAlign: 'left',
-                      padding: '12px', borderRadius: '10px',
+                      padding: '10px', borderRadius: '12px',
                       display: 'flex', alignItems: 'center', gap: '12px',
-                      background: isActive ? '#f0f7ff' : 'transparent',
-                      border: isActive ? '1px solid #dbeafe' : '1px solid transparent',
+                      background: isActive ? '#eff6ff' : 'transparent',
+                      border: 'none',
                       cursor: isSwitchingCenter ? 'wait' : 'pointer',
                       opacity: isSwitchingCenter && !isActive ? 0.5 : 1,
-                      marginBottom: '4px', fontFamily: 'inherit',
+                      marginBottom: '2px', outline: 'none', WebkitTapHighlightColor: 'transparent',
                     }}
                   >
                     <div style={{
-                      width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
-                      background: isActive ? 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)' : '#f1f5f9',
+                      width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
+                      background: isActive ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : '#f1f5f9',
                       color: isActive ? 'white' : '#64748b',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 950, fontSize: '14px',
+                      fontWeight: 800, fontSize: '14px',
                     }}>
                       {center.name?.charAt(0) || 'H'}
                     </div>
                     <div style={{ flex: 1, overflow: 'hidden' }}>
                       <div style={{
-                        fontSize: '12px', fontWeight: 900, color: '#1e293b',
+                        fontSize: '13px', fontWeight: 800, color: isActive ? '#1d4ed8' : '#1e293b',
                         whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden',
                       }}>
                         {center.name || 'Unnamed Center'}
                       </div>
                       {(center.groupName || center.role) && (
-                        <div style={{ fontSize: '10px', color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        <div style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                           {[center.groupName, center.role && String(center.role).toUpperCase()].filter(Boolean).join(' · ')}
                         </div>
                       )}
                     </div>
-                    {isActive ? (
-                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', letterSpacing: '1px', flexShrink: 0 }}>ACTIVE</span>
-                    ) : (
-                      <span style={{ fontSize: '11px', color: '#94a3b8', flexShrink: 0 }}>↵</span>
-                    )}
+                    {isActive && <span style={{ fontSize: '12px', color: '#3b82f6' }}>✓</span>}
                   </button>
                 );
               })}
             </div>
           )}
         </div>
-      </div>
 
-      {/* Right: time + status dot */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0,
-        background: 'rgba(255,255,255,0.06)',
-        border: '1px solid rgba(255,255,255,0.09)',
-        padding: '5px 12px', borderRadius: '20px', marginLeft: '10px',
-      }}>
+        {/* Profile Dropdown */}
+        <div ref={profileMenuRef} style={{ position: 'relative' }}>
+          <button 
+            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '34px', height: '34px', borderRadius: '12px',
+              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              border: 'none', color: 'white', fontWeight: 800, fontSize: '14px',
+              cursor: 'pointer', outline: 'none', WebkitTapHighlightColor: 'transparent',
+              boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+              transition: 'transform 0.15s ease'
+            }}
+            aria-label="Profile Menu"
+            aria-expanded={isProfileMenuOpen}
+          >
+            {initial}
+          </button>
+
+        {/* Dropdown Menu */}
         <div style={{
-          width: '6px', height: '6px', borderRadius: '50%',
-          background: '#34d399',
-          boxShadow: '0 0 6px rgba(52,211,153,0.6)',
-          flexShrink: 0,
-        }} />
-        <span style={{
-          fontSize: '12px', fontWeight: 600,
-          color: 'rgba(255,255,255,0.80)',
-          fontFamily: '"Segoe UI", system-ui, sans-serif',
-          letterSpacing: '0.2px',
-        }}>{time}</span>
+          position: 'absolute', top: 'calc(100% + 12px)', right: 0,
+          width: '180px', background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '16px', padding: '8px',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
+          transformOrigin: 'top right',
+          transform: isProfileMenuOpen ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(-10px)',
+          opacity: isProfileMenuOpen ? 1 : 0,
+          pointerEvents: isProfileMenuOpen ? 'auto' : 'none',
+          transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease',
+          zIndex: 1300
+        }}>
+          <button 
+            onClick={() => { setIsProfileMenuOpen(false); navigate('/settings'); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
+              padding: '12px', background: 'transparent', border: 'none',
+              borderRadius: '10px', color: '#475569',
+              fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+              textAlign: 'left', outline: 'none', WebkitTapHighlightColor: 'transparent',
+              marginBottom: '4px'
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Settings
+          </button>
+          
+          <button 
+            onClick={handleLogout}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
+              padding: '12px', background: 'rgba(239, 68, 68, 0.1)', border: 'none',
+              borderRadius: '10px', color: '#f87171',
+              fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+              textAlign: 'left', outline: 'none', WebkitTapHighlightColor: 'transparent'
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path fillRule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0v2z"/>
+              <path fillRule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
+            </svg>
+            Sign Out
+          </button>
+        </div>
+      </div>
       </div>
     </header>
   );

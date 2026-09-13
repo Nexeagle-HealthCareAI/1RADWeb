@@ -10,20 +10,53 @@
  *   - handleRemoveItem        — remove a line item
  *   - handleOpenInvoice       — open the invoice drawer
  *   - handleCollectPayment    — commit settlement (online + offline)
- *   - handleApplyCredit       — apply patient advance to invoice
+ *   - handleApplyCredit       — apply patient advance to invoice (online + offline)
  *   - handleCreateManualInvoice — create a new manual invoice
- *   - handleSaveInvoice       — save-as-draft (discount only)
+ *   - handleSaveInvoice       — save-as-draft (discount only, online + offline)
  *   - handleRequestApproval   — route a change to Finance → Approvals
- *   - handleApplyAdjustment   — apply a post-payment adjustment
  *   - handleDeleteInvoice     — delete an invoice (optimistic UI)
  */
 
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // Retained for /approvals
-import { applyAdjustment, applyDiscount, collectPayment } from '../../api/billing/paymentApi';
+import { applyDiscount, collectPayment } from '../../api/billing/paymentApi';
 import { generateInvoice, deleteInvoice as apiDeleteInvoice, fetchInvoices, fetchPendingBillables } from '../../api/billing/invoiceApi';
 import { applyCredit } from '../../api/billing/creditApi';
+import { applyServerDeltas as applyInvoiceDeltas } from '../../db/repos/invoicesRepo';
 import { useVerifiedBeforeSubmit } from './useVerifiedBeforeSubmit';
+
+// collectPayment/generateInvoice only return { success } / { invoiceId } —
+// not the updated row — so the table would otherwise sit stale until the
+// next financial sync (refreshAllFinancialData, a few hundred ms away but
+// still a full round trip across 4 entities) picks it up. This does the one
+// cheap, targeted GET (already used by verifyInvoice above) and writes the
+// result straight into Dexie, so the invoice table reflects the just-made
+// change the instant this resolves — no pull cycle required at all.
+// No-ops for invoices with no appointment link (freeform/manual invoices
+// not tied to a visit); those still get picked up by the broader sync below.
+const syncInvoiceFast = async (appointmentId) => {
+  if (!appointmentId) return;
+  try {
+    const fresh = await fetchInvoices({ appointmentId });
+    const items = fresh?.items || (Array.isArray(fresh) ? fresh : []);
+    if (items.length) await applyInvoiceDeltas(items);
+  } catch (_) { /* refreshAllFinancialData() below still covers it */ }
+};
+
+// Fields the drawer's on-screen math (net settlement, balance due, discount
+// caps) was computed against. verifyInvoice's fresh fetch merges server
+// values into the invoice it returns, but nothing forces a caller to
+// actually use them — handleCollectPayment/handleSaveInvoice both receive
+// netAmount/discount figures the drawer pre-computed from the ORIGINAL
+// snapshot, before that fetch even resolves. If any of these drifted since
+// the drawer opened (someone else settled or adjusted this invoice
+// meanwhile), those pre-computed figures are stale and must not be
+// submitted silently — the biller could be about to collect the wrong cash
+// amount or apply a discount against an outdated commission cap.
+const MONEY_DRIFT_FIELDS = ['paidAmount', 'grossAmount', 'discountAmount', 'commissionAmount', 'totalAmount'];
+const invoiceDriftedSinceOpen = (snapshot, fresh) =>
+  MONEY_DRIFT_FIELDS.some(f => Math.abs((Number(snapshot[f]) || 0) - (Number(fresh[f]) || 0)) > 0.01)
+  || String(snapshot.status || '') !== String(fresh.status || '');
 
 /**
  * @param {object}   opts
@@ -133,6 +166,11 @@ export const useInvoiceActions = ({
     // against the server immediately before computing what to charge.
     const invoice = await verifyInvoice(selectedInvoice);
 
+    if (invoiceDriftedSinceOpen(selectedInvoice, invoice)) {
+      notify({ type: 'warning', title: 'Invoice Changed', message: 'This invoice was updated elsewhere since you opened it. Please close and reopen it to see the current balance before collecting payment.' });
+      return;
+    }
+
     // netAmount can legitimately be 0 (a discount that fully covers the bill), so a
     // falsy `||` fallback would wrongly re-bill the gross. Guard for null/undefined.
     const currentNet  = (netAmount === null || netAmount === undefined) ? (invoice.totalAmount || 0) : netAmount;
@@ -172,6 +210,7 @@ export const useInvoiceActions = ({
       await collectPayment(payload, idemKey);
       celebrate();
       setIsInvoiceDrawerOpen(false);
+      await syncInvoiceFast(invoice.appointmentId);
       refreshAllFinancialData();
       setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: false });
     } catch (err) {
@@ -193,8 +232,21 @@ export const useInvoiceActions = ({
 
   // ── Apply patient advance to invoice ────────────────────────────────────────
   const handleApplyCredit = useCallback(async (invoiceId, amount) => {
+    const payload = { invoiceId, amount: amount ?? null };
+    const idemKey = crypto.randomUUID();
+
+    // The "Apply advance" button is disabled while offline, but the connection
+    // can still drop between that check and this call resolving — queue rather
+    // than lose the action.
+    if (!isOnline) {
+      await addToOutbox('CREDIT', payload, idemKey);
+      setIsInvoiceDrawerOpen(false);
+      notifyToast('You are offline — this will apply automatically when connection is restored.', 'info');
+      return;
+    }
+
     try {
-      const data = await applyCredit({ invoiceId, amount: amount ?? null });
+      const data = await applyCredit(payload);
       if (data?.success) {
         notifyToast(`Applied ₹${Number(data.applied || 0).toLocaleString('en-IN')} from the patient's advance ✓`, 'success');
         setIsInvoiceDrawerOpen(false);
@@ -203,9 +255,15 @@ export const useInvoiceActions = ({
         notifyToast(data?.error || 'Could not apply the advance.', 'error');
       }
     } catch (err) {
-      notifyToast(err?.response?.data?.error || err?.message || 'Could not apply the advance.', 'error');
+      if (!err.response) {
+        await addToOutbox('CREDIT', payload, idemKey);
+        setIsInvoiceDrawerOpen(false);
+        notifyToast('No connection detected — this has been queued and will apply when back online.', 'info');
+      } else {
+        notifyToast(err?.response?.data?.error || err?.message || 'Could not apply the advance.', 'error');
+      }
     }
-  }, [notifyToast, setIsInvoiceDrawerOpen, refreshAllFinancialData]);
+  }, [isOnline, addToOutbox, notifyToast, setIsInvoiceDrawerOpen, refreshAllFinancialData]);
 
   // ── Create manual invoice ────────────────────────────────────────────────────
   const handleCreateManualInvoice = useCallback(async (e) => {
@@ -280,6 +338,7 @@ export const useInvoiceActions = ({
       setSelectedPatient(null);
       setPatientSearchQuery('');
       setNewInvoiceData(blankInvoiceData);
+      await syncInvoiceFast(payload.appointmentId);
       refreshAllFinancialData();
       notify({ type: 'success', title: 'Invoice Created', message: 'The invoice has been created and recorded successfully.' });
     } catch (err) {
@@ -303,6 +362,12 @@ export const useInvoiceActions = ({
     // fallback below (it submits selectedInvoice.discountAmount as-is), so
     // verify before reading from it either way.
     const invoice = await verifyInvoice(selectedInvoice);
+
+    if (invoiceDriftedSinceOpen(selectedInvoice, invoice)) {
+      notify({ type: 'warning', title: 'Invoice Changed', message: 'This invoice was updated elsewhere since you opened it. Please close and reopen it to see the current numbers before saving.' });
+      return;
+    }
+
     const body = hasBreakdown
       ? {
           centreDiscount:          Number(draft.centreDisc) || 0,
@@ -315,6 +380,15 @@ export const useInvoiceActions = ({
         }
       : { discountAmount: invoice.discountAmount };
 
+    const idemKey = crypto.randomUUID();
+
+    if (!isOnline) {
+      await addToOutbox('DISCOUNT', { invoiceId: invoice.invoiceId, ...body }, idemKey);
+      setIsInvoiceDrawerOpen(false);
+      notify({ type: 'info', title: 'Queued for Sync', message: 'You are offline. This draft will save automatically when connection is restored.' });
+      return;
+    }
+
     try {
       await applyDiscount(invoice.invoiceId, body);
       refreshAllFinancialData();
@@ -322,9 +396,16 @@ export const useInvoiceActions = ({
       notify({ type: 'success', title: 'Draft Saved', message: 'Your changes were saved. Reopen the invoice to continue.' });
     } catch (err) {
       console.error('[FINANCE] Discount application failed', err);
-      notify({ type: 'error', title: 'Update Failed', message: 'Could not update the invoice. Please try again.' });
+      if (!err.response) {
+        await addToOutbox('DISCOUNT', { invoiceId: invoice.invoiceId, ...body }, idemKey);
+        setIsInvoiceDrawerOpen(false);
+        notify({ type: 'info', title: 'Queued for Sync', message: 'No connection detected. This draft has been queued and will save when back online.' });
+      } else {
+        const detail = err.response?.data?.error || err.response?.data?.message || 'Could not update the invoice. Please try again.';
+        notify({ type: 'error', title: 'Update Failed', message: detail });
+      }
     }
-  }, [selectedInvoice, verifyInvoice, refreshAllFinancialData, setIsInvoiceDrawerOpen, notify]);
+  }, [selectedInvoice, verifyInvoice, isOnline, addToOutbox, refreshAllFinancialData, setIsInvoiceDrawerOpen, notify]);
 
   // ── Request admin approval ───────────────────────────────────────────────────
   const handleRequestApproval = useCallback(async ({ type, title, invoiceId, appointmentId, payload, reason }) => {
@@ -346,19 +427,6 @@ export const useInvoiceActions = ({
       throw err;
     }
   }, [notify, setIsInvoiceDrawerOpen]);
-
-  // ── Apply post-payment adjustment ────────────────────────────────────────────
-  const handleApplyAdjustment = useCallback(async (invoiceId, amount) => {
-    try {
-      await applyAdjustment({ invoiceId, extraDiscount: amount });
-      refreshAllFinancialData();
-      setIsInvoiceDrawerOpen(false);
-      notify({ type: 'success', title: 'Adjustment Applied', message: `Adjustment of ₹${amount} has been applied to the invoice successfully.` });
-    } catch (err) {
-      console.error('[FINANCE] Adjustment failed', err);
-      notify({ type: 'error', title: 'Adjustment Failed', message: err.response?.data?.message || 'Could not apply the adjustment. Please try again.' });
-    }
-  }, [notify, setIsInvoiceDrawerOpen, refreshAllFinancialData]);
 
   // ── Delete invoice ───────────────────────────────────────────────────────────
   const handleDeleteInvoice = useCallback(async (id, commissionId) => {
@@ -396,7 +464,6 @@ export const useInvoiceActions = ({
     handleCreateManualInvoice,
     handleSaveInvoice,
     handleRequestApproval,
-    handleApplyAdjustment,
     handleDeleteInvoice,
   };
 };

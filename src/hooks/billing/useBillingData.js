@@ -347,16 +347,24 @@ export const useBillingData = ({
         const cutDate = cut.date ? getIstDateStr(cut.date) : null;
         const svcDate = cut.serviceDate ? getIstDateStr(cut.serviceDate) : null;
         const isFuture = !!svcDate && svcDate > today;
+        // Prefer the visit's service/appointment date over the commission's own
+        // creation timestamp — mirrors filteredInvoices' appDateStr || invDateStr
+        // above. Without this, a commission recorded a different calendar day
+        // than its visit (a common lag: late billing, backdated entry) falls
+        // into a different TODAY/PAST bucket than the invoice that earned it,
+        // so the same incentive can show on Revenue but not the Referral Hub
+        // (or vice versa) depending which day is selected.
+        const targetDate = svcDate || cutDate;
 
         if (timeFilter === 'FUTURE') {
             if (!isFuture) return false;
         } else if (timeFilter !== 'ALL') {
             if (isFuture) return false;
-            if (timeFilter === 'TODAY' && cutDate !== today) return false;
-            if (timeFilter === 'PAST' && cutDate === today) return false;
+            if (timeFilter === 'TODAY' && targetDate !== today) return false;
+            if (timeFilter === 'PAST' && targetDate === today) return false;
             if (timeFilter === 'CUSTOM') {
-                if (startDate && cutDate < startDate) return false;
-                if (endDate && cutDate > endDate) return false;
+                if (startDate && targetDate < startDate) return false;
+                if (endDate && targetDate > endDate) return false;
             }
         }
         if (modalityFilter !== 'ALL') {

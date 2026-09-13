@@ -145,7 +145,7 @@ export default function OperationsBoard() {
   // liveQuery below then re-renders from the refreshed cache. Offline this is a
   // no-op and the cached board stays on screen.
   const fetchAppointments = async () => {
-    try { await syncNow(); } catch (err) { console.warn('[OPS] manual sync failed', err?.message || err); }
+    try { await syncNow(['appointments']); } catch (err) { console.warn('[OPS] manual sync failed', err?.message || err); }
   };
 
   // Offline-first board: read the appointments from the local Dexie cache via a

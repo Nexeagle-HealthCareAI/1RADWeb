@@ -1,371 +1,482 @@
 /* ==========================================================================
-   Appointment Card - Premium Mobile Design
+   Appointment Card - Premium Native Android UI/UX System
+   Targeted exclusively for Mobile View (< 768px)
    ========================================================================== */
 
-.appointment-card {
-  background: white;
-  border-radius: 16px;
-  margin-bottom: 10px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
-  transition: var(--transition-smooth);
+.appointment-card.android-card {
+  background: #ffffff;
+  border-radius: 20px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
   position: relative;
-  border: 1px solid var(--border-light);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  transition: transform 0.2s cubic-bezier(0.3, 0, 0, 1), box-shadow 0.2s cubic-bezier(0.3, 0, 0, 1);
 }
 
-@media (max-width: 480px) {
-  .appointment-card {
-    border-radius: 12px;
-    margin-bottom: 8px;
-  }
+.appointment-card.android-card:active {
+  transform: scale(0.985);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
 }
 
-.appointment-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
-}
-
-.card-status-bar {
-  height: 6px;
-  width: 100%;
+/* Watermark for Delivered status */
+.card-watermark {
   position: absolute;
-  top: 0;
-  left: 0;
-}
-
-
-.card-token {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.token-number {
-  font-size: 18px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-15deg);
+  color: rgba(220, 38, 38, 0.12);
+  border-top: 3px dashed rgba(220, 38, 38, 0.15);
+  border-bottom: 3px dashed rgba(220, 38, 38, 0.15);
+  padding: 8px 32px;
+  font-size: 2.5rem;
   font-weight: 950;
-  color: #000000;
+  font-family: serif;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  white-space: nowrap;
+  letter-spacing: 6px;
+}
+
+/* Header Strip */
+.android-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-bottom: 1px solid #f1f5f9;
+  position: relative;
+  z-index: 1;
+}
+
+.token-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.token-badge {
+  background: #0f172a;
+  color: #d4af37;
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: 950;
+  padding: 3px 10px;
+  border-radius: 8px;
   letter-spacing: -0.3px;
-  line-height: 1.2;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
 }
 
-.token-label {
-  font-size: 8px;
-  font-weight: 900;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 2px;
-}
-
-@media (max-width: 480px) {
-  .token-number {
-    font-size: 15px;
-  }
-
-  .token-label {
-    font-size: 7px;
-  }
-}
-
-.card-status-badge {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  font-size: 9px;
+.mission-id-tag {
+  font-size: 10px;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.offline-cached-badge {
+  font-size: 9px;
+  font-weight: 950;
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid #bae6fd;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  line-height: 1;
-  flex-shrink: 0;
+  gap: 3px;
+  animation: pulse-badge 2s infinite;
 }
 
-@media (max-width: 480px) {
-  .card-status-badge {
-    padding: 3px 6px;
-    font-size: 8px;
-  }
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
-.card-section {
-  padding: 10px 14px;
-  border-bottom: 1px solid #e2e8f0;
-  background: white;
+.status-pill-glowing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border: 1px solid;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
-@media (max-width: 480px) {
-  .card-section {
-    padding: 8px 12px;
-  }
+/* Card Body */
+.android-card-body {
+  padding: 14px 16px;
+  position: relative;
+  z-index: 1;
 }
 
-.patient-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #0f52ba;
+.patient-hero-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.patient-avatar-box {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 18px;
   font-weight: 950;
-  font-size: 13px;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(15, 82, 186, 0.25);
   flex-shrink: 0;
+  border: 2px solid #ffffff;
 }
 
-.patient-name {
-  font-size: 12px;
-  font-weight: 950;
-  color: #000000;
-  letter-spacing: -0.2px;
-  word-break: break-word;
-}
-
-.patient-meta {
-  font-size: 9px;
-  color: #475569;
-  font-weight: 700;
-  margin-top: 2px;
-}
-
-@media (max-width: 480px) {
-  .patient-avatar {
-    width: 32px;
-    height: 32px;
-    font-size: 12px;
-  }
-
-  .patient-name {
-    font-size: 11px;
-  }
-
-  .patient-meta {
-    font-size: 8px;
-  }
-}
-
-.patient-id-tag {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 3px 6px;
-  background: #f1f5f9;
-  border-radius: 6px;
-  font-size: 8px;
-  color: #475569;
-  font-weight: 800;
-  border: 1px solid #cbd5e1;
-  word-break: break-word;
-}
-
-.patient-id-tag span {
-  color: var(--primary-accent);
-  font-weight: 950;
-}
-
-@media (max-width: 480px) {
-  .patient-id-tag {
-    font-size: 7px;
-    padding: 2px 5px;
-  }
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.info-item {
+.patient-info-col {
+  flex: 1;
   min-width: 0;
-  padding: 8px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
 }
 
-.info-item .label {
-  font-size: 8px;
-  font-weight: 900;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 3px;
-  display: block;
+.patient-name-text {
+  font-size: 15px;
+  font-weight: 950;
+  color: #0f172a;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.info-item .value {
-  font-size: 12px;
-  font-weight: 800;
-  color: #1a1a1a;
-  word-break: break-word;
-  overflow-wrap: break-word;
-}
-
-@media (max-width: 480px) {
-  .info-item {
-    padding: 6px;
-  }
-
-  .info-item .label {
-    font-size: 7px;
-  }
-
-  .info-item .value {
-    font-size: 11px;
-  }
-}
-
-.card-actions {
+.patient-demographics {
   display: flex;
-  gap: 6px;
-  padding: 8px 14px;
-  background: white;
-  border-top: 1px solid var(--border-light);
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.action-btn-main {
-  flex: 1;
-  min-width: 100px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-weight: 950;
+.demo-chip {
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border: none;
-  cursor: pointer;
-  transition: var(--transition-smooth);
-  white-space: nowrap;
+  font-weight: 800;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
 
-.action-btn-icon {
-  flex: 0 0 34px;
-  height: 34px;
-  border-radius: 8px;
+.mobile-call-link {
+  font-size: 11px;
+  font-weight: 900;
+  color: #0f52ba;
+  background: #eff6ff;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.mobile-call-link:active {
+  background: #dbeafe;
+  transform: scale(0.95);
+}
+
+/* Clinical Summary Box */
+.clinical-summary-box {
+  background: #f8fafc;
+  border-radius: 14px;
+  padding: 12px;
+  border: 1px solid #f1f5f9;
+  margin-bottom: 10px;
+}
+
+.service-primary-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-light);
-  background: white;
-  cursor: pointer;
-  transition: var(--transition-smooth);
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.modality-chips-group {
+  display: flex;
+  gap: 4px;
+}
+
+.modality-pill {
+  font-size: 10px;
+  font-weight: 950;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #334155;
+  letter-spacing: 0.5px;
+}
+
+.modality-pill.mod-ultrasound, .modality-pill.mod-us { background: #cffafe; color: #0891b2; border: 1px solid #a5f3fc; }
+.modality-pill.mod-xray, .modality-pill.mod-xr { background: #d1fae5; color: #059669; border: 1px solid #a7f3d0; }
+.modality-pill.mod-ct { background: #dbeafe; color: #2563eb; border: 1px solid #bfdbfe; }
+.modality-pill.mod-mri, .modality-pill.mod-mr { background: #ede9fe; color: #7c3aed; border: 1px solid #ddd6fe; }
+.modality-pill.mod-dexa, .modality-pill.mod-dx { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+
+.service-name-text {
   font-size: 13px;
+  font-weight: 900;
+  color: #1e293b;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-@media (max-width: 480px) {
-  .card-actions {
-    gap: 4px;
-    padding: 6px 12px;
-  }
-
-  .action-btn-main {
-    padding: 6px 8px;
-    font-size: 10px;
-    min-width: auto;
-  }
-
-  .action-btn-icon {
-    flex: 0 0 32px;
-    height: 32px;
-    font-size: 12px;
-  }
+.clinical-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-.action-btn-icon:hover {
+.specialist-chip {
+  font-size: 10px;
+  font-weight: 900;
+  color: #0c4a6e;
+  background: #e0f2fe;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #bae6fd;
+}
+
+.referrer-chip {
+  font-size: 10px;
+  font-weight: 900;
+  color: #5b21b6;
+  background: #ede9fe;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #ddd6fe;
+}
+
+.progress-chip {
+  font-size: 10px;
+  font-weight: 900;
+  color: #047857;
+  background: #d1fae5;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #a7f3d0;
+}
+
+/* Accordion Button & Panel */
+.service-accordion-btn {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f52ba;
+  font-size: 11px;
+  font-weight: 900;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.service-accordion-btn:active {
+  background: #f1f5f9;
+}
+
+.service-accordion-btn.open {
+  background: #0f52ba;
+  color: #ffffff;
+  border-color: #0f52ba;
+}
+
+.expanded-services-panel {
+  margin-top: 8px;
+  padding: 12px;
   background: #f8fafc;
-  border-color: var(--primary-accent);
-  color: var(--primary-accent);
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
 }
 
-/* Desktop: > 1024px - Hide cards, show table instead */
-@media (min-width: 1024px) {
-  .appointment-card {
-    display: none;
-  }
+.panel-title {
+  font-size: 9px;
+  font-weight: 950;
+  color: #64748b;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
 }
 
-/* ==========================================================================
-   Touch-friendly interactions
-   ========================================================================== */
-
-@media (hover: none) and (pointer: coarse) {
-  .appointment-card {
-    border: 1px solid #e0e0e0;
-  }
-
-  .appointment-card:active {
-    background: #f9f9f9;
-    border-color: #c5d5f0;
-  }
-
-  .action-btn {
-    min-height: 44px;
-    padding: 10px 14px;
-  }
-
-  .action-btn-secondary,
-  .action-btn-danger {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 10px;
-  }
+.services-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-/* ==========================================================================
-   Accessibility
-   ========================================================================== */
-
-.action-btn:focus {
-  outline: 2px solid #0f52ba;
-  outline-offset: 2px;
+.service-line-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #f1f5f9;
 }
 
-.action-btn:disabled {
-  opacity: 0.5;
+.service-line-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.service-line-mod {
+  font-size: 9px;
+  font-weight: 950;
+  background: #eff6ff;
+  color: #0f52ba;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.service-line-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-line-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.service-status-pill {
+  font-size: 9px;
+  font-weight: 900;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.print-rx-btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #0f52ba;
+  color: white;
+  border: none;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.print-rx-btn:disabled {
+  background: #cbd5e1;
   cursor: not-allowed;
 }
 
-/* ==========================================================================
-   Dark mode support (optional)
-   ========================================================================== */
+/* Footer Action Bar */
+.android-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+}
 
-@media (prefers-color-scheme: dark) {
+.hero-action-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 14px;
+  color: white;
+  border: none;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s, filter 0.15s;
+}
+
+.hero-action-btn:active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}
+
+.no-action-spacer {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 800;
+  color: #94a3b8;
+  text-align: center;
+  padding: 10px 0;
+}
+
+.quick-action-icons {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.icon-btn:active {
+  background: #f1f5f9;
+  transform: scale(0.92);
+}
+
+.icon-btn.cancel-btn {
+  color: #ef4444;
+}
+
+.icon-btn.cancel-btn:active {
+  background: #fef2f2;
+  border-color: #fecdd3;
+}
+
+/* Hide cards completely on Desktop (>1024px) */
+@media (min-width: 1024px) {
   .appointment-card {
-    background: #1e1e2e;
-    border-color: #333;
-  }
-
-  .card-header {
-    border-bottom-color: #2a2a3e;
-  }
-
-  .card-section {
-    border-bottom-color: #2a2a3e;
-  }
-
-  .token-number {
-    color: #e0e0e0;
-  }
-
-  .patient-name {
-    color: #e0e0e0;
-  }
-
-  .patient-details {
-    color: #999;
-  }
-
-  .doctor-name {
-    color: #ccc;
-  }
-
-  .card-actions {
-    background: #252535;
+    display: none !important;
   }
 }
