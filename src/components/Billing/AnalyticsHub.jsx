@@ -507,6 +507,7 @@ const AnalyticsHub = ({
           {[
             { id: 'REVENUE', label: '💰 REVENUE & COLLECTIONS' },
             { id: 'DISCOUNTS', label: '🏷️ DISCOUNT & REFERRAL' },
+            { id: 'MODALITIES', label: '📊 MODALITY YIELD' },
             { id: 'TRENDS', label: '👥 PATIENT & REFERRAL TRENDS' }
           ].map(tab => (
             <button

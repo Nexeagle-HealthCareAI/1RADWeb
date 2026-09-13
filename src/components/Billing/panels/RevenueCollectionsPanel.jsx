@@ -148,7 +148,7 @@ export default function RevenueCollectionsPanel({ isMobile, data, paymentColors,
 
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '15px', marginTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)', fontWeight: 900 }}>TOTAL DUES realization OUTSTANDING</span>
+              <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)', fontWeight: 900 }}>TOTAL DUES OUTSTANDING</span>
               <span style={{ fontSize: '14px', fontWeight: 950, color: '#f87171' }}>₹{recoveryInsight.totalDues.toLocaleString()}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>

@@ -10,7 +10,7 @@ import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
 import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
-import { computeStats, computeMatrix } from '../analytics/financialAggregator';
+import { computeMatrix } from '../analytics/financialAggregator';
 import { matchesAnyModality } from '../utils/appointmentServices';
 import { notifyToast } from '../utils/toast';
 import '../styles/BillingPage.css';
@@ -26,7 +26,7 @@ import { useArchiveData } from '../hooks/billing/useArchiveData';
 import { printA4Invoice, printReceiptSlip, printThermalSlip, ghostPrint } from '../utils/billing/printHandlers';
 import { exportToExcel } from '../utils/billing/exportHandler';
 
-import { fetchFinanceStats, fetchFinancialMatrix, syncLegacyInvoices } from '../api/billing/reportingApi';
+import { fetchFinancialMatrix, syncLegacyInvoices } from '../api/billing/reportingApi';
 import { fetchRegistry as fetchRegistryApi } from '../api/billing/registryApi';
 import { fetchPendingBillables as fetchPendingBillablesApi } from '../api/billing/invoiceApi';
 import { fetchOutstandingCredits as fetchOutstandingCreditsApi } from '../api/billing/creditApi';
@@ -212,7 +212,6 @@ export default function BillingPage() {
   });
 
   // --- SYNC & FETCH ---
-  const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
   const [matrix, setMatrix] = useState({ daily: [], weekly: [], monthly: [], yearly: [], modalityBreakdown: [] });
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -248,18 +247,6 @@ export default function BillingPage() {
     try { await syncNow(['invoices', 'expenses', 'referrers', 'referralCommissions']); } catch (_) { /* engine logs */ }
   }, []);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const data = await fetchFinanceStats();
-      setStats(data);
-      await nativeStorage.set('1rad_cache_stats', data);
-    } catch (err) {
-      console.error('[FINANCE] Stats fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_stats');
-      if (cached) setStats(cached);
-    }
-  }, []);
-
   // B3 Slice 7 — service charges promoted to a Dexie snapshot for
   // consistency with the other offline surfaces. On success: snapshot the
   // full response into IndexedDB; on failure: load from snapshot. The old
@@ -286,6 +273,14 @@ export default function BillingPage() {
     if (timeFilter === 'TODAY') {
       finalStart = today;
       finalEnd = today;
+    } else if (timeFilter === 'PAST') {
+      // "Before today" — no lower bound, but must exclude today itself.
+      // Leaving both bounds null (as this branch used to) sent the exact
+      // same unbounded request as ALL time, so "Past" silently showed
+      // identical numbers to "All Time", today's activity included.
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      finalEnd = getIstDateStr(yesterday.toISOString());
     } else if (timeFilter === 'CUSTOM') {
       finalStart = startDate;
       finalEnd = endDate;
@@ -411,14 +406,13 @@ export default function BillingPage() {
     // previous implementation started four concurrent full syncs on each mount.
     await Promise.allSettled([
       fetchInvoices(),
-      fetchStats(),
       fetchRegistry(),
       fetchAppointments(),
       fetchPersonnel(),
       fetchOutstandingCredits(),
       loadApprovalMap(),
     ]);
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
+  }, [fetchInvoices, fetchRegistry, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -433,12 +427,17 @@ export default function BillingPage() {
   }, [refreshAllFinancialData]);
 
   // The matrix aggregates the centre's financial history and is expensive on
-  // large tenants. Load it only for the two views that render it.
+  // large tenants. Load it only for the two views that render it. Also
+  // re-fetches whenever isOnline/pendingCount change — without this, the
+  // client-computed fallback below (which takes over while offline or with
+  // unsynced outbox items) stays on screen indefinitely after reconnecting:
+  // nothing else re-requests the authoritative server matrix once the
+  // fallback effect stops running, so the numbers can silently stay stale.
   useEffect(() => {
     if (billingViewMode === 'ANALYTICS' || billingViewMode === 'FINANCE') {
       void fetchMatrix();
     }
-  }, [billingViewMode, fetchMatrix]);
+  }, [billingViewMode, fetchMatrix, isOnline, pendingCount]);
 
   // Reset page whenever filters change so 'Load more' resets to page 1
   useEffect(() => {
@@ -500,7 +499,6 @@ export default function BillingPage() {
       endDateIso:   e,
     }).subscribe({
       next: (rows) => {
-        setStats(computeStats(rows));
         setMatrix(computeMatrix(rows, {
           from: s || undefined,
           to:   e || undefined,

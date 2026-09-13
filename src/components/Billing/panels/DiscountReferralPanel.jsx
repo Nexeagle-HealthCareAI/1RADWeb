@@ -72,7 +72,7 @@ export default function DiscountReferralPanel({ isMobile, data, discountColors }
               <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left' }}>
                 <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>DOCTOR</th>
                 <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textAlign: 'center' }}>AVG DISCOUNT (%)</th>
-                <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>TOTAL DISCOUNTRealized (₹)</th>
+                <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>TOTAL DISCOUNT (₹)</th>
                 <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>TOTAL BILLED WORKLOAD (₹)</th>
                 <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textAlign: 'right' }}>AUDITOR STATUS</th>
               </tr>
