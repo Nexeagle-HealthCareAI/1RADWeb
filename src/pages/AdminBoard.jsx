@@ -11,6 +11,7 @@ import useFinanceRevision from '../hooks/useFinanceRevision';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
+import HospitalLocationPicker from '../components/HospitalLocationPicker';
 import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
@@ -442,6 +443,8 @@ export default function AdminBoard() {
     pan: '',
     nabhNumber: '',
     isAutoBillingEnabled: false,
+    latitude: null,
+    longitude: null,
     admin: null,          // { userId, fullName, email, mobile, role, status, registeredOn }
     registeredOn: '',
     status: 'Active',
@@ -625,6 +628,10 @@ export default function AdminBoard() {
         pan:                 r.pan                 || r.PAN                 || '',
         nabhNumber:          r.nabhNumber          || r.NABHNumber          || '',
         isAutoBillingEnabled: r.isAutoBillingEnabled || r.IsAutoBillingEnabled || false,
+        // Nullable: a centre with no pin set yet has neither field, and 0 is
+        // a valid coordinate (equator/prime meridian) so this can't use `||`.
+        latitude:  r.latitude  ?? r.Latitude  ?? null,
+        longitude: r.longitude ?? r.Longitude ?? null,
         admin,
         registeredOn:        r.registeredOn        || r.RegisteredOn        || '',
         status:              r.status              || r.Status              || 'Active',
@@ -995,7 +1002,9 @@ export default function AdminBoard() {
       gstin: hospitalData.gstin,
       registrationNumber: hospitalData.registrationNumber,
       pan: hospitalData.pan,
-      nabhNumber: hospitalData.nabhNumber
+      nabhNumber: hospitalData.nabhNumber,
+      latitude: hospitalData.latitude,
+      longitude: hospitalData.longitude
     };
 
     if (!isOnline) {
@@ -2174,6 +2183,15 @@ export default function AdminBoard() {
                       onChange={e => setHospitalData({...hospitalData, hospitalAddress: e.target.value})} 
                       style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 500, outline: 'none', resize: 'none', height: '80px', color: '#1e293b', boxSizing: 'border-box' }} 
                       onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                  />
+              </div>
+
+              <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Location</label>
+                  <HospitalLocationPicker
+                      latitude={hospitalData.latitude}
+                      longitude={hospitalData.longitude}
+                      onChange={(lat, lng) => setHospitalData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
                   />
               </div>
 
