@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
@@ -95,6 +96,12 @@ const ReferralHub = ({
   approvalMap = { rows: [] }
 }) => {
   const [isPartnerDropdownOpen, setIsPartnerDropdownOpen] = useState(false);
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [actionsPortalNode, setActionsPortalNode] = useState(null);
+
+  useEffect(() => {
+    setActionsPortalNode(document.getElementById('billing-header-actions-portal'));
+  }, []);
 
   const toggleReferrer = (id) => {
     if (id === 'ALL') {
@@ -537,23 +544,23 @@ const ReferralHub = ({
       sElig += g.eligible; sAwaiting += g.awaiting;
       return {
         'Partner':               g.name,
-        'Total Payouts':         g.count,
+        'Total Incentives':      g.count,
         'Total Amount (INR)':    g.total,
         'Settled (INR)':         g.paid,
         'Outstanding (INR)':     g.unpaid,
-        'Eligible to Pay (INR)': g.eligible,
-        'Non-eligible (INR)':    g.awaiting,
+        'Ready to Pay (INR)':    g.eligible,
+        'Pending Patient Payment (INR)': g.awaiting,
       };
     });
     summaryRows.push({});
     summaryRows.push({
       'Partner':               'TOTAL',
-      'Total Payouts':         sPayouts,
+      'Total Incentives':      sPayouts,
       'Total Amount (INR)':    sTotal,
       'Settled (INR)':         sPaid,
       'Outstanding (INR)':     sUnpaid,
-      'Eligible to Pay (INR)': sElig,
-      'Non-eligible (INR)':    sAwaiting,
+      'Ready to Pay (INR)':    sElig,
+      'Pending Patient Payment (INR)': sAwaiting,
     });
 
     const sumWs = XLSX.utils.json_to_sheet(summaryRows);
@@ -722,21 +729,42 @@ const ReferralHub = ({
          marginBottom: '35px' 
        }}>
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '15px' : '20px' }}>
-             <div style={{ position: 'relative' }}>
+             <div style={{ position: 'relative', flex: 1, maxWidth: isMobile ? '100%' : '500px' }}>
                 <div 
                   onClick={() => setIsPartnerDropdownOpen(!isPartnerDropdownOpen)}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none'; }}
                   style={{ 
-                    padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, 
-                    background: 'white', color: '#1e293b', width: '100%', minWidth: isMobile ? '0' : '200px', 
+                    padding: '8px 12px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '38px',
+                    background: 'white', color: '#1e293b', width: '100%', 
                     cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    transition: 'all 0.2s ease'
+                    transition: 'all 0.2s ease', gap: '8px'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#64748b' }}>👥</span>
-                    <span>{getPartnerLabel()}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', flex: 1 }}>
+                    <span style={{ color: '#64748b', fontSize: '12px', marginRight: '4px' }}>👥</span>
+                    {referrerFilter.includes('ALL') ? (
+                      <span style={{ fontSize: '10px', fontWeight: 800 }}>ALL PARTNERS (GLOBAL)</span>
+                    ) : (
+                      referrerFilter.map(id => {
+                        const ref = referrers?.find(r => r.referrerId === id);
+                        return (
+                          <span key={id} style={{
+                            background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+                            padding: '2px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800,
+                            display: 'flex', alignItems: 'center', gap: '4px'
+                          }}>
+                            {ref ? ref.name?.toUpperCase() : 'UNKNOWN'}
+                            <div 
+                              onClick={(e) => { e.stopPropagation(); toggleReferrer(id); }}
+                              style={{ cursor: 'pointer', padding: '0 2px', borderRadius: '4px' }}
+                              onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >✕</div>
+                          </span>
+                        );
+                      })
+                    )}
                   </div>
                   <span style={{ 
                     transform: isPartnerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
@@ -753,8 +781,20 @@ const ReferralHub = ({
                     maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '8px',
                     animation: 'fadeIn 0.2s ease-out'
                   }}>
+                    <input 
+                      type="text" 
+                      placeholder="Search partners..." 
+                      value={partnerSearch} 
+                      onChange={(e) => setPartnerSearch(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', 
+                        fontSize: '10px', fontWeight: 800, marginBottom: '8px', width: '100%', 
+                        outline: 'none', background: '#f8fafc', color: '#1e293b'
+                      }}
+                    />
                     <div 
-                      onClick={() => { toggleReferrer('ALL'); setIsPartnerDropdownOpen(false); }}
+                      onClick={() => { toggleReferrer('ALL'); setIsPartnerDropdownOpen(false); setPartnerSearch(''); }}
                       onMouseEnter={(e) => { if (!referrerFilter.includes('ALL')) e.currentTarget.style.background = '#f8fafc'; }}
                       onMouseLeave={(e) => { if (!referrerFilter.includes('ALL')) e.currentTarget.style.background = 'transparent'; }}
                       style={{
@@ -776,10 +816,10 @@ const ReferralHub = ({
                       ALL PARTNERS (GLOBAL)
                     </div>
                     <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #e2e8f0, transparent)', margin: '6px 0' }} />
-                    {(referrers || []).map(ref => (
+                    {(referrers || []).filter(ref => !partnerSearch || ref.name?.toLowerCase().includes(partnerSearch.toLowerCase())).map(ref => (
                       <div 
                         key={ref.referrerId}
-                        onClick={() => toggleReferrer(ref.referrerId)}
+                        onClick={() => { toggleReferrer(ref.referrerId); setPartnerSearch(''); }}
                         onMouseEnter={(e) => { if (!referrerFilter.includes(ref.referrerId)) e.currentTarget.style.background = '#f8fafc'; }}
                         onMouseLeave={(e) => { if (!referrerFilter.includes(ref.referrerId)) e.currentTarget.style.background = 'transparent'; }}
                         style={{
@@ -808,7 +848,7 @@ const ReferralHub = ({
 
              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS:</span>
-                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', flexWrap: 'wrap' }}>
+                <div className="filter-tabs" style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px' }}>
                    {[
                      { id: 'ALL', label: 'ALL' },
                      { id: 'SETTLED', label: 'SETTLED' },
@@ -819,11 +859,12 @@ const ReferralHub = ({
                       key={s.id}
                       onClick={() => toggleSettlementFilter(s.id)}
                       style={{ 
-                        padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                         background: settlementFilter.includes(s.id) ? '#e11d48' : 'transparent',
                         color: settlementFilter.includes(s.id) ? 'white' : '#64748b',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none'
+                        flex: isMobile ? '1 0 auto' : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                      >{s.label}</button>
                    ))}
@@ -832,42 +873,45 @@ const ReferralHub = ({
 
              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>MODALITY:</span>
-                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+                <div className="filter-tabs" style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px' }}>
                    {['ALL', 'MRI', 'CT', 'X-RAY', 'USG'].map(m => (
                      <button 
                       key={m}
                       onClick={() => setModalityFilter(m)}
                       style={{ 
-                        padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                         background: modalityFilter === m ? '#e11d48' : 'transparent',
                         color: modalityFilter === m ? 'white' : '#64748b',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none'
+                        flex: isMobile ? '1 0 auto' : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                      >{m}</button>
                    ))}
                 </div>
              </div>
 
-             <div style={{ 
+             <div className="filter-tabs" style={{ 
                display: 'flex', 
                background: '#f1f5f9', 
-               padding: '3px', 
-               borderRadius: '10px', 
+               padding: '4px', 
+               borderRadius: '999px', 
                border: '1px solid #e2e8f0',
                overflowX: 'auto',
-               width: isMobile ? '100%' : 'auto'
+               width: isMobile ? '100%' : 'auto',
+               WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
              }}>
+               <style>{`.filter-tabs::-webkit-scrollbar { display: none; }`}</style>
                 {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                   <button
                     key={t}
                     onClick={() => setTimeFilter(t)}
                     style={{
-                      padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                      padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                       background: timeFilter === t ? '#e11d48' : 'transparent',
                       color: timeFilter === t ? 'white' : '#64748b',
                       cursor: 'pointer', transition: 'all 0.2s',
-                      flex: isMobile ? 1 : 'none',
+                      flex: isMobile ? '1 0 auto' : 'none',
                       whiteSpace: 'nowrap'
                     }}
                   >{t}</button>
@@ -875,75 +919,111 @@ const ReferralHub = ({
              </div>
 
              {timeFilter === 'CUSTOM' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s', width: isMobile ? '100%' : 'auto' }}>
-                 <input 
-                   type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                   style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                 />
-                 <input 
-                   type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                   style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                 />
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '4px',
+                animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)', 
+                width: isMobile ? '100%' : 'auto',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)'; }}
+              >
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                      onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                      onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                   <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#3b82f6', letterSpacing: '1px', pointerEvents: 'none' }}>FROM</span>
+                   <input 
+                     type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                     style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
+                   />
+                 </div>
+                 
+                 <div style={{ width: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#94a3b8', fontSize: '14px', fontWeight: 300 }}>
+                   →
+                 </div>
+                 
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                      onFocus={(e) => e.currentTarget.style.borderColor = '#ec4899'}
+                      onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                   <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#ec4899', letterSpacing: '1px', pointerEvents: 'none' }}>UNTIL</span>
+                   <input 
+                     type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                     style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
+                   />
+                 </div>
               </div>
              )}
           </div>
           
-           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-              <button
-                onClick={handleExportToExcel}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '8px 16px',
-                  borderRadius: '10px',
-                  fontSize: '9px',
-                  fontWeight: 950,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-                }}
-              >
-                <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
-              </button>
-           </div>
+           {(() => {
+              const exportBtn = (
+                <button
+                  onClick={handleExportToExcel}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                  }}
+                >
+                  <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
+                </button>
+              );
+              return actionsPortalNode ? createPortal(exportBtn, actionsPortalNode) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                  {exportBtn}
+                </div>
+              );
+           })()}
        </div>
 
        <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '18px', marginBottom: '40px' }}>
           <div style={{ background: 'white', padding: '18px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL PAYOUTS</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL PAYOUT</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e293b' }}>₹{referralStats.total.toLocaleString()}</div>
           </div>
 
           <div style={{ background: '#f0fdf4', padding: '18px', borderRadius: '20px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '8px' }}>SETTLED · PAID OUT</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '8px' }}>ALREADY PAID</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#14532d' }}>₹{referralStats.paid.toLocaleString()}</div>
           </div>
 
           <div style={{ background: '#eff6ff', padding: '18px', borderRadius: '20px', border: '1px solid #bfdbfe', boxShadow: '0 4px 20px rgba(29,78,216,0.05)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>ELIGIBLE TO PAY</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>READY TO PAY</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e3a8a' }}>₹{referralStats.eligibleToPay.toLocaleString()}</div>
              <div style={{ fontSize: '9px', fontWeight: 700, color: '#60a5fa', marginTop: '6px', lineHeight: 1.4 }}>
-               patient paid · ready to disburse{referralStats.eligiblePartial > 0 ? ` · incl. ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
+               Patient has paid{referralStats.eligiblePartial > 0 ? ` · includes ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
              </div>
           </div>
 
           <div style={{ background: '#fff7ed', padding: '18px', borderRadius: '20px', border: '1px solid #fed7aa', boxShadow: '0 4px 20px rgba(194,65,12,0.05)' }}>
-             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '1px', marginBottom: '8px' }}>AWAITING PATIENT PMT</div>
+             <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '1px', marginBottom: '8px' }}>WAITING ON PATIENT</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#9a3412' }}>₹{referralStats.awaitingPatient.toLocaleString()}</div>
-             <div style={{ fontSize: '9px', fontWeight: 700, color: '#fb923c', marginTop: '6px', lineHeight: 1.4 }}>not eligible until the patient pays</div>
+             <div style={{ fontSize: '9px', fontWeight: 700, color: '#fb923c', marginTop: '6px', lineHeight: 1.4 }}>Patient must pay first</div>
           </div>
        </div>
 
@@ -1046,7 +1126,7 @@ const ReferralHub = ({
                       )}
                     </div>
                     <div>
-                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>{group.deficit > 0 ? 'NET PAYABLE' : 'TOTAL PAYOUTS'}</div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>{group.deficit > 0 ? 'NET PAYABLE' : 'TOTAL INCENTIVES'}</div>
                       <div style={{ fontSize: '22px', fontWeight: 950, color: group.total < 0 ? '#ea580c' : '#1e293b' }}>₹{group.total.toLocaleString()}{group.total < 0 ? ' (owes)' : ''}</div>
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
@@ -1061,11 +1141,11 @@ const ReferralHub = ({
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px' }}>ELIGIBLE</div>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px' }}>READY TO PAY</div>
                         <div style={{ fontSize: '12px', fontWeight: 950, color: group.eligible > 0 ? '#1d4ed8' : '#cbd5e1', marginTop: '2px' }}>₹{group.eligible.toLocaleString()}</div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px' }}>NON-ELIGIBLE</div>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px' }}>PENDING PATIENT PAYMENT</div>
                         <div style={{ fontSize: '12px', fontWeight: 950, color: group.awaiting > 0 ? '#c2410c' : '#cbd5e1', marginTop: '2px' }}>₹{group.awaiting.toLocaleString()}</div>
                       </div>
                     </div>
@@ -1082,7 +1162,7 @@ const ReferralHub = ({
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px', fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
-                      <span>{group.count} payout{group.count !== 1 ? 's' : ''}</span>
+                      <span>{group.count} incentive{group.count !== 1 ? 's' : ''}</span>
                       <span style={{ color: '#e11d48', fontWeight: 950, letterSpacing: '0.5px' }}>VIEW →</span>
                     </div>
                   </button>
@@ -1097,12 +1177,12 @@ const ReferralHub = ({
                   <thead>
                     <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'left' }}>Referred Person</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Total Payouts</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Total Incentives</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Paid</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Unpaid</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient has paid — ready to disburse">Eligible</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient not paid yet — not eligible">Non-eligible</th>
-                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Number of Payouts</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient has paid — ready to disburse">Ready to Pay</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#c2410c', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }} title="Patient not paid yet — not eligible">Pending Patient Payment</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Number of Incentives</th>
                       <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
                       <th style={{ padding: '12px 14px', textAlign: 'right' }}></th>
                     </tr>
@@ -1261,7 +1341,7 @@ const ReferralHub = ({
                     onChange={toggleSelectAllInDrawer}
                     style={{ width: '18px', height: '18px', accentColor: '#e11d48' }}
                   />
-                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>Select All Eligible ({selectableDrawerCuts.length})</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>Select All Ready to Pay ({selectableDrawerCuts.length})</span>
                 </div>
               )}
 
@@ -1317,7 +1397,7 @@ const ReferralHub = ({
                         </div>
 
                         <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 14px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #f1f5f9' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>PATIENT PMT</span>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>PATIENT PAYMENT</span>
                           {cut?.patientPaymentStatus ? (
                             <span style={{
                               padding: '5px 10px', borderRadius: '8px',
@@ -1364,12 +1444,11 @@ const ReferralHub = ({
                               // is cancelled. Self/walk-in never has a payout to edit.
                               const isPaid = cut?.status === 'PAID';
                               const isCancelled = String(cut?.status || '').toLowerCase() === 'cancelled';
-                              const editLocked = isSelf || isPaid || isCancelled;
-                              const lockLabel = isSelf ? '🔒 SELF' : isPaid ? '🔒 PAID' : isCancelled ? '🔒 CANCELLED' : 'EDIT';
+                              const editLocked = isSelf || isCancelled;
+                              const lockLabel = isSelf ? '🔒 SELF' : isCancelled ? '🔒 CANCELLED' : isPaid ? 'REVISE PAID' : 'EDIT';
                               const lockTitle = isSelf ? 'Self / walk-in earns no commission — nothing to update'
-                                : isPaid ? 'Commission already paid — to change it, revert via the PAID badge (needs admin approval)'
                                 : isCancelled ? 'Cancelled — payout is locked'
-                                : 'Edit this payout';
+                                : 'Revise this payout through admin approval';
                               return (
                                 <button
                                   disabled={editLocked}
@@ -1377,7 +1456,7 @@ const ReferralHub = ({
                                   onClick={() => {
                                     if (editLocked) return;
                                     setEditPayout({
-                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status, serviceAmount: netRevenueForCut(cut)
+                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, appointmentId: cut.appointmentId || null, status: cut.status, originalStatus: cut.status, serviceAmount: netRevenueForCut(cut)
                                     });
                                     setIsPayoutDrawerOpen(true);
                                   }}
@@ -1520,12 +1599,11 @@ const ReferralHub = ({
                               const isSelf = isSelfReferrer(cut.name);
                               const isPaid = cut?.status === 'PAID';
                               const isCancelled = String(cut?.status || '').toLowerCase() === 'cancelled';
-                              const editLocked = isSelf || isPaid || isCancelled;
-                              const lockLabel = isSelf ? '🔒 SELF' : isPaid ? '🔒 PAID' : isCancelled ? '🔒 CANCELLED' : 'UPDATE';
+                              const editLocked = isSelf || isCancelled;
+                              const lockLabel = isSelf ? '🔒 SELF' : isCancelled ? '🔒 CANCELLED' : isPaid ? 'REVISE PAID' : 'UPDATE';
                               const lockTitle = isSelf ? 'Self / walk-in earns no commission — nothing to update'
-                                : isPaid ? 'Commission already paid — to change it, revert via the PAID badge (needs admin approval)'
                                 : isCancelled ? 'Cancelled — payout is locked'
-                                : 'Update this payout';
+                                : 'Revise this payout through admin approval';
                               return (
                                 <button
                                   disabled={editLocked}
@@ -1540,6 +1618,7 @@ const ReferralHub = ({
                                       modality: cut.modality || 'MRI',
                                       remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
                                       invoiceId: cut.reference,
+                                      appointmentId: cut.appointmentId || null,
                                       status: cut.status,
                                       originalStatus: cut.status,
                                       serviceAmount: netRevenueForCut(cut)

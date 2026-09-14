@@ -135,7 +135,7 @@ export default function DoctorBoard() {
   // Manual refresh / post-action nudge — force an immediate sync; the liveQuery
   // re-renders from the refreshed cache. Offline this is a no-op.
   const fetchCases = useCallback(async () => {
-    try { await syncNow(); } catch (err) { console.warn('[DOCTOR] manual sync failed', err?.message || err); }
+    try { await syncNow(['appointments', 'reports']); } catch (err) { console.warn('[DOCTOR] manual sync failed', err?.message || err); }
   }, []);
 
   // Warm the personnel snapshot; the doctor list renders from watchPersonnel

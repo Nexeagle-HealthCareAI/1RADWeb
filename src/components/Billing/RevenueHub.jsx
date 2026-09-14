@@ -1,7 +1,10 @@
 import * as XLSX from 'xlsx-js-style';
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
 import { celebrate } from '../../utils/celebrate';
+import { fetchCommissions } from '../../api/billing/payoutApi';
+import { useVerifiedBeforeSubmit } from '../../hooks/billing/useVerifiedBeforeSubmit';
 
 // One-time keyframe for the row-actions menu's "grow from the button" entrance.
 if (typeof document !== 'undefined' && !document.getElementById('row-actions-menu-kf')) {
@@ -78,6 +81,7 @@ function RowActionsMenu({ children, isMobile }) {
 }
 
 const RevenueHub = ({
+  isOnline,
   filteredInvoices,
   advanceByPatient = {},
   approvalMap = { byInvoice: {}, byAppointment: {} },
@@ -115,6 +119,7 @@ const RevenueHub = ({
   referrers,
   setSelectedInvoice,
   setIsInvoiceDrawerOpen,
+  setIsNewInvoiceDrawerOpen,
   sortConfig,
   handleSort,
   futureAppointments,
@@ -123,6 +128,12 @@ const RevenueHub = ({
 }) => {
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' });
+  const [actionsPortalNode, setActionsPortalNode] = useState(null);
+  const { verifyFreshList } = useVerifiedBeforeSubmit(isOnline);
+
+  useEffect(() => {
+    setActionsPortalNode(document.getElementById('billing-header-actions-portal'));
+  }, []);
 
   // Whether the referrer's commission for this invoice is already PAID. Once it
   // is, "Update payout" is locked by default — money has already changed hands,
@@ -197,7 +208,10 @@ const RevenueHub = ({
     if (app.referralCutValue) return app.referralCutValue;
     const service = serviceRegistry.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === app.service?.toLowerCase());
     if (service && service.referralCutValue) return service.referralCutValue;
-    if (app.referrerName || app.doctor) return getServicePrice(app.service) * 0.2;
+    // No cut configured on the appointment or the service registry — show
+    // "unknown" (0, rendered as "—" below) rather than guessing a flat 20%.
+    // A fabricated rate here would silently misstate EXPECTED INCENTIVE for
+    // any referrer whose real negotiated rate isn't exactly 20%.
     return 0;
   };
 
@@ -340,7 +354,7 @@ const RevenueHub = ({
       return [b ? b.short : (a.status || '--'), a.reason || ''];
     };
 
-    let totals = { gross: 0, discount: 0, net: 0, cut: 0, income: 0 };
+    let totals = { gross: 0, extra: 0, discount: 0, net: 0, cut: 0, income: 0 };
 
     if (timeFilter === 'FUTURE') {
       headers = [
@@ -407,8 +421,8 @@ const RevenueHub = ({
 
     } else {
       headers = [
-        'Invoice ID', 'Patient Name', 'Referred By', 'Timestamp', 'Modality',
-        'Gross Amount (INR)', 'Discount Amount (INR)', 'Net Payable (INR)',
+        'Token No', 'Patient Name', 'Referred By', 'Timestamp', 'Modality',
+        'Gross Amount (INR)', 'Extra Charges (INR)', 'Discount Amount (INR)', 'Net Payable (INR)',
         'Referral Cut (INR)', 'Net Clinic Income (INR)', 'Status', 'Admin Approval', 'Reason'
       ];
 
@@ -419,18 +433,20 @@ const RevenueHub = ({
 
       filteredInvoicesToExport.forEach(inv => {
         totals.gross += (inv.grossAmount || 0);
+        totals.extra += (inv.additionalCharges || 0);
         totals.discount += (inv.discountAmount || 0);
         totals.net += (inv.totalAmount || 0);
         totals.cut += (inv.commissionAmount || 0);
         totals.income += ((inv.totalAmount || 0) - (inv.commissionAmount || 0));
 
         rows.push([
-          inv.displayId || 'N/A',
+          inv.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A',
           inv.patientName || 'UNKNOWN',
           inv.referrerName || 'SELF',
           formatDate(inv.createdAt, true),
           inv.modality || 'US',
           inv.grossAmount || 0,
+          inv.additionalCharges || 0,
           inv.discountAmount || 0,
           inv.totalAmount || 0,
           inv.commissionAmount || 0,
@@ -443,7 +459,7 @@ const RevenueHub = ({
       rows.push([]);
       rows.push([
         'TOTALS', '', '', '', '',
-        totals.gross, totals.discount, totals.net, totals.cut, totals.income, '', '', ''
+        totals.gross, totals.extra, totals.discount, totals.net, totals.cut, totals.income, '', '', ''
       ]);
     }
 
@@ -479,43 +495,74 @@ const RevenueHub = ({
       }}>
          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
             <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
-            <div style={{ 
+            <div className="filter-tabs" style={{ 
               display: 'flex', 
               background: 'white', 
-              padding: '3px', 
-              borderRadius: '10px', 
+              padding: '4px', 
+              borderRadius: '999px', 
               border: '1px solid #e2e8f0',
               overflowX: 'auto',
-              width: isMobile ? '100%' : 'auto'
+              width: isMobile ? '100%' : 'auto',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              gap: '2px'
             }}>
-               {/* No FUTURE tab — future appointments never carry invoices (a paid
-                   visit moved to a future date is refunded + its bill voided), so
-                   there's nothing pre-billed to show here. */}
+               <style>{`.filter-tabs::-webkit-scrollbar { display: none; }`}</style>
                {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                  <button
                   key={t}
                   onClick={() => setTimeFilter(t)}
                   style={{ 
-                    padding: '8px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    padding: '8px 14px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                     background: timeFilter === t ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'transparent',
                     color: timeFilter === t ? 'white' : '#64748b',
                     cursor: 'pointer', transition: 'all 0.2s',
-                    flex: isMobile ? 1 : 'none',
+                    flex: isMobile ? '1 0 auto' : 'none',
                     whiteSpace: 'nowrap'
                   }}
                  >{t}</button>
                ))}
             </div>
             {timeFilter === 'CUSTOM' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s', width: isMobile ? '100%' : 'auto' }}>
-                 <input 
-                   type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                   style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                 />
-                 <input 
-                   type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                   style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
-                 />
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '4px',
+                animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)', 
+                width: isMobile ? '100%' : 'auto',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)'; }}
+              >
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                      onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                      onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                   <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#3b82f6', letterSpacing: '1px', pointerEvents: 'none' }}>FROM</span>
+                   <input 
+                     type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                     style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
+                   />
+                 </div>
+                 
+                 <div style={{ width: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#94a3b8', fontSize: '14px', fontWeight: 300 }}>
+                   →
+                 </div>
+                 
+                 <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                      onFocus={(e) => e.currentTarget.style.borderColor = '#ec4899'}
+                      onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                   <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#ec4899', letterSpacing: '1px', pointerEvents: 'none' }}>UNTIL</span>
+                   <input 
+                     type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                     style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
+                   />
+                 </div>
               </div>
             )}
          </div>
@@ -526,17 +573,20 @@ const RevenueHub = ({
            <>
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS:</span>
-                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+                <div className="filter-tabs" style={{ 
+                  display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
+                }}>
                    {['ALL', 'PAID', 'PENDING'].map(s => (
                      <button 
                       key={s}
                       onClick={() => setStatusFilter(s)}
                       style={{ 
-                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                         background: statusFilter === s ? '#0f52ba' : 'transparent',
                         color: statusFilter === s ? 'white' : '#64748b',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none'
+                        flex: isMobile ? '1 0 auto' : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                      >{s}</button>
                    ))}
@@ -554,100 +604,133 @@ const RevenueHub = ({
 
          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
             <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MODALITY:</span>
-            <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+            <div className="filter-tabs" style={{ 
+              display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
+            }}>
                {['ALL', 'MRI', 'CT', 'X-RAY', 'USG'].map(m => (
                  <button 
                   key={m}
                   onClick={() => setModalityFilter(m)}
                   style={{ 
-                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    padding: '8px 16px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
                     background: modalityFilter === m ? '#0f52ba' : 'transparent',
                     color: modalityFilter === m ? 'white' : '#64748b',
                     cursor: 'pointer', transition: 'all 0.2s',
-                    flex: isMobile ? 1 : 'none'
+                    flex: isMobile ? '1 0 auto' : 'none',
+                    whiteSpace: 'nowrap'
                   }}
                  >{m}</button>
                ))}
             </div>
          </div>
 
-          <div style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isMobile ? 'center' : 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
-              <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
-                {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (invoiceTotalCount || 0)) : (invoiceTotalCount || 0)}
-              </span>
-            </div>
+          {(() => {
+            const actionsBlock = (
+              <div style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isMobile ? 'center' : 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
+                  <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
+                    {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (invoiceTotalCount || 0)) : (invoiceTotalCount || 0)}
+                  </span>
+                </div>
 
-            <button
-              onClick={handleExportToExcel}
-              style={{
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: 'white',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '10px',
-                fontSize: '9px',
-                fontWeight: 950,
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-                whiteSpace: 'nowrap'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-              }}
-            >
-              <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT EXCEL'}</span>
-            </button>
-          </div>
+                <button
+                  onClick={handleExportToExcel}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                  }}
+                >
+                  <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT EXCEL'}</span>
+                </button>
+                
+                {setIsNewInvoiceDrawerOpen && (
+                  <button
+                    onClick={() => setIsNewInvoiceDrawerOpen(true)}
+                    style={{
+                      padding: '8px 16px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)', color: 'white',
+                      fontWeight: 950, fontSize: '9px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.25)',
+                      display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(29,78,216,0.35)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(29,78,216,0.25)';
+                    }}
+                  >
+                    + Add Manual Invoice
+                  </button>
+                )}
+              </div>
+            );
+            return actionsPortalNode ? createPortal(actionsBlock, actionsPortalNode) : actionsBlock;
+          })()}
       </div>
 
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, 1fr)', gap: isMobile ? '15px' : '25px', marginBottom: '40px' }}>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(6, 1fr)', gap: '15px', marginBottom: '40px' }}>
         {timeFilter === 'FUTURE' ? (
           <>
             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', gridColumn: isMobile ? '1' : 'span 2' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>PROJECTED_GROSS</p>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>EXPECTED BASE FEE</p>
               <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 950, color: '#0f52ba' }}>₹{futureStats.gross.toLocaleString()}</div>
-              <div style={{ marginTop: '10px', fontSize: '10px', color: '#64748b', fontWeight: 800 }}>{(futureAppointments?.length || 0)} MISSIONS SCHEDULED</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#64748b', fontWeight: 800 }}>{(futureAppointments?.length || 0)} APPOINTMENTS SCHEDULED</div>
             </div>
             <div className="kpi-card" style={{ background: '#fff1f2', padding: '25px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)', gridColumn: isMobile ? '1' : 'span 1' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>PROJECTED_CUTS</p>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>EXPECTED INCENTIVE</p>
               <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 950, color: '#881337' }}>₹{futureStats.referralCut.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#f0fdf4', padding: '25px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)', gridColumn: isMobile ? '1' : 'span 2' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '15px' }}>EXPECTED_NET</p>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '15px' }}>EXPECTED CLINIC INCOME</p>
               <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 950, color: '#14532d' }}>₹{futureStats.net.toLocaleString()}</div>
             </div>
           </>
         ) : (
           <>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>GROSS REVENUE</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>BASE FEE</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PENDING</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PENDING AMOUNT</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
             </div>
+            <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '12px' }}>TOTAL COLLECTED</p>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{liveStats.totalCollected.toLocaleString()}</div>
+            </div>
             <div className="kpi-card" style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>NET REVENUE</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>CLINIC INCOME</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#14532d' }}>₹{liveStats.netProfit.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>DISCOUNTS</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>DISCOUNTS GIVEN</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#ef4444' }}>₹{liveStats.totalDiscount.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>CUTS</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>INCENTIVE PAID</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#881337' }}>₹{liveStats.totalCommission.toLocaleString()}</div>
             </div>
           </>
@@ -658,7 +741,7 @@ const RevenueHub = ({
         <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', padding: isMobile ? '20px' : '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', gap: '15px', marginBottom: '25px' }}>
              <h3 style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '1px', margin: 0 }}>
-               {timeFilter === 'FUTURE' ? 'UPCOMING REVENUE LEDGER' : 'GLOBAL TRANSACTION LEDGER'}
+               {timeFilter === 'FUTURE' ? 'FUTURE APPOINTMENTS' : 'ALL TRANSACTIONS'}
              </h3>
              {/* Table-level search */}
              <div style={{ position: 'relative', width: isMobile ? '100%' : '340px' }}>
@@ -693,8 +776,9 @@ const RevenueHub = ({
                )}
              </div>
            </div>
-           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
+           <div style={{ overflowX: isMobile ? 'visible' : 'auto' }}>
+            {!isMobile ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
                   <th style={{ padding: '15px 10px', width: '40px', textAlign: 'center' }}>
@@ -707,29 +791,27 @@ const RevenueHub = ({
                   </th>
                   {timeFilter === 'FUTURE' ? (
                     <>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>APPT_ID</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SCHEDULED_FOR</th>
-                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GENERATED_AT</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOKEN & DATE</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT INFO</th>
+                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GENERATED AT</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_NAME</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textAlign: 'right' }}>PROJECTED_REV</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'right' }}>EST_CUT</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', textAlign: 'right' }}>EST_NET</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TEST DETAILS</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textAlign: 'right' }}>BASE FEE</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>EXTRA</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'right' }}>INCENTIVE</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', textAlign: 'right' }}>CLINIC INCOME</th>
                     </>
                   ) : (
                     <>
-                      <th onClick={() => handleSort('displayId')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID {getSortIcon('displayId')}</th>
-                      <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY {getSortIcon('patientName')}</th>
-                      <th onClick={() => handleSort('referrerName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY {getSortIcon('referrerName')}</th>
-                      <th onClick={() => handleSort('serviceDate')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_DATE {getSortIcon('serviceDate')}</th>
-                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY : SERVICE</th>
-                      <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS {getSortIcon('grossAmount')}</th>
+                      <th onClick={() => handleSort('serviceDate')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOKEN & DATE {getSortIcon('serviceDate')}</th>
+                      <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT INFO {getSortIcon('patientName')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TEST DETAILS</th>
+                      <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>BASE FEE {getSortIcon('grossAmount')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', background: '#f8fafc', textAlign: 'right' }}>EXTRA</th>
                       <th onClick={() => handleSort('discountAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT {getSortIcon('discountAmount')}</th>
-                      <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE {getSortIcon('totalAmount')}</th>
-                      <th onClick={() => handleSort('commissionAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>CUT {getSortIcon('commissionAmount')}</th>
-                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', background: '#f0fdf4' }}>INCOME</th>
+                      <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>PATIENT BILL {getSortIcon('totalAmount')}</th>
+                      <th onClick={() => handleSort('commissionAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>INCENTIVE {getSortIcon('commissionAmount')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', background: '#f0fdf4' }}>CLINIC INCOME</th>
                       <th onClick={() => handleSort('status')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS {getSortIcon('status')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '1px' }}>APPROVAL</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right', ...(isMobile ? { position: 'sticky', right: 0, background: 'white', zIndex: 3, boxShadow: '-8px 0 14px -10px rgba(15,23,42,0.18)' } : {}) }}>ACTIONS</th>
@@ -750,16 +832,25 @@ const RevenueHub = ({
                             style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
                           />
                         </td>
-                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{app.displayId}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{formatDate(app.date || app.dateTime)}</td>
+                        <td style={{ padding: '20px 10px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>
+                            {app.dailyTokenNumber != null ? `#${String(app.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 700, marginTop: '4px' }}>
+                            {formatDate(app.date || app.dateTime)}
+                          </div>
+                        </td>
+                        <td style={{ padding: '20px 10px' }}>
+                          <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '9.5px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Referred by: {(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</div>
+                        </td>
                           <td style={{ padding: '20px 10px', fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>TBD (Future)</td>
                         <td style={{ padding: '20px 10px' }}>
                           <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(app.modality || 'US').toUpperCase()}</span>
                         </td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#1e293b' }}>{app.service}</td>
                         <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#0f52ba' }}>₹{getServicePrice(app.service).toLocaleString()}</td>
+                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#94a3b8' }}>—</td>
                         <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>
                           {getServiceCut(app) > 0 ? `₹${getServiceCut(app).toLocaleString()}` : '—'}
                         </td>
@@ -770,7 +861,7 @@ const RevenueHub = ({
                    ))}
                     {pagedInvoices.length > 0 && (
                      <tr style={{ background: '#f1f5f9' }}>
-                       <td colSpan="10" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
+                       <td colSpan="10" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED APPOINTMENTS</td>
                      </tr>
                    )}
                     {pagedInvoices.map(inv => (
@@ -783,14 +874,22 @@ const RevenueHub = ({
                             style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
                           />
                         </td>
-                        <td style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{inv.displayId}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv.referrerName || 'SELF').toUpperCase()}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '10px', color: '#0f52ba', fontWeight: 900 }}>BILLED</td>
-                        <td colSpan="2" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL_INVOICE_LEDGER</td>
+                        <td style={{ padding: '15px 10px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>
+                            {inv.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                          </div>
+                          <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 900, marginTop: '2px' }}>
+                            BILLED
+                          </div>
+                        </td>
+                        <td style={{ padding: '15px 10px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>Referred by: {(inv.referrerName || 'SELF').toUpperCase()}</div>
+                        </td>
+                        <td colSpan="4" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL INVOICE</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#0f52ba' }}>₹{(inv.totalAmount || 0).toLocaleString()}</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹{(inv.commissionAmount || 0).toLocaleString()}</td>
-                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#166534' }}>₹{(inv.totalAmount - (inv.commissionAmount || 0)).toLocaleString()}</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#166534' }}>₹{((inv.totalAmount || 0) - (inv.commissionAmount || 0)).toLocaleString()}</td>
                      </tr>
                    ))}
                  </>
@@ -805,10 +904,18 @@ const RevenueHub = ({
                          style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
                        />
                      </td>
-                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv?.referrerName || 'SELF').toUpperCase()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{formatDate(inv?.serviceDate || inv?.createdAt, true)}</td>
+                     <td style={{ padding: '20px 10px' }}>
+                       <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>
+                         {inv?.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                       </div>
+                       <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>
+                         {formatDate(inv?.serviceDate || inv?.createdAt, true)}
+                       </div>
+                     </td>
+                     <td style={{ padding: '20px 10px' }}>
+                       <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</div>
+                       <div style={{ fontSize: '9.5px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Referred by: {(inv?.referrerName || 'SELF').toUpperCase()}</div>
+                     </td>
                      {/* Modality : Service — one combined column. Each service is
                          grouped under its modality (modality first), one group per
                          line, e.g. "USG: Whole Abdomen, KUB" / "X-RAY: Chest PA".
@@ -834,16 +941,28 @@ const RevenueHub = ({
                          const items = inv.items || [];
                          const order = [];
                          const byMod = {};
+                         let gIdx = 1;
+                         const multi = items.length > 1;
+                         
+                         const getShortModality = (rawStr) => {
+                           let m = (String(rawStr || '').toUpperCase()) || 'OTHER';
+                           if (m === 'ULTRASOUND') return 'USG';
+                           if (m === 'MAMMOGRAPHY' || m === 'MG') return 'MAMMO';
+                           if (m === 'PET-CT') return 'PET';
+                           return m;
+                         };
+                         
                          for (const it of items) {
-                           const m = (String(it.modality || it.Modality || inv.modality || '').toUpperCase()) || 'OTHER';
+                           const m = getShortModality(it.modality || it.Modality || inv.modality);
                            const name = it.description || it.serviceName || 'Service';
                            const qty = Number(it.quantity) || 1;
-                           const label = name + (qty > 1 ? ` ×${qty}` : '');
+                           const baseLabel = name + (qty > 1 ? ` ×${qty}` : '');
+                           const label = multi ? `${gIdx++}. ${baseLabel}` : baseLabel;
                            if (!(m in byMod)) { byMod[m] = []; order.push(m); }
                            byMod[m].push(label);
                          }
                          if (order.length === 0) {
-                           const m = inv.modality ? String(inv.modality).toUpperCase() : '—';
+                           const m = inv.modality ? getShortModality(inv.modality) : '—';
                            return <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>{m}</span>;
                          }
                          return (
@@ -852,9 +971,13 @@ const RevenueHub = ({
                              {order.map((m, i) => {
                                const t = tintFor(m);
                                return (
-                                 <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', lineHeight: 1.3 }}>
-                                   <span style={{ flexShrink: 0, padding: '2px 7px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
-                                   <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e293b' }}>{byMod[m].join(', ')}</span>
+                                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', lineHeight: 1.3 }}>
+                                   <span style={{ flexShrink: 0, marginTop: '1px', padding: '2px 7px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
+                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                     {byMod[m].map((lbl, idx) => (
+                                       <span key={idx} style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e293b' }}>{lbl}</span>
+                                     ))}
+                                   </div>
                                  </div>
                                );
                              })}
@@ -863,13 +986,14 @@ const RevenueHub = ({
                        })()}
                      </td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>{(inv.additionalCharges || 0) > 0 ? `₹${(inv.additionalCharges || 0).toLocaleString()}` : '—'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '₹0'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{(inv?.totalAmount || 0).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px' }}>
                          {(Number(inv?.commissionAmount) || 0) > 0 ? (
                            <div style={{ display: 'flex', flexDirection: 'column' }}>
                               <span style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(inv?.commissionAmount) || 0).toLocaleString()}</span>
-                              <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED_PAYOUT</span>
+                              <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED PAYOUT</span>
                            </div>
                          ) : (
                            <span style={{ fontSize: '13px', color: '#cbd5e1', fontWeight: 900 }}>₹0</span>
@@ -956,8 +1080,7 @@ const RevenueHub = ({
                          <div style={{ height: '1px', width: '100%', background: '#eef2f7', margin: '2px 0' }}></div>
                         {/* 3) Update payout — sits just before Delete. */}
                         <button
-                          onClick={() => {
-                             if (isPayoutPaid(inv)) return;   // locked once the referrer is paid
+                          onClick={async () => {
                              celebrate();
                              // Multi-stage referrer identity resolution
                              let refId = inv.referrerId;
@@ -975,13 +1098,34 @@ const RevenueHub = ({
                                 return;
                              }
 
+                             // referralCommissions is a Dexie-backed cache that can lag the
+                             // server (a commission recorded on another device/tab, or not
+                             // yet pulled down by the 30s sync). Whether this invoice
+                             // "already has a payout" decides if the save below is routed
+                             // through admin approval — deciding that from a stale cache
+                             // could let a real, possibly PAID commission be silently
+                             // overwritten. Re-verify this referrer's live rows first.
+                             const freshList = await verifyFreshList(() => fetchCommissions({ referrerId: refId }));
+                             const commissionSource = freshList ?? referralCommissions ?? [];
+
                              // Build ONE payout line per service on the invoice so a
                              // multi-service visit pays the referrer per modality.
                              const items = inv.items || [];
                              const ref = inv.displayId;
-                             const existingForInvoice = (referralCommissions || []).filter(c =>
-                               (c.referenceNumber || c.reference) === ref || c.id === inv.commissionId
+                             const existingForInvoice = commissionSource.filter(c =>
+                               c.appointmentId === inv.appointmentId
+                               || (c.referenceNumber || c.reference) === ref
+                               || c.id === inv.commissionId
                              );
+
+                             if (existingForInvoice.length === 0) {
+                               setErrorModal({
+                                 isOpen: true,
+                                 title: "NO RECORDED PAYOUT",
+                                 message: `Invoice ${inv.displayId} has no existing referral payout to revise. Record the payout through the approved payout workflow first.`
+                               });
+                               return;
+                             }
 
                              const lineFromItem = (item) => {
                                const service = serviceRegistry?.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === item.description?.toLowerCase());
@@ -990,6 +1134,7 @@ const RevenueHub = ({
                                // Prefer a previously-saved amount for this modality, else the registry cut.
                                const prior = existingForInvoice.find(c => String(c.modality || '').toUpperCase() === modality);
                                return {
+                                 commissionId: prior?.id || null,
                                  modality,
                                  amount: prior?.amount ?? prior?.payoutAmount ?? (registryCut || ''),
                                  status: prior?.status || prior?.commissionStatus || 'UNPAID',
@@ -1001,9 +1146,32 @@ const RevenueHub = ({
                                };
                              };
 
-                             let lines = items.length > 0
-                               ? items.map(lineFromItem)
-                               : [{
+                             let lines = existingForInvoice.length > 0
+                               ? existingForInvoice.map((commission, index) => {
+                                   // Prefer the exact service this commission was earned on
+                                   // (appointmentServiceId) — modality-string matching alone
+                                   // collapses when a visit has two services of the same
+                                   // modality (e.g. two CT scans), silently attaching the
+                                   // wrong service's charge as this line's payout ceiling.
+                                   // Fall back to modality matching only for legacy rows
+                                   // recorded before AppointmentServiceId was tracked.
+                                   const item = (commission.appointmentServiceId
+                                     ? items.find(candidate => candidate.appointmentServiceId === commission.appointmentServiceId)
+                                     : null) || items.find(candidate =>
+                                     String(candidate.modality || candidate.Modality || '').toUpperCase()
+                                       === String(commission.modality || '').toUpperCase()) || items[index];
+                                   return {
+                                     commissionId: commission.id,
+                                     modality: String(commission.modality || item?.modality || inv.modality || 'MRI').toUpperCase(),
+                                     amount: commission.amount ?? commission.payoutAmount ?? 0,
+                                     status: commission.status || commission.commissionStatus || 'UNPAID',
+                                     serviceName: item?.description || `Service ${index + 1}`,
+                                     serviceAmount: (Number(item?.amount) || 0) * (Number(item?.quantity) || 1),
+                                   };
+                                 })
+                               : items.length > 0
+                                 ? items.map(lineFromItem)
+                                 : [{
                                    modality: String(inv.modality || 'MRI').toUpperCase(),
                                    amount: inv.commissionAmount || '',
                                    status: 'UNPAID',
@@ -1014,6 +1182,7 @@ const RevenueHub = ({
 
                              setEditPayout({
                                 commissionId: '',            // batch (per-service) mode
+                                approvalEdit: existingForInvoice.length > 0,
                                 referrerId: refId,
                                 referrerName: inv.referrerName || 'DIRECT',
                                 invoiceId: ref,
@@ -1024,16 +1193,15 @@ const RevenueHub = ({
                              });
                              setIsPayoutDrawerOpen(true);
                           }}
-                          disabled={isPayoutPaid(inv)}
-                          title={isPayoutPaid(inv) ? 'Referral already paid — to change it, revert via the PAID badge and request admin approval.' : 'Update referral payout'}
+                          title={isPayoutPaid(inv) ? 'Revise the paid payout through admin approval' : 'Update referral payout through admin approval'}
                            style={{
                              padding: '6px 10px', borderRadius: '10px', border: 'none',
-                             background: isPayoutPaid(inv) ? '#f1f5f9' : '#fff1f2',
-                             color: isPayoutPaid(inv) ? '#94a3b8' : '#e11d48',
+                             background: isPayoutPaid(inv) ? '#ecfdf5' : '#fff1f2',
+                             color: isPayoutPaid(inv) ? '#166534' : '#e11d48',
                              fontSize: '8.5px', fontWeight: 950,
-                             cursor: isPayoutPaid(inv) ? 'not-allowed' : 'pointer',
-                             boxShadow: isPayoutPaid(inv) ? 'none' : '0 2px 5px rgba(225,29,72,0.1)'
-                           }} >{isPayoutPaid(inv) ? '🔒 PAYOUT PAID' : 'UPDATE PAYOUT'}</button>
+                             cursor: 'pointer',
+                             boxShadow: '0 2px 5px rgba(225,29,72,0.1)'
+                           }} >{isPayoutPaid(inv) ? 'REVISE PAID PAYOUT' : 'UPDATE PAYOUT'}</button>
 
 
 
@@ -1073,6 +1241,325 @@ const RevenueHub = ({
                 )}
              </tbody>
            </table>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', paddingBottom: '20px' }}>
+                {timeFilter === 'FUTURE' ? (
+                  <>
+                    {paginatedFutureAppointments.map(app => (
+                      <div key={app.appointmentId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.has(app.appointmentId)} 
+                              onChange={() => toggleSelectRow(app.appointmentId)}
+                              style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#0f52ba' }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>
+                                {app.dailyTokenNumber != null ? `#${String(app.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
+                                {formatDate(app.date || app.dateTime)}
+                              </div>
+                            </div>
+                          </div>
+                          <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>{(app.modality || 'US').toUpperCase()}</span>
+                        </div>
+                        <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Ref: {(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</div>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginTop: '8px' }}>{app.service}</div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900 }}>BASE FEE</div>
+                            <div style={{ fontSize: '14px', color: '#0f52ba', fontWeight: 950 }}>₹{getServicePrice(app.service).toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#e11d48', fontWeight: 900 }}>INCENTIVE</div>
+                            <div style={{ fontSize: '14px', color: '#e11d48', fontWeight: 950 }}>{getServiceCut(app) > 0 ? `₹${getServiceCut(app).toLocaleString()}` : '—'}</div>
+                          </div>
+                        </div>
+                        <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: '#166534', fontWeight: 900 }}>CLINIC INCOME</span>
+                          <span style={{ fontSize: '16px', color: '#166534', fontWeight: 950 }}>₹{(getServicePrice(app.service) - getServiceCut(app)).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {pagedInvoices.length > 0 && (
+                      <div style={{ padding: '10px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textAlign: 'center' }}>PRE-BILLED APPOINTMENTS</div>
+                    )}
+                    {pagedInvoices.map(inv => (
+                      <div key={inv.invoiceId} style={{ background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', opacity: 0.85 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.has(inv.invoiceId)} 
+                              onChange={() => toggleSelectRow(inv.invoiceId)}
+                              style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#0f52ba' }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>
+                                {inv.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 900, marginTop: '2px' }}>BILLED</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Ref: {(inv.referrerName || 'SELF').toUpperCase()}</div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900 }}>BILLED (MANUAL)</div>
+                            <div style={{ fontSize: '14px', color: '#0f52ba', fontWeight: 950 }}>₹{(inv.totalAmount || 0).toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: '#e11d48', fontWeight: 900 }}>INCENTIVE</div>
+                            <div style={{ fontSize: '14px', color: '#e11d48', fontWeight: 950 }}>₹{(inv.commissionAmount || 0).toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: '#166534', fontWeight: 900 }}>CLINIC INCOME</span>
+                          <span style={{ fontSize: '16px', color: '#166534', fontWeight: 950 }}>₹{((inv.totalAmount || 0) - (inv.commissionAmount || 0)).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  pagedInvoices.map(inv => {
+                    const tintFor = (m) => {
+                      const k = String(m || '').toUpperCase();
+                      return ({
+                        'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                        CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                        MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                        ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                        USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                        MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                        MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                        DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                        PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                      }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+                    };
+                    const items = inv.items || [];
+                    const order = [];
+                    const byMod = {};
+                    let gIdx = 1;
+                    const multi = items.length > 1;
+                    
+                    const getShortModality = (rawStr) => {
+                      let m = (String(rawStr || '').toUpperCase()) || 'OTHER';
+                      if (m === 'ULTRASOUND') return 'USG';
+                      if (m === 'MAMMOGRAPHY' || m === 'MG') return 'MAMMO';
+                      if (m === 'PET-CT') return 'PET';
+                      return m;
+                    };
+                    
+                    for (const it of items) {
+                      const m = getShortModality(it.modality || it.Modality || inv.modality);
+                      const name = it.description || it.serviceName || 'Service';
+                      const qty = Number(it.quantity) || 1;
+                      const baseLabel = name + (qty > 1 ? ` ×${qty}` : '');
+                      const label = multi ? `${gIdx++}. ${baseLabel}` : baseLabel;
+                      if (!(m in byMod)) { byMod[m] = []; order.push(m); }
+                      byMod[m].push(label);
+                    }
+                    
+                    const ap = approvalForInvoice(approvalMap, inv);
+                    const b = ap && approvalBadge(ap.status);
+
+                    return (
+                      <div key={inv.invoiceId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.has(inv.invoiceId)} 
+                              onChange={() => toggleSelectRow(inv.invoiceId)}
+                              style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#0f52ba' }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>
+                                {inv?.tokenNumber != null ? `#${String(inv.tokenNumber).padStart(3, '0')}` : 'N/A'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
+                                {formatDate(inv?.serviceDate || inv?.createdAt, true)}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                            <span style={{
+                              padding: '6px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: 950,
+                              background: inv?.status === 'PAID' ? '#ecfdf5' : inv?.status === 'CANCELLED' ? '#f1f5f9' : inv?.status === 'PARTIAL' ? '#fffbeb' : '#fff7ed',
+                              color: inv?.status === 'PAID' ? '#059669' : inv?.status === 'CANCELLED' ? '#64748b' : inv?.status === 'PARTIAL' ? '#b45309' : '#ea580c'
+                            }}>
+                              {inv?.status === 'CANCELLED' ? '🚫 CANCELLED' : inv?.status === 'PARTIAL' ? '◐ PARTIAL' : (inv?.status || 'PENDING')}
+                            </span>
+                            {b && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: b.bg, color: b.color, border: `1px solid ${b.bd}` }}>{b.icon} {b.short}</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</div>
+                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>Ref: {(inv?.referrerName || 'SELF').toUpperCase()}</div>
+                            </div>
+                          </div>
+                          
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                            {order.length === 0 ? (
+                               <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>{inv.modality ? getShortModality(inv.modality) : '—'}</span>
+                            ) : (
+                              order.map((m, i) => {
+                                const t = tintFor(m);
+                                return (
+                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                    <span style={{ flexShrink: 0, padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: t.text, background: t.bg, border: `1px solid ${t.border}` }}>{m}</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', paddingTop: '2px' }}>
+                                      {byMod[m].map((lbl, idx) => (
+                                        <span key={idx} style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>{lbl}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                           <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '10px' }}>
+                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginBottom: '2px' }}>BASE FEE</div>
+                             <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 900 }}>₹{(inv.grossAmount || 0).toLocaleString()}</div>
+                             {(inv.additionalCharges || 0) > 0 && <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '2px' }}>+₹{(inv.additionalCharges || 0).toLocaleString()} extra</div>}
+                           </div>
+                           <div style={{ background: '#f0f4ff', padding: '12px', borderRadius: '10px' }}>
+                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, marginBottom: '2px' }}>PATIENT BILL</div>
+                             <div style={{ fontSize: '15px', color: '#0f52ba', fontWeight: 950 }}>₹{(inv?.totalAmount || 0).toLocaleString()}</div>
+                             {(inv?.discountAmount || 0) > 0 && <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 800, marginTop: '2px' }}>-₹{(inv.discountAmount || 0).toLocaleString()} disc</div>}
+                           </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0fdf4', padding: '14px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                             <span style={{ fontSize: '11px', color: '#166534', fontWeight: 900, marginBottom: '2px' }}>CLINIC INCOME</span>
+                             <span style={{ fontSize: '18px', color: '#14532d', fontWeight: 950 }}>₹{(Number(inv?.totalAmount || 0) - (Number(inv?.commissionAmount) || 0)).toLocaleString()}</span>
+                          </div>
+                          {(Number(inv?.commissionAmount) || 0) > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                               <span style={{ fontSize: '10px', color: '#e11d48', fontWeight: 900, marginBottom: '2px' }}>INCENTIVE</span>
+                               <span style={{ fontSize: '14px', color: '#e11d48', fontWeight: 950 }}>₹{(Number(inv?.commissionAmount) || 0).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '6px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {inv?.isFree && (
+                              <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4', display: 'inline-block' }}>🎁 FREE</span>
+                            )}
+                            {(Number(advanceByPatient[String(inv?.patientId)]) || 0) > 0 && (
+                              <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', display: 'inline-block' }}>
+                                💳 Adv <b style={{ fontWeight: 950 }}>₹{(Number(advanceByPatient[String(inv?.patientId)]) || 0).toLocaleString()}</b>
+                              </span>
+                            )}
+                            {inv?.status === 'CANCELLED' && (
+                              <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '9px', fontWeight: 800, background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa', display: 'inline-block' }}>Refunded</span>
+                            )}
+                          </div>
+                          
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <button
+                              onClick={() => { celebrate(); setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                              style={{ padding: '11px 20px', borderRadius: '12px', border: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '1px solid #cbd5e1' : 'none', background: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'white' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '#475569' : 'white', fontSize: '13px', fontWeight: 950, cursor: 'pointer', boxShadow: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '0 1px 3px rgba(0,0,0,0.06)' : '0 4px 12px -3px rgba(15,82,186,0.45)' }}
+                            >{(inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'VIEW' : 'PAYMENT'}</button>
+                            <RowActionsMenu isMobile={isMobile}>
+                               <button
+                                 onClick={() => { celebrate(); handlePrintA4(inv); }}
+                                 style={{ padding: '12px', borderRadius: '10px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
+                               >Invoice</button>
+                               {inv?.status === 'PAID' && (
+                                 <>
+                                   <button
+                                     onClick={() => { celebrate(); handlePrintThermal(inv); }}
+                                     style={{ padding: '12px', borderRadius: '10px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
+                                   >Thermal Receipt</button>
+                                   <button
+                                     onClick={() => { celebrate(); handlePrintReceipt(inv); }}
+                                     style={{ padding: '12px', borderRadius: '10px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
+                                   >Receipt</button>
+                                 </>
+                               )}
+                               <div style={{ height: '1px', width: '100%', background: '#eef2f7', margin: '4px 0' }}></div>
+                               <button
+                                 onClick={async () => {
+                                    celebrate();
+                                    let refId = inv.referrerId;
+                                    if (!refId && inv.referrerName) {
+                                       const match = referrers.find(r => r.name?.toLowerCase() === (inv.referrerName || '').toLowerCase());
+                                       if (match) refId = match.referrerId || match.id;
+                                    }
+                                    if (!refId) {
+                                       setErrorModal({ isOpen: true, title: "FISCAL COMPLIANCE WARNING", message: `Invoice ${inv.displayId} has no referral partner attached. Assign a referrer on the invoice before recording a payout.` });
+                                       return;
+                                    }
+                                    const freshList = await verifyFreshList(() => fetchCommissions({ referrerId: refId }));
+                                    const commissionSource = freshList ?? referralCommissions ?? [];
+                                    const items = inv.items || [];
+                                    const ref = inv.displayId;
+                                    const existingForInvoice = commissionSource.filter(c => c.appointmentId === inv.appointmentId || (c.referenceNumber || c.reference) === ref || c.id === inv.commissionId);
+                                    if (existingForInvoice.length === 0) {
+                                      setErrorModal({ isOpen: true, title: "NO RECORDED PAYOUT", message: `Invoice ${inv.displayId} has no existing referral payout to revise. Record the payout through the approved payout workflow first.` });
+                                      return;
+                                    }
+                                    const lineFromItem = (item) => {
+                                      const service = serviceRegistry?.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === item.description?.toLowerCase());
+                                      const modality = String(item.modality || item.Modality || service?.modality || inv.modality || 'MRI').toUpperCase();
+                                      const registryCut = (service?.referralCutValue || 0) * (item.quantity || 1);
+                                      const prior = existingForInvoice.find(c => String(c.modality || '').toUpperCase() === modality);
+                                      return { commissionId: prior?.id || null, modality, amount: prior?.amount ?? prior?.payoutAmount ?? (registryCut || ''), status: prior?.status || prior?.commissionStatus || 'UNPAID', serviceName: item.description || modality, appointmentServiceId: item.appointmentServiceId || null, serviceAmount: (Number(item.amount) || 0) * (Number(item.quantity) || 1) };
+                                    };
+                                    let lines = existingForInvoice.length > 0 ? existingForInvoice.map((commission, index) => {
+                                      // Prefer the exact service this commission was earned on
+                                      // (appointmentServiceId); modality-string matching alone
+                                      // collapses when a visit has two same-modality services.
+                                      // Fall back to modality matching for legacy rows recorded
+                                      // before AppointmentServiceId was tracked.
+                                      const item = (commission.appointmentServiceId ? items.find(candidate => candidate.appointmentServiceId === commission.appointmentServiceId) : null) || items.find(candidate => String(candidate.modality || candidate.Modality || '').toUpperCase() === String(commission.modality || '').toUpperCase()) || items[index];
+                                      return { commissionId: commission.id, modality: String(commission.modality || item?.modality || inv.modality || 'MRI').toUpperCase(), amount: commission.amount ?? commission.payoutAmount ?? 0, status: commission.status || commission.commissionStatus || 'UNPAID', serviceName: item?.description || `Service ${index + 1}`, serviceAmount: (Number(item?.amount) || 0) * (Number(item?.quantity) || 1) };
+                                    }) : items.length > 0 ? items.map(lineFromItem) : [{ modality: String(inv.modality || 'MRI').toUpperCase(), amount: inv.commissionAmount || '', status: 'UNPAID', serviceName: inv.modality || 'Service', appointmentServiceId: null, serviceAmount: Number(inv.totalAmount) || Number(inv.grossAmount) || 0 }];
+                                    setEditPayout({ commissionId: '', approvalEdit: existingForInvoice.length > 0, referrerId: refId, referrerName: inv.referrerName || 'DIRECT', invoiceId: ref, appointmentId: inv.appointmentId || null, patientName: inv.patientName || '', remarks: `Commission for ${inv.displayId} (${inv.patientName})`, lines });
+                                    setIsPayoutDrawerOpen(true);
+                                 }}
+                                 style={{ padding: '10px', borderRadius: '10px', border: 'none', background: isPayoutPaid(inv) ? '#ecfdf5' : '#fff1f2', color: isPayoutPaid(inv) ? '#166534' : '#e11d48', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 5px rgba(225,29,72,0.1)' }} 
+                               >{isPayoutPaid(inv) ? 'REVISE PAID PAYOUT' : 'UPDATE PAYOUT'}</button>
+
+                               {inv?.status === 'PAID' ? (
+                                  <span style={{ padding: '10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '11px', fontWeight: 950, cursor: 'not-allowed', textAlign: 'center' }}>🔒 LOCKED (DEL)</span>
+                                ) : inv?.appointmentId ? (
+                                  <span onClick={() => setErrorModal({ isOpen: true, title: 'TIED TO AN APPOINTMENT', message: `Invoice ${inv.displayId || 'N/A'} is linked to an appointment, so it can't be deleted here.` })} style={{ padding: '10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '11px', fontWeight: 950, cursor: 'pointer', textAlign: 'center' }}>🔒 LOCKED (DEL)</span>
+                                ) : (
+                                  <button onClick={() => setDeleteConfirmModal({ isOpen: true, invoiceId: inv.invoiceId, commissionId: inv.commissionId, displayId: inv.displayId || 'N/A' })} style={{ padding: '10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>DELETE</button>
+                                )}
+                            </RowActionsMenu>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                {(timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)) === 0 && (
+                  <div style={{ padding: '80px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '14px', fontWeight: 700, background: 'white', borderRadius: '16px', border: '1px dashed #cbd5e1' }}>NO DATA DETECTED IN ACTIVE SCOPE</div>
+                )}
+              </div>
+            )}
                 {/* ── Load More / Showing count ────────────────────────────── */}
              {(timeFilter !== 'FUTURE') && (
                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '20px 0 8px' }}>

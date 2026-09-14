@@ -88,38 +88,40 @@ export function watchExpensesPage(filters = {}, { pageSize = PAGE_SIZE_EXPENSES,
 
   return liveQuery(async () => {
     const t = tables.expenses();
-    let arr = await t.orderBy('transactionDate').reverse().toArray();
+    let collection = t.orderBy('transactionDate').reverse();
 
-    if (category && category !== 'ALL') {
-      arr = arr.filter(r => (r.category || '') === category);
-    }
-    if (startDateIso) {
-      arr = arr.filter(r => (r.transactionDate || '') >= startDateIso);
-    }
-    if (endDateIso) {
-      const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
-      arr = arr.filter(r => (r.transactionDate || '') <= eod);
-    }
-    if (q) {
-      arr = arr.filter(r =>
-        (r.description     || '').toLowerCase().includes(q) ||
-        (r.vendorName      || '').toLowerCase().includes(q) ||
-        (r.referenceNumber || '').toLowerCase().includes(q)
-      );
-    }
+    collection = collection.filter(r => {
+      if (category && category !== 'ALL' && (r.category || '') !== category) return false;
+      if (startDateIso && (r.transactionDate || '') < startDateIso) return false;
+      if (endDateIso) {
+        const eod = endDateIso.length === 10 ? endDateIso + 'T23:59:59.999Z' : endDateIso;
+        if ((r.transactionDate || '') > eod) return false;
+      }
+      if (q && !(r.description || '').toLowerCase().includes(q) && !(r.vendorName || '').toLowerCase().includes(q) && !(r.referenceNumber || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
 
-    const totalCount = arr.length;
+    const totalCount = await collection.clone().count();
 
+    let offset = 0;
     if (cursor) {
-      const idx = arr.findIndex(
-        r => r.transactionDate === cursor.transactionDate && r.id === cursor.id
-      );
-      if (idx >= 0) arr = arr.slice(idx + 1);
+      let matchIdx = -1;
+      let i = 0;
+      await collection.clone().until((r) => {
+        if (r.transactionDate === cursor.transactionDate && r.id === cursor.id) {
+          matchIdx = i;
+          return true;
+        }
+        i++;
+        return false;
+      });
+      if (matchIdx >= 0) offset = matchIdx + 1;
     }
 
-    const page = arr.slice(0, pageSize);
+    const page = await collection.offset(offset).limit(pageSize).toArray();
+    
     const nextCursor =
-      arr.length > pageSize
+      (offset + page.length) < totalCount && page.length > 0
         ? { transactionDate: page[page.length - 1].transactionDate, id: page[page.length - 1].id }
         : null;
 

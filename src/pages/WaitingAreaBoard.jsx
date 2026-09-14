@@ -15,7 +15,8 @@ export default function WaitingAreaBoard() {
   useEffect(() => {
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     // Warm the cache immediately on mount; the global engine refreshes it after.
-    syncNow().catch(() => {});
+    // Scoped — this is a read-only queue display, only appointments matter.
+    syncNow(['appointments']).catch(() => {});
 
     const ACTIVE = ['confirmed', 'in_progress', 'scanned', 'reporting'];
     const sub = watchAppointments({ mode: 'today', dateIso: todayIso }).subscribe({

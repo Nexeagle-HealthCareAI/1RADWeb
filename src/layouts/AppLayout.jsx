@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import MobileMenuSheet from './MobileMenuSheet';
 import MobileHeader from './MobileHeader';
+import MobileBottomNav from './MobileBottomNav';
+import { syncEngine } from '../offline/SyncEngine';
 import useAuth from '../auth/useAuth';
 import '../styles/global.css';
 
@@ -11,13 +14,14 @@ import PrefetchStatusIndicator from '../components/PrefetchStatusIndicator';
 import DesktopUpdateBanner from '../components/DesktopUpdateBanner';
 import RadAI from '../components/RadAI';
 import useOffline from '../hooks/useOffline';
+import { OFFLINE_MODE_ENABLED } from '../config/offlineMode';
 
 
 export default function AppLayout() {
   const { currentUser, logout, showTimeoutModal, timeoutCountdown, resetIdleTimer, subscription, refreshSubscription } = useAuth();
   const location = useLocation();
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pageContentRef = useRef(null);
 
   const { isOnline, pendingCount } = useOffline();
@@ -28,6 +32,10 @@ export default function AppLayout() {
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000); // Update every minute
+    
+    // Drain the offline outbox on boot in case the app was closed while offline
+    syncEngine.flushOutbox();
+
     return () => clearInterval(timer);
   }, []);
 
@@ -58,7 +66,7 @@ export default function AppLayout() {
 
   // Reset scroll and close mobile sidebar on route change
   useEffect(() => {
-    setIsMobileSidebarOpen(false);
+    setIsMobileMenuOpen(false);
     if (pageContentRef.current) {
       pageContentRef.current.scrollTop = 0;
     }
@@ -66,6 +74,33 @@ export default function AppLayout() {
   }, [location.pathname]);
 
   if (!currentUser) return <Outlet />;
+
+  // Offline mode is disabled for now (see src/config/offlineMode.js) — a
+  // genuinely lost connection blocks the app behind this screen instead of
+  // falling back to cached data or queueing mutations. Clears itself
+  // automatically the instant the browser's 'online' event fires (isOnline
+  // flips back to true), no user action needed.
+  if (!OFFLINE_MODE_ENABLED && !isOnline) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#0a1628', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ width: '80px', height: '80px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 0 0 1px rgba(255,255,255,0.05), inset 0 2px 4px rgba(255,255,255,0.05), 0 10px 30px rgba(0,0,0,0.5)' }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+            <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+            <line x1="12" y1="20" x2="12.01" y2="20"></line>
+          </svg>
+        </div>
+        <h1 style={{ fontSize: '24px', fontWeight: 900, marginBottom: '10px' }}>Connection Required</h1>
+        <p style={{ fontSize: '14px', color: '#94a3b8', textAlign: 'center', maxWidth: '400px', lineHeight: 1.6 }}>
+          1Rad needs an internet connection to continue. This screen will disappear automatically as soon as you're back online — nothing to do here.
+        </p>
+      </div>
+    );
+  }
 
   // If locked, render lock screen on top
   if (isLocked && location.pathname !== '/subscription') {
@@ -126,30 +161,20 @@ export default function AppLayout() {
       {(['/technician', '/doctor-board'].includes(location.pathname)
         || location.pathname.startsWith('/reporting')) && <PrefetchStatusIndicator />}
 
-      {/* Mobile Backdrop Overlay */}
-      {isMobileSidebarOpen && (
-        <div 
-          onClick={() => setIsMobileSidebarOpen(false)}
-          className="mobile-backdrop"
-          style={{ 
-            position: 'fixed', 
-            top: 0, left: 0, right: 0, bottom: 0, 
-            background: 'rgba(0,0,0,0.5)', 
-            zIndex: 1090,
-            backdropFilter: 'blur(3px)'
-          }}
-        />
-      )}
-
       <MobileHeader 
-        onMenuToggle={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)} 
-        isSidebarOpen={isMobileSidebarOpen}
+        onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+        isSidebarOpen={isMobileMenuOpen}
         currentTime={currentTime}
       />
 
       <Sidebar 
-        isMobileOpen={isMobileSidebarOpen} 
-        onMobileClose={() => setIsMobileSidebarOpen(false)} 
+        isMobileOpen={false} 
+        onMobileClose={() => {}} 
+      />
+
+      <MobileMenuSheet 
+        isOpen={isMobileMenuOpen} 
+        onClose={() => setIsMobileMenuOpen(false)} 
       />
 
       <div className="main-content">
@@ -159,6 +184,12 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      <MobileBottomNav 
+        onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+        isMenuOpen={isMobileMenuOpen}
+        onTabClick={() => setIsMobileMenuOpen(false)} 
+      />
 
       {/* Floating RadAI help desk — on every authenticated page */}
       <RadAI />

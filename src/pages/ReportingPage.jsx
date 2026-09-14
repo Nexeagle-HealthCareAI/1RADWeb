@@ -3316,6 +3316,7 @@ const ReportingPage = () => {
       `}</style>
 
       {/* --- HEADER --- */}
+      {!isMobile ? (
       <header className="reporting-header">
         <div className="header-left">
           <button className="back-btn" onClick={() => window.location.href = '/doctor-board'}>← Worklist</button>
@@ -3637,9 +3638,50 @@ const ReportingPage = () => {
           </div>
         </div>
       </header>
+      ) : (
+      <header style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 16px', background: 'white', borderBottom: '1px solid #f1f5f9',
+        position: 'relative', zIndex: 50,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button 
+            onClick={() => window.location.href = '/doctor-board'}
+            style={{ background: 'transparent', border: 'none', fontSize: '20px', padding: 0, cursor: 'pointer', color: '#1d4ed8', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+          >
+            ←
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '15px', fontWeight: 900, color: '#1e293b' }}>
+              {activeAppointment?.patientName || 'Loading…'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>
+                {activeAppointment?.patientAge != null ? `${activeAppointment.patientAge}y ` : ''} 
+                {activeAppointment?.patientGender || ''}
+              </span>
+              <span style={{ color: '#cbd5e1' }}>•</span>
+              <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', background: '#eff6ff', padding: '2px 6px', borderRadius: '6px' }}>
+                {activeAppointment?.modality || 'OT'}
+              </span>
+            </div>
+          </div>
+        </div>
+        {activeAppointment?.priority && activeAppointment.priority !== 'ROUTINE' && (
+          <span style={{
+            background: activeAppointment.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+            color: activeAppointment.priority === 'STAT' ? '#dc2626' : '#d97706',
+            padding: '4px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 900
+          }}>{activeAppointment.priority}</span>
+        )}
+      </header>
+      )}
 
       {/* --- MAIN LAYOUT --- */}
-      <div className="main-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+      <div className="main-layout" style={{ 
+        flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden',
+        paddingBottom: isMobile ? '64px' : '0' 
+      }}>
 
         {/* DICOM TAB — MOBILE: simplified TechnicianPage-style layout.
             Intentionally does NOT use the .panel-center class — that class has a
@@ -3714,6 +3756,8 @@ const ReportingPage = () => {
                 overlayHost={overlayHost}
                 isMobile={isMobile}
                 isTablet={isTablet}
+                runRadAiCleanup={runRadAiCleanup}
+                handleAiAssist={handleAiAssist}
               />
             )}
 
@@ -3784,6 +3828,49 @@ const ReportingPage = () => {
               </div>
             )}
           </div>
+      
+      {/* --- MOBILE BOTTOM NAV --- */}
+      {isMobile && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, height: '64px',
+          background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          borderTop: '1px solid rgba(226, 232, 240, 0.8)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+          paddingBottom: 'env(safe-area-inset-bottom)', zIndex: 1000,
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.03)'
+        }}>
+          {[
+            { id: 'DICOM',     label: 'Viewer',           icon: '🔍' },
+            { id: 'REPORTING', label: 'Report',           icon: '📝' },
+            { id: 'TIMELINE',  label: 'Timeline',         icon: '🕒' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => handleSelectMainTab(tab.id)}
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent', border: 'none', height: '100%', gap: '4px',
+                color: activeMainTab === tab.id ? '#1d4ed8' : '#64748b', cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent', outline: 'none'
+              }}
+            >
+              <div style={{
+                fontSize: '20px', transition: 'transform 0.2s',
+                transform: activeMainTab === tab.id ? 'scale(1.1) translateY(-2px)' : 'scale(1)',
+                filter: activeMainTab === tab.id ? 'drop-shadow(0 2px 4px rgba(29, 78, 216, 0.3))' : 'none'
+              }}>
+                {tab.icon}
+              </div>
+              <span style={{
+                fontSize: '10px', fontWeight: activeMainTab === tab.id ? 900 : 600,
+                opacity: activeMainTab === tab.id ? 1 : 0.8
+              }}>
+                {tab.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       
 
 

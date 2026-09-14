@@ -11,6 +11,7 @@ import { isPatientArrived } from '../utils/arrival';
 import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
+import '../styles/MobileAndroidBooking.css';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
@@ -106,7 +107,7 @@ function tokenReferredBy(app) {
 export default function AppointmentBoard() {
   const navigate = useNavigate();
   const { activeCenterId, activeCenter } = useContext(AuthContext);
-  const { isOnline, addToOutbox } = useOffline();
+  const { isOnline, addToOutbox, counts } = useOffline();
   // 60s tick keeps the on-premises pill counting up; isOverdue comes from the
   // shared OverdueProvider so the row pulse mirrors the bell exactly.
   useTickClock();
@@ -114,6 +115,17 @@ export default function AppointmentBoard() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 768;
   const isTablet = windowWidth >= 768 && windowWidth < 1024;
+  const [mobileSyncing, setMobileSyncing] = useState(false);
+  const handleMobileSync = async () => {
+    setMobileSyncing(true);
+    try {
+      await syncNow(['appointments', 'patients']);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => setMobileSyncing(false), 800);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -151,6 +163,8 @@ export default function AppointmentBoard() {
   });
   const [archiveFilterMode, setArchiveFilterMode] = useState('YESTERDAY'); // 'ALL', 'YESTERDAY', or 'RANGE'
   const [appointments, setAppointments] = useState([]);
+  const [appointmentsNextCursor, setAppointmentsNextCursor] = useState(null);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   // ALL cached appointments (not the active-tab slice) — drives the historical
   // "most used services per modality" quick-picks in the booking modal.
   const [statsAppointments, setStatsAppointments] = useState([]);
@@ -581,12 +595,20 @@ export default function AppointmentBoard() {
   }, [bookingStep, doctors]);
 
   // --- API SYNC ---
-  const fetchAppointments = useCallback(async () => {
-    setLoading(true);
+  const fetchAppointments = useCallback(async (isLoadMore = false) => {
+    if (!isLoadMore) {
+      setLoading(true);
+    } else {
+      setIsFetchingMore(true);
+    }
+
     const params = {
       search: searchQuery,
       status: filters.status,
     };
+
+    if (filters.modality && filters.modality !== 'ALL') params.modality = filters.modality;
+    if (filters.doctor && filters.doctor !== 'ALL') params.doctor = filters.doctor;
 
     if (activeTab === 'TODAY') {
       params.date = getTodayString();
@@ -595,6 +617,10 @@ export default function AppointmentBoard() {
       params.startDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
     } else {
       params.isArchive = true;
+      params.pageSize = 25;
+      if (isLoadMore && appointmentsNextCursor) {
+        params.cursor = appointmentsNextCursor;
+      }
       if (archiveFilterMode === 'YESTERDAY') {
         params.startDate = YESTERDAY;
         params.endDate = YESTERDAY;
@@ -608,7 +634,10 @@ export default function AppointmentBoard() {
 
     try {
       const response = await apiClient.get('/appointments', { params });
-      let mappedData = response.data.map(a => {
+      const rawData = response.data.items || response.data;
+      const nextCursor = response.data.nextCursor || null;
+
+      let mappedData = rawData.map(a => {
         const appDate = a.date || (a.dateTime ? a.dateTime.split('T')[0] : null);
         const isFuture = appDate && appDate > getTodayString();
         const currentStatus = a.status ? a.status.toLowerCase() : 'scheduled';
@@ -630,18 +659,9 @@ export default function AppointmentBoard() {
       
       const itemsWithTokens = chronologicalData.map(item => ({
         ...item,
-        // Token is assigned by the server on ARRIVAL — surface it as-is and
-        // leave it blank (dash in the UI) until the patient arrives. No more
-        // fabricated sequential numbers for not-yet-arrived patients.
         tokenNo: item.dailyTokenNumber ?? null
       }));
       
-      // Worklist order: STAT → URGENT → ROUTINE, then token DESC. Priority
-      // is still the dominant key so a STAT walk-in surfaces above all
-      // routine tokens regardless of when it was booked; inside each
-      // priority bucket the LATEST tokens float to the top so the front
-      // desk sees newly-booked patients first when refreshing the board.
-      // (Time DESC as a tiebreaker for the rare same-token collision.)
       const PRIORITY_RANK = { STAT: 0, URGENT: 1, ROUTINE: 2 };
       const finalSortedData = itemsWithTokens.sort((a, b) => {
         const pa = PRIORITY_RANK[a.priority] ?? 2;
@@ -657,18 +677,38 @@ export default function AppointmentBoard() {
         return timeB - timeA;
       });
 
-      setAppointments(finalSortedData);
-      await nativeStorage.set(cacheKey, finalSortedData);
+      if (isLoadMore) {
+        setAppointments(prev => {
+          const merged = [...prev, ...finalSortedData];
+          // deduplicate just in case
+          const seen = new Set();
+          return merged.filter(app => {
+            if (seen.has(app.appointmentId)) return false;
+            seen.add(app.appointmentId);
+            return true;
+          });
+        });
+      } else {
+        setAppointments(finalSortedData);
+        if (activeTab === 'TODAY' || activeTab === 'FUTURE') {
+          await nativeStorage.set(cacheKey, finalSortedData);
+        }
+      }
+
+      setAppointmentsNextCursor(nextCursor);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
-      const cached = await nativeStorage.get(cacheKey);
-      if (cached) {
-        setAppointments(cached);
+      if (!isLoadMore) {
+        const cached = await nativeStorage.get(cacheKey);
+        if (cached) {
+          setAppointments(cached);
+        }
       }
     } finally {
       setLoading(false);
+      setIsFetchingMore(false);
     }
-  }, [searchQuery, filters.status, activeTab, pastDateRange, activeCenterId]);
+  }, [searchQuery, filters, activeTab, pastDateRange, archiveFilterMode, appointmentsNextCursor, activeCenterId]);
 
   // Patient search now goes through the offline-first cache. The actual
   // network pull is the SyncEngine's job; this function only exists to
@@ -677,17 +717,30 @@ export default function AppointmentBoard() {
   // without waiting for the next 30s tick. Reactive list rendering is
   // handled by the liveQuery effect below.
   const fetchPatients = useCallback(async () => {
-    try { await syncNow(); } catch (_err) { /* engine already logs */ }
+    try { await syncNow(['patients']); } catch (_err) { /* engine already logs */ }
   }, []);
 
   const fetchReferrers = useCallback(async (query) => {
     try {
+      if (!navigator.onLine) {
+        const local = await getAllReferrers();
+        const q = (query || '').toLowerCase().trim();
+        setReferrers(q ? local.filter(r => (r.name || '').toLowerCase().includes(q)) : local);
+        return;
+      }
       const response = await apiClient.get('/referrers', {
         params: { search: query }
       });
       setReferrers(response.data);
     } catch (error) {
-      console.error('Failed to fetch referrers:', error);
+      console.error('Failed to fetch referrers, falling back to offline cache:', error);
+      try {
+        const local = await getAllReferrers();
+        const q = (query || '').toLowerCase().trim();
+        setReferrers(q ? local.filter(r => (r.name || '').toLowerCase().includes(q)) : local);
+      } catch (cacheErr) {
+        console.error('Offline referrer cache lookup failed:', cacheErr);
+      }
     }
   }, []);
 
@@ -799,8 +852,14 @@ export default function AppointmentBoard() {
   // filter, so all three windows are present locally). A successful
   // mutation just nudges the SyncEngine to pull the delta; the UI
   // re-renders when the new row lands in local storage.
+  //
+  // Scoped to appointments + patients: every call site here is a status
+  // change, a booking, an edit, or a referrer reassignment on THIS board —
+  // none of them touch invoices/expenses/referral commissions/personnel/
+  // price registry, so there's no reason to wait on those 5 other entities
+  // (previously pulled in full on every single action here).
   const refreshAppointments = useCallback(() => {
-    syncNow();
+    syncNow(['appointments', 'patients']);
   }, []);
 
   // TODAY tab: subscribe to the offline cache via liveQuery. The SyncEngine
@@ -866,8 +925,9 @@ export default function AppointmentBoard() {
     // Kick an immediate pull so the local cache reflects the freshest server
     // state right after mount or a tab/date/status switch. The engine's own
     // 30s interval covers the steady-state case. Online-only; harmless when
-    // offline (sync engine just no-ops).
-    syncNow();
+    // offline (sync engine just no-ops). Scoped — this board only reads
+    // appointments/patients, not the other 7 entities.
+    syncNow(['appointments', 'patients']);
 
     return () => sub.unsubscribe();
   }, [
@@ -1116,7 +1176,9 @@ export default function AppointmentBoard() {
 
   const itemsPerPage = 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
-  const paginatedAppointments = filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedAppointments = activeTab === 'PAST'
+    ? filteredAppointments
+    : filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const stats = {
     total: appointmentsForTab.length,
@@ -1201,6 +1263,8 @@ export default function AppointmentBoard() {
             open: true,
             tokenNo: tok ?? app.tokenNo ?? null,
             patientName: app.patientName || 'Patient',
+            mobile: app.mobile || '',
+            app: app,
             services: lines.map(l => ({ modality: l.modality, serviceName: l.serviceName })),
           });
           celebrate();
@@ -1454,7 +1518,13 @@ export default function AppointmentBoard() {
             patientName: newPatient.name,
             patientAge: newPatient.age,
             patientGender: newPatient.gender,
-            patientMobile: newPatient.mobile,
+            mobile: newPatient.mobile,
+            village: newPatient.village,
+            block: newPatient.block,
+            district: newPatient.district,
+            address: newPatient.address,
+            sourceOfInfo: newPatient.sourceOfInfo,
+            notes: newBooking.notes,
             service: primary.serviceName,
             modality: primary.modality,
             services: serviceLines,
@@ -1534,7 +1604,32 @@ export default function AppointmentBoard() {
     setShowBookingValidation(false);
   };
 
-  const startEditingAppointment = (app) => {
+  const startEditingAppointment = async (appIn) => {
+    let app = appIn;
+
+    // The worklist row (Dexie cache, fed by the summary endpoint) can have a
+    // stale or missing services[] — e.g. the post-booking healing GET
+    // (handleBookAppointment above) is fire-and-forget and may never have
+    // landed, leaving services[].id = null for an already-invoiced service.
+    // The routine 30s poll can't repair this either: the summary DTO it pulls
+    // doesn't carry services at all. Submitting a null id for an EXISTING
+    // service makes the backend treat it as removed + re-added as new,
+    // desyncing the invoice total from what's actually paid. So refetch the
+    // canonical, id-bearing appointment here before building the edit form —
+    // this is the one place editing actually depends on those ids being real.
+    if (isOnline && appIn?.appointmentId) {
+      try {
+        const full = await apiClient.get(`/appointments/${appIn.appointmentId}`);
+        if (full?.data?.appointmentId) {
+          app = { ...appIn, ...full.data };
+          applyServerDeltas([full.data]).catch(() => {});
+        }
+      } catch {
+        // Offline blip / request failure — fall back to the cached row below
+        // rather than blocking the edit entirely.
+      }
+    }
+
     const matchedRef = (referrers || []).find(r => (r.name || '').toLowerCase() === (app.referredBy || '').toLowerCase());
     const apptSupportDoc = app.supportedByDoctor || (matchedRef && matchedRef.isDoctor === false ? matchedRef.supportedByDoctor : '') || '';
     const supportDoc = apptSupportDoc
@@ -1553,25 +1648,26 @@ export default function AppointmentBoard() {
     } : {};
 
     const lines = getServiceLines(app);
-    const [primary, ...rest] = lines;
+    const primaryService = lines[0] || { serviceName: '', modality: app.modality || 'X-RAY', amount: 0, referralCutValue: 0, id: null };
+    const remainingServices = lines.slice(1);
 
     const { value: ageVal, unit: ageUnitVal } = parsePatientAge(app.patientAge || app.age);
 
     const initialEditing = {
       ...app,
       ...refProfile,
-      modality:         primary?.modality || app.modality || 'X-RAY',
-      service:          primary?.serviceName || app.service || '',
-      amount:           primary?.amount || app.amount || 0,
-      referralCutValue: primary?.referralCutValue || app.referralCutValue || 0,
-      _primaryServiceId: primary?.id || null,
+      modality:         lines.length > 0 ? lines[lines.length-1].modality : (app.modality || 'X-RAY'),
+      service:          '',
+      amount:           0,
+      referralCutValue: 0,
+      _primaryServiceId: null,
       patientAgeValue:  ageVal || '',
       patientAgeUnit:   ageUnitVal || 'Y',
     };
 
     setEditingAppointment(initialEditing);
 
-    setEditServices(rest.map(l => ({
+    setEditServices(lines.map(l => ({
       id:               l.id || null,
       serviceName:      l.serviceName,
       modality:         l.modality,
@@ -1587,6 +1683,7 @@ export default function AppointmentBoard() {
       dateTime: app.dateTime || null,
       patientName: app.patientName || '',
       mobile: app.mobile || '',
+      priority: app.priority || 'ROUTINE',
     };
     setIsEditingOpen(true);
   };
@@ -1786,6 +1883,7 @@ export default function AppointmentBoard() {
         services: serviceLines,
         dateTime: editingAppointment.dateTime,
         doctor: editingAppointment.doctor,
+        priority: editingAppointment.priority || 'ROUTINE',
         notes: editingAppointment.notes,
         referredBy: withDoctorPrefix(editingAppointment.referredBy, editingAppointment.referrerIsDoctor),
         // Contact applies to both a doctor and an agent payee.
@@ -1799,13 +1897,14 @@ export default function AppointmentBoard() {
         referrerEmail: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerEmail || '') : '',
         referrerSpecialty: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerSpecialty || '') : '',
         referrerDegree: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerDegree || '') : '',
-        referredAddress: editingAppointment.referrerAddress || '',
+        referrerAddress: editingAppointment.referrerAddress || '',
         patientName: editingAppointment.patientName,
         mobile: editMobile,
         patientAge: buildPatientAge(editingAppointment.patientAgeValue, editingAppointment.patientAgeUnit),
         patientGender: editingAppointment.patientGender,
         address: editingAppointment.address || '',
         village: editingAppointment.village || '',
+        block: editingAppointment.block || '',
         district: editingAppointment.district || '',
         sourceOfInfo: editingAppointment.sourceOfInfo || '',
     };
@@ -1846,17 +1945,17 @@ export default function AppointmentBoard() {
       // PREVIOUS services/billing until the 30s background poll (whose pull is
       // skipped when one is already running — pullCycle guards on `pulling`).
       const editedApptId = editingAppointment.appointmentId;
-      apiClient.get(`/appointments/${editedApptId}`)
-        .then(full => { if (full?.data?.appointmentId) return applyServerDeltas([full.data]); })
-        .catch(() => { /* the next sync still reconciles */ });
-
-      // Same for THIS visit's invoice — pull the canonical bill (all reconciled
-      // line items, not just the watermark delta) straight into the invoice cache
-      // so the Revenue Hub's "modality : service" column shows the full set of
-      // services immediately after an add/remove, instead of lagging a sync.
-      apiClient.get('/finance/invoices', { params: { appointmentId: editedApptId } })
-        .then(r => { if (Array.isArray(r?.data) && r.data.length) return applyInvoiceDeltas(r.data); })
-        .catch(() => { /* the next sync still reconciles */ });
+      // Wait for both cache writes before reporting success. Previously these
+      // background requests raced the user navigating to Revenue, which could
+      // expose the pre-edit cached invoice until the next sync cycle.
+      await Promise.all([
+        apiClient.get(`/appointments/${editedApptId}`)
+          .then(full => full?.data?.appointmentId ? applyServerDeltas([full.data]) : undefined)
+          .catch(() => undefined),
+        apiClient.get('/finance/invoices', { params: { appointmentId: editedApptId } })
+          .then(r => Array.isArray(r?.data) && r.data.length ? applyInvoiceDeltas(r.data) : undefined)
+          .catch(() => undefined),
+      ]);
 
       // Build a precise "what changed" summary (pre-edit snapshot vs saved state)
       // for the success popup.
@@ -1878,6 +1977,7 @@ export default function AppointmentBoard() {
         changes.push({ type: 'changed', text: `Date → ${new Date(editingAppointment.dateTime).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` });
       if ((orig.patientName || '') !== (editingAppointment.patientName || '')) changes.push({ type: 'changed', text: `Patient name → ${editingAppointment.patientName}` });
       if ((orig.mobile || '') !== (editMobile || '')) changes.push({ type: 'changed', text: `Mobile → ${editMobile}` });
+      if ((orig.priority || 'ROUTINE') !== (editingAppointment.priority || 'ROUTINE')) changes.push({ type: 'changed', text: `Priority → ${editingAppointment.priority || 'ROUTINE'}` });
       if (changes.length === 0) changes.push({ type: 'changed', text: 'Details refreshed' });
 
       // Distinct "edit saved" flourish (cooler shimmer, not the booking confetti).
@@ -2404,6 +2504,22 @@ export default function AppointmentBoard() {
   //  PAGINATION RENDERER
   // ============================================================
   const renderPagination = () => {
+    if (activeTab === 'PAST') {
+      if (!appointmentsNextCursor) return null;
+      return (
+        <div style={{ textAlign: 'center', margin: '20px 0', width: '100%' }}>
+          <button 
+            className="filter-reset-btn"
+            style={{ padding: '8px 24px', cursor: 'pointer', opacity: isFetchingMore ? 0.7 : 1 }}
+            onClick={() => fetchAppointments(true)}
+            disabled={isFetchingMore}
+          >
+            {isFetchingMore ? 'Loading...' : 'Load More'}
+          </button>
+        </div>
+      );
+    }
+
     if (totalPages <= 1) return null;
 
     const itemStart = (currentPage - 1) * itemsPerPage + 1;
@@ -2528,11 +2644,11 @@ export default function AppointmentBoard() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0, flex: 1 }}>
               <div style={{
                 flexShrink: 0,
-                width: '34px', height: '34px', borderRadius: '8px',
-                background: 'rgba(15, 82, 186, 0.08)', color: '#0f52ba',
+                minWidth: '44px', height: '34px', padding: '0 8px', borderRadius: '8px',
+                background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: '#ffffff',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 950, fontSize: '13px',
-                border: '1.5px solid rgba(15, 82, 186, 0.18)',
+                fontWeight: 950, fontSize: '13px', letterSpacing: '0.5px',
+                boxShadow: '0 4px 10px rgba(15, 82, 186, 0.25)',
               }}>
                 {app.tokenNo != null ? formatToken(app.tokenNo) : '—'}
               </div>
@@ -3073,9 +3189,709 @@ export default function AppointmentBoard() {
   };
 
   // ============================================================
+  //  PREMIUM ANDROID NATIVE ACTIVITY - MOBILE BOOKING FLOW
+  // ============================================================
+  const renderMobileAndroidBooking = () => {
+    const isStep1 = bookingStep === 1;
+    const isStep2 = bookingStep === 2;
+    const modEmojis = { 'ULTRASOUND': '🔊', 'X-RAY': '☢️', 'CT': '🍩', 'MRI': '🧲', 'DEXA': '🦴', 'ANGIOGRAPHY': '🫀', 'MAMMOGRAPHY': '🎀', 'PET-CT': '🔬', 'NUCLEAR MEDICINE': '⚛️', 'FLUOROSCOPY': '🖥️' };
+    const quickAges = [
+      { label: '👶 15D', val: '15', unit: 'D' }, { label: '👶 6M', val: '6', unit: 'M' }, { label: '🧒 5Y', val: '5', unit: 'Y' },
+      { label: '👨 20Y', val: '20', unit: 'Y' }, { label: '👨 25Y', val: '25', unit: 'Y' }, { label: '👨 30Y', val: '30', unit: 'Y' },
+      { label: '👨 35Y', val: '35', unit: 'Y' }, { label: '👨 40Y', val: '40', unit: 'Y' }, { label: '👨 50Y', val: '50', unit: 'Y' },
+      { label: '🧓 60Y', val: '60', unit: 'Y' }, { label: '🧓 70Y', val: '70', unit: 'Y' }
+    ];
+    const quickRefs = (referrers || []).slice(0, 5);
+    const fromHist = mostUsedByModality[newBooking.modality] || [];
+    const fromReg = serviceRegistry.filter(s => s.modality === newBooking.modality).map(s => s.serviceName);
+    const quickProcedures = [...new Set([...fromHist, ...fromReg])].filter(Boolean).slice(0, 6);
+
+    return (
+      <div className="android-booking-activity">
+        {/* Top App Bar */}
+        <div className="android-booking-topbar">
+          <button
+            type="button"
+            className="android-booking-back-btn"
+            onClick={() => { setIsBookingOpen(false); resetBooking(); }}
+            title="Close"
+          >✕</button>
+          <div className="android-booking-title-area">
+            <div className="android-booking-title">New Appointment</div>
+            <div className="android-booking-subtitle">
+              Step {bookingStep} of 2 • {isStep1 ? 'Patient Profile' : 'Study & Price'}
+            </div>
+          </div>
+          <span className={`android-sync-badge ${isOnline ? 'online' : 'offline'}`}>
+            {isOnline ? '🟢 INSTANT SYNC' : '⚡ OFFLINE READY'}
+          </span>
+        </div>
+
+        {/* Scrollable Content Body */}
+        <div className="android-booking-body">
+          {isStep1 && (
+            <>
+              {/* Card 1: Identity & Duplicate Matching */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">👤 PATIENT IDENTITY</span>
+                </div>
+                <div className="android-form-group">
+                  <label className="android-label">
+                    <span>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Michael Thorne"
+                    className={`android-input ${showBookingValidation && !newPatient.name.trim() ? 'android-input-error' : ''}`}
+                    value={newPatient.name}
+                    onChange={e => {
+                      setNewPatient({ ...newPatient, name: e.target.value });
+                      setNewBooking({ ...newBooking, patientId: '' });
+                    }}
+                  />
+                </div>
+
+                {/* Android Native Duplicate Alert */}
+                {!dupDismissed && !newBooking.patientId && patientDuplicates.length > 0 && (
+                  <div className="android-duplicate-card">
+                    <div className="android-duplicate-header">
+                      <span className="android-duplicate-title">
+                        ⚠ POSSIBLE EXISTING PATIENT{patientDuplicates.length > 1 ? 'S' : ''} FOUND
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setDupDismissed(true)}
+                        style={{ background: 'none', border: 'none', color: '#92400e', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+                      >✕</button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {patientDuplicates.map((d, i) => {
+                        const p = d.patient;
+                        return (
+                          <div key={p.id || i} className="android-duplicate-item">
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: 950, color: '#0f172a' }}>{(p.fullName || p.name || '').toUpperCase()}</div>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
+                                {[p.mobile, formatPatientAge ? formatPatientAge(p.age) : p.age, p.gender].filter(Boolean).join(' • ')}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="android-dup-btn"
+                              onClick={() => {
+                                const { value: ageVal, unit: ageUnitVal } = parsePatientAge(p.age);
+                                setNewBooking(prev => ({ ...prev, patientId: p.id || p.patientId }));
+                                setNewPatient({
+                                  name: p.fullName || p.name || '',
+                                  mobile: p.mobile || '',
+                                  age: ageVal,
+                                  ageUnit: ageUnitVal,
+                                  gender: p.gender || 'Female',
+                                  village: p.village || '',
+                                  block: p.block || '',
+                                  district: p.district || '',
+                                  address: p.address || '',
+                                  referredBy: p.referredBy || '',
+                                  sourceOfInfo: p.sourceOfInfo || '',
+                                  referrerId: p.referrerId || null,
+                                  referrerContact: '', referrerAddress: '',
+                                });
+                                setPatientDuplicates([]);
+                              }}
+                            >SELECT (1-CLICK)</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Card 2: ⚡ 1-Click Quick Age & Gender */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">⚡ 1-CLICK AGE & GENDER</span>
+                </div>
+
+                {/* 1. Age Presets Tray */}
+                <div className="android-form-group">
+                  <label className="android-label">
+                    <span>QUICK AGE PRESETS <span style={{ color: '#e74c3c' }}>*</span></span>
+                    <span className="android-label-hint">1-Tap Auto Fill</span>
+                  </label>
+                  <div className="android-quick-tray">
+                    {quickAges.map(qa => {
+                      const sel = newPatient.age === qa.val && newPatient.ageUnit === qa.unit;
+                      return (
+                        <button
+                          key={qa.label}
+                          type="button"
+                          className={`android-quick-chip ${sel ? 'selected' : ''}`}
+                          onClick={() => setNewPatient({ ...newPatient, age: qa.val, ageUnit: qa.unit })}
+                        >{qa.label}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. DEDICATED FULL ROW FOR AGE */}
+                <div className="android-form-group" style={{ marginTop: '6px' }}>
+                  <label className="android-label">
+                    <span>CUSTOM AGE <span style={{ color: '#e74c3c' }}>*</span></span>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Enter number & unit</span>
+                  </label>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'stretch',
+                    border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #cbd5e1', 
+                    borderRadius: '14px', 
+                    overflow: 'hidden', 
+                    background: '#f8fafc',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+                  }}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="e.g. 25"
+                      className="android-input"
+                      style={{ 
+                        border: 'none', 
+                        background: 'transparent', 
+                        flex: 1, 
+                        minWidth: 0, 
+                        padding: '12px 16px', 
+                        fontSize: '15px', 
+                        fontWeight: 800,
+                        color: '#0f172a'
+                      }}
+                      value={newPatient.age}
+                      onChange={e => setNewPatient({ ...newPatient, age: e.target.value.replace(/[^0-9.]/g, '') })}
+                    />
+                    <div style={{ display: 'flex', borderLeft: '1.5px solid #cbd5e1', background: '#f1f5f9' }}>
+                      {[{ u: 'Y', label: 'Years' }, { u: 'M', label: 'Months' }, { u: 'D', label: 'Days' }].map(({ u, label }) => {
+                        const active = newPatient.ageUnit === u;
+                        return (
+                          <button
+                            key={u}
+                            type="button"
+                            onClick={() => setNewPatient({ ...newPatient, ageUnit: u })}
+                            style={{ 
+                              padding: '0 16px', 
+                              background: active ? '#0f52ba' : 'transparent', 
+                              color: active ? 'white' : '#475569', 
+                              border: 'none', 
+                              fontWeight: 900, 
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >{u}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. DEDICATED FULL ROW FOR SEX / GENDER */}
+                <div className="android-form-group" style={{ marginTop: '10px' }}>
+                  <label className="android-label">
+                    <span>PATIENT SEX / GENDER</span>
+                    <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{newPatient.gender || 'Female'}</span>
+                  </label>
+                  <div className="android-segmented-control" style={{ padding: '6px', borderRadius: '16px', background: '#f1f5f9' }}>
+                    {[{ v: 'Female', l: '👩 Female' }, { v: 'Male', l: '👨 Male' }, { v: 'Other', l: '⚪ Other' }].map(g => (
+                      <button
+                        key={g.v}
+                        type="button"
+                        className={`android-segmented-btn ${newPatient.gender === g.v ? 'active' : ''}`}
+                        style={{ padding: '12px 8px', fontSize: '14px', borderRadius: '12px', fontWeight: 850 }}
+                        onClick={() => setNewPatient({ ...newPatient, gender: g.v })}
+                      >{g.l}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Contact & Info Source */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">📞 CONTACT & DISCOVERY</span>
+                </div>
+                <div className="android-form-group">
+                  <label className="android-label">
+                    <span>MOBILE NUMBER</span>
+                    <span style={{ fontSize: '10px', color: '#94a3b8' }}>Optional</span>
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="10-digit mobile number"
+                    className="android-input"
+                    value={newPatient.mobile}
+                    onChange={e => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setNewPatient({ ...newPatient, mobile: val });
+                      setNewBooking({ ...newBooking, patientId: '' });
+                    }}
+                  />
+                  {newPatient.mobile.length > 0 && newPatient.mobile.length < 10 && (
+                    <span style={{ fontSize: '10px', color: '#e74c3c', fontWeight: 700 }}>Exactly 10 digits required</span>
+                  )}
+                </div>
+
+                <div className="android-form-group" style={{ marginTop: '8px' }}>
+                  <label className="android-label">
+                    <span>SOURCE OF INFORMATION</span>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Type or select below</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Newspaper, Friend, Camp..."
+                    className="android-input"
+                    style={{ marginBottom: '8px', background: '#f8fafc' }}
+                    value={newPatient.sourceOfInfo || ''}
+                    onChange={e => setNewPatient({ ...newPatient, sourceOfInfo: e.target.value })}
+                  />
+                  <div className="android-quick-tray">
+                    {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
+                      <button
+                        key={opt}
+                        type="button"
+                        className={`android-quick-chip ${newPatient.sourceOfInfo === opt ? 'selected' : ''}`}
+                        onClick={() => setNewPatient({ ...newPatient, sourceOfInfo: opt })}
+                      >{opt}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: Location Details */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">📍 LOCATION</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="android-form-group">
+                    <label className="android-label">VILLAGE / TOWN</label>
+                    <input type="text" placeholder="Village / Town" className="android-input" value={newPatient.village} onChange={e => setNewPatient({ ...newPatient, village: e.target.value })} />
+                  </div>
+                  <div className="android-form-group">
+                    <label className="android-label">DISTRICT</label>
+                    <input type="text" placeholder="District" className="android-input" value={newPatient.district} onChange={e => setNewPatient({ ...newPatient, district: e.target.value })} />
+                  </div>
+                </div>
+                <div className="android-form-group" style={{ marginTop: '4px' }}>
+                  <label className="android-label">FULL ADDRESS</label>
+                  <input type="text" placeholder="Street, Landmark..." className="android-input" value={newPatient.address} onChange={e => setNewPatient({ ...newPatient, address: e.target.value })} />
+                </div>
+              </div>
+
+              {/* Card 5: ⚡ Referring Doctor / Hospital */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">⚡ REFERRING DOCTOR / CLINIC</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewPatient(prev => ({
+                        ...prev,
+                        referredBy: 'Self',
+                        referrerId: null,
+                        referrerIsDoctor: false,
+                        referrerSupportedByDoctor: ownerDetails?.name || '',
+                      }));
+                      setReferrers([]);
+                      setReferrerSuggestions([]);
+                    }}
+                    style={{
+                      background: (newPatient.referredBy || '').trim().toLowerCase() === 'self' ? '#0f52ba' : '#f0f7ff',
+                      color: (newPatient.referredBy || '').trim().toLowerCase() === 'self' ? 'white' : '#0f52ba',
+                      border: '1.5px solid #0f52ba',
+                      padding: '5px 12px',
+                      borderRadius: '12px',
+                      fontSize: '11px',
+                      fontWeight: 900,
+                      cursor: 'pointer'
+                    }}
+                  >🚶 SELF / WALK-IN</button>
+                </div>
+
+                {/* Quick Referrers Tray */}
+                {quickRefs.length > 0 && (
+                  <div className="android-form-group">
+                    <label className="android-label">
+                      <span>QUICK PICK REFERRERS</span>
+                      <span className="android-label-hint">1-Tap Select</span>
+                    </label>
+                    <div className="android-quick-tray">
+                      {quickRefs.map(qr => {
+                        const isSel = newPatient.referredBy === qr.name;
+                        return (
+                          <button
+                            key={qr.referrerId || qr.name}
+                            type="button"
+                            className={`android-quick-chip ${isSel ? 'selected' : ''}`}
+                            onClick={() => setNewPatient({ ...newPatient, referredBy: qr.name, referrerId: qr.referrerId || null })}
+                          >👨‍⚕️ {qr.name}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="android-form-group" style={{ marginTop: '6px', position: 'relative' }}>
+                  <label className="android-label">
+                    <span>SEARCH OR TYPE REFERRER <span style={{ color: '#e74c3c' }}>*</span></span>
+                    <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>Auto-adds on booking</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Search existing or type new doctor name..."
+                    className="android-input"
+                    value={newPatient.referredBy || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setNewPatient({ ...newPatient, referredBy: val, referrerId: null });
+                      searchReferrers(val);
+                    }}
+                  />
+                  {referrerSuggestions.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', borderRadius: '12px', border: '1.5px solid #0f52ba', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 100, maxHeight: '180px', overflowY: 'auto', marginTop: '4px' }}>
+                      {referrerSuggestions.map((s, i) => (
+                        <div
+                          key={s.referrer?.referrerId || i}
+                          onClick={() => {
+                            setNewPatient({ ...newPatient, referredBy: s.referrer?.name || '', referrerId: s.referrer?.referrerId || null });
+                            setReferrerSuggestions([]);
+                          }}
+                          style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', fontWeight: 800, color: '#0f172a', cursor: 'pointer' }}
+                        >👨‍⚕️ {s.referrer?.name} <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>• {s.referrer?.contact || 'No contact'}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* New Referral Source Choice (Doctor vs Other Person) */}
+                {newPatient.referredBy && (newPatient.referredBy || '').trim().toLowerCase() !== 'self' && !newPatient.referrerId && (() => {
+                  const refIsDoctor = newPatient.referrerIsDoctor !== false;
+                  return (
+                    <div style={{ marginTop: '12px', padding: '12px', borderRadius: '14px', background: '#f8fafc', border: '1.5px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 900, color: '#475569', letterSpacing: '0.5px' }}>
+                        WHO IS THIS NEW REFERRAL? <span style={{ color: '#0f52ba' }}>(Select One)</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {[{ k: true, icon: '👨‍⚕️', label: 'Doctor' }, { k: false, icon: '👤', label: 'Other Person / Agent' }].map(opt => {
+                          const active = refIsDoctor === opt.k;
+                          return (
+                            <button
+                              key={String(opt.k)}
+                              type="button"
+                              onClick={() => setNewPatient({ ...newPatient, referrerIsDoctor: opt.k })}
+                              style={{
+                                flex: 1, padding: '10px 8px', borderRadius: '12px',
+                                border: `2px solid ${active ? '#0f52ba' : '#cbd5e1'}`,
+                                background: active ? '#eff6ff' : 'white',
+                                color: active ? '#0f52ba' : '#64748b',
+                                fontSize: '12px', fontWeight: 900, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <span style={{ fontSize: '16px' }}>{opt.icon}</span>
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Optional Contact / Speciality */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '2px' }}>
+                        <input
+                          type="tel"
+                          placeholder="Mobile (optional)"
+                          className="android-input"
+                          style={{ fontSize: '12px', padding: '8px 12px' }}
+                          value={newPatient.referrerContact || ''}
+                          onChange={e => setNewPatient({ ...newPatient, referrerContact: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                        />
+                        {refIsDoctor ? (
+                          <input
+                            type="text"
+                            placeholder="Speciality (optional)"
+                            className="android-input"
+                            style={{ fontSize: '12px', padding: '8px 12px' }}
+                            value={newPatient.referrerSpecialty || ''}
+                            onChange={e => setNewPatient({ ...newPatient, referrerSpecialty: e.target.value })}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Agency / City (opt)"
+                            className="android-input"
+                            style={{ fontSize: '12px', padding: '8px 12px' }}
+                            value={newPatient.referrerAddress || ''}
+                            onChange={e => setNewPatient({ ...newPatient, referrerAddress: e.target.value })}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Supporting Doctor Box (Whenever an Other Person / Agent is selected or being added) */}
+                {newPatient.referredBy && (newPatient.referredBy || '').trim().toLowerCase() !== 'self' && newPatient.referrerIsDoctor === false && (
+                  <div style={{ marginTop: '10px', padding: '12px', borderRadius: '14px', background: '#fffbeb', border: '1.5px solid #f59e0b' }}>
+                    <label style={{ fontSize: '10px', fontWeight: 900, color: '#b45309', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span>👨‍⚕️</span> SUPPORTING / ATTENDING DOCTOR <span style={{ color: '#e11d48' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Doctor name who gets credited..."
+                      className="android-input"
+                      style={{ fontSize: '13px', background: 'white', border: '1.5px solid #fbbf24' }}
+                      value={newPatient.referrerSupportedByDoctor || ''}
+                      onChange={e => setNewPatient({ ...newPatient, referrerSupportedByDoctor: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {/* Selected referrer badge feedback */}
+                {newPatient.referredBy && (newPatient.referredBy || '').trim().toLowerCase() !== 'self' && (
+                  <div style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '14px', background: '#f8fafc', border: '1.5px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 900, padding: '3px 8px', borderRadius: '999px', background: newPatient.referrerIsDoctor !== false ? '#eff6ff' : '#fef3c7', color: newPatient.referrerIsDoctor !== false ? '#1d4ed8' : '#b45309', flexShrink: 0 }}>
+                        {newPatient.referrerIsDoctor !== false ? '👨‍⚕️ Doctor' : '👤 Other Person'}
+                      </span>
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{newPatient.referredBy}</span>
+                    </div>
+                    {!newPatient.referrerId && (
+                      <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 800, flexShrink: 0 }}>Auto-created on save</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {isStep2 && (
+            <>
+              {/* Card 1: ⚡ 1-Click Modality Picker */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">1. SELECT STUDY MODALITY</span>
+                  <span className="android-label-hint">Required</span>
+                </div>
+                <div className="android-modality-grid">
+                  {MODALITIES.map(m => {
+                    const active = newBooking.modality === m;
+                    return (
+                      <div
+                        key={m}
+                        className={`android-modality-tile ${active ? 'active' : ''}`}
+                        onClick={() => setNewBooking({ ...newBooking, modality: m, service: '', amount: '', referralCutValue: 0 })}
+                      >
+                        <span className="mod-icon">{modEmojis[m] || MODALITY_ICONS[m] || '📌'}</span>
+                        <span className="mod-name">{m}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Card 2: ⚡ 1-Click Procedure Quick Picks */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">2. ⚡ 1-CLICK PROCEDURES & PRICE</span>
+                  <span className="android-label-hint">Instant Select</span>
+                </div>
+                {quickProcedures.length > 0 && (
+                  <div className="android-form-group">
+                    <label className="android-label">TOP {newBooking.modality} PROCEDURES (TAP TO FILL)</label>
+                    <div className="android-service-grid">
+                      {quickProcedures.map(name => {
+                        const reg = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName === name);
+                        const isSel = newBooking.service === name;
+                        return (
+                          <div
+                            key={name}
+                            className={`android-service-card ${isSel ? 'selected' : ''}`}
+                            onClick={() => {
+                              if (reg) {
+                                setNewBooking(prev => ({
+                                  ...prev,
+                                  service: name,
+                                  amount: reg.amount,
+                                  referralCutValue: reg.referralCutValue || 0
+                                }));
+                              } else {
+                                setNewBooking(prev => ({ ...prev, service: name }));
+                              }
+                            }}
+                          >
+                            <span className="srv-title">{name}</span>
+                            <span className="srv-price">
+                              <span>₹{reg ? reg.amount : '---'}</span>
+                              {isSel && <span className="srv-badge">✓ SEL</span>}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Manual Service & Price Input */}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginTop: '6px' }}>
+                  <div className="android-form-group">
+                    <label className="android-label">PROCEDURE NAME</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. USG Whole Abdomen"
+                      className="android-input"
+                      value={newBooking.service}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewBooking(prev => ({ ...prev, service: val }));
+                        const match = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === val.toLowerCase());
+                        if (match) {
+                          setNewBooking(prev => ({ ...prev, amount: match.amount, referralCutValue: match.referralCutValue || 0 }));
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="android-form-group">
+                    <label className="android-label">PRICE (₹)</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="Amount"
+                      className="android-input"
+                      style={{ fontWeight: 950, color: '#059669' }}
+                      value={newBooking.amount}
+                      onChange={e => setNewBooking({ ...newBooking, amount: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Lead Specialist & Priority */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">👨‍⚕️ LEAD SPECIALIST & PRIORITY</span>
+                </div>
+                {doctors.length > 0 && (
+                  <div className="android-form-group">
+                    <label className="android-label">ASSIGN SPECIALIST ON DUTY</label>
+                    <div className="android-quick-tray">
+                      {doctors.map(d => {
+                        const isSel = newBooking.doctor?.name === d.name;
+                        return (
+                          <button
+                            key={d.id || d.name}
+                            type="button"
+                            className={`android-quick-chip ${isSel ? 'selected' : ''}`}
+                            onClick={() => setNewBooking({ ...newBooking, doctor: d })}
+                          >👨‍⚕️ {d.name}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="android-form-group" style={{ marginTop: '6px' }}>
+                  <label className="android-label">STUDY PRIORITY</label>
+                  <div className="android-segmented-control">
+                    {['ROUTINE', 'URGENT', 'STAT'].map(pri => (
+                      <button
+                        key={pri}
+                        type="button"
+                        className={`android-segmented-btn ${newBooking.priority === pri ? 'active' : ''}`}
+                        onClick={() => setNewBooking({ ...newBooking, priority: pri })}
+                      >
+                        {pri === 'ROUTINE' ? '🟢 ROUTINE' : pri === 'URGENT' ? '🟡 URGENT' : '🔴 STAT / EMERG'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: Clinical Notes */}
+              <div className="android-card">
+                <div className="android-card-header">
+                  <span className="android-card-title">📝 CLINICAL INDICATION / NOTES</span>
+                </div>
+                <textarea
+                  rows="2"
+                  placeholder="Optional history, symptoms, or special instructions..."
+                  className="android-input"
+                  style={{ resize: 'none', height: 'auto' }}
+                  value={newBooking.notes || ''}
+                  onChange={e => setNewBooking({ ...newBooking, notes: e.target.value })}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Fixed Bottom Action Bar */}
+        <div className="android-booking-bottombar">
+          {isStep1 ? (
+            <>
+              <button
+                type="button"
+                className="android-btn-secondary"
+                onClick={() => { setIsBookingOpen(false); resetBooking(); }}
+              >✕ CANCEL</button>
+              <button
+                type="button"
+                className="android-btn-primary"
+                onClick={() => {
+                  if (!newPatient.name.trim() || !newPatient.age.trim()) {
+                    setShowBookingValidation(true);
+                    return;
+                  }
+                  setBookingStep(2);
+                }}
+              >NEXT: STUDY DETAILS ➔</button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="android-btn-secondary"
+                onClick={() => setBookingStep(1)}
+              >← BACK</button>
+              <button
+                type="button"
+                className="android-btn-primary success"
+                onClick={(e) => {
+                  if (!newBooking.service.trim() || !newBooking.amount.toString().trim()) {
+                    alert('Please select or enter a study procedure and amount.');
+                    return;
+                  }
+                  saveBooking(e);
+                }}
+              >🚀 CONFIRM • ₹{newBooking.amount || '0'}</button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
   //  BOOKING DRAWER
   // ============================================================
   const renderDrawer = () => {
+    if (!isBookingOpen) return null;
+    if (isMobile) return renderMobileAndroidBooking();
+
     const isStep1 = bookingStep === 1;
     const isStep2 = bookingStep === 2;
     const isStep3 = bookingStep === 3;
@@ -3103,7 +3919,7 @@ export default function AppointmentBoard() {
                 letterSpacing: isMobile ? '0.5px' : '1px',
                 margin: 0,
               }}>
-                Phase {bookingStep}: {isStep1 ? 'Patient Identity' : 'Clinical Configuration'}
+                Step {bookingStep}: {isStep1 ? 'Patient Details' : 'Appointment Details'}
               </p>
             </div>
             <button className="btn-close" style={{ color: 'white', fontSize: '28px', flexShrink: 0 }} onClick={() => setIsBookingOpen(false)}>✕</button>
@@ -3135,7 +3951,7 @@ export default function AppointmentBoard() {
                   {/* Left Column: Patient Details */}
                   <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DETAILS</label>
                       
                       <div style={{ 
                         display: 'grid', 
@@ -3924,7 +4740,7 @@ export default function AppointmentBoard() {
                             setShowBookingValidation(false);
                           }}
                         >
-                          PROCEED {'\u2192'} CLINICAL CONFIG
+                          PROCEED {'\u2192'} APPOINTMENT DETAILS
                         </button>
                         {isPatientStepIncomplete && (
                           <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textAlign: 'center' }}>
@@ -4465,7 +5281,7 @@ export default function AppointmentBoard() {
                     <div style={{ background: 'white', padding: '12px 14px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                       <div style={{ marginBottom: '6px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', margin: 0 }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                          <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', margin: 0 }}>5. APPOINTMENT DATE <span style={{ color: '#e74c3c' }}>*</span></label>
                           <button 
                             onClick={(e) => {
                               e.preventDefault();
@@ -4578,7 +5394,7 @@ export default function AppointmentBoard() {
                       </div>
 
                       <div style={{ marginTop: '8px', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>6. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>6. ASSIGN SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
                           {doctors.map((d, idx) => (
                             <div key={`${d}_${idx}`} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
@@ -4681,7 +5497,7 @@ export default function AppointmentBoard() {
                         }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <div style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.2px' }}>
-                              Final Mission Briefing Summary
+                              Booking Summary
                             </div>
                             {_summaryLines.length > 1 && (
                               <span style={{
@@ -4846,7 +5662,7 @@ export default function AppointmentBoard() {
                         }
                         onClick={handleBookAppointment}
                       >
-                        {isMobile ? '🚀 BOOK' : '🚀 DEPLOY MISSION'}
+                        {isMobile ? '🚀 BOOK' : '🚀 BOOK APPOINTMENT'}
                       </button>
                     </div>
                   </div>
@@ -4899,12 +5715,830 @@ export default function AppointmentBoard() {
   };
 
   // ============================================================
-  //  EDIT APPOINTMENT MODAL
+  //  NATIVE ANDROID MOBILE EDITING ACTIVITY
   // ============================================================
-  
+  const renderMobileAndroidEditing = () => {
+    if (!editingAppointment) return null;
+
+    const quickAges = [
+      { label: '👶 15D', val: '15', unit: 'D' }, { label: '👶 6M', val: '6', unit: 'M' }, { label: '🧒 5Y', val: '5', unit: 'Y' },
+      { label: '👨 20Y', val: '20', unit: 'Y' }, { label: '👨 25Y', val: '25', unit: 'Y' }, { label: '👨 30Y', val: '30', unit: 'Y' },
+      { label: '👨 35Y', val: '35', unit: 'Y' }, { label: '👨 40Y', val: '40', unit: 'Y' }, { label: '👨 50Y', val: '50', unit: 'Y' },
+      { label: '🧓 60Y', val: '60', unit: 'Y' }, { label: '🧓 70Y', val: '70', unit: 'Y' }
+    ];
+    const quickRefs = (referrers || []).slice(0, 5);
+
+    const draftHasService = !!String(editingAppointment.service || '').trim();
+    const lines = editServices || [];
+    const _draftAmount = draftHasService ? (Number(editingAppointment.amount) || 0) : 0;
+    const _draftCut    = draftHasService ? (Number(editingAppointment.referralCutValue) || 0) : 0;
+    const _linesAmount = lines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+    const _linesCut    = lines.reduce((acc, l) => acc + (Number(l.referralCutValue) || 0), 0);
+    const _totalAmount = _linesAmount + _draftAmount;
+    const _totalCut    = _linesCut    + _draftCut;
+
+    const addCurrentDraft = () => {
+      if (!draftHasService) return;
+      const norm = (s) => String(s ?? '').trim().toLowerCase();
+      const draftKey = `${norm(editingAppointment.modality)}|${norm(editingAppointment.service)}`;
+      if ((editServices || []).some(l => `${norm(l.modality)}|${norm(l.serviceName)}` === draftKey)) {
+        showNotif('warning', 'SERVICE ALREADY ADDED', 'This modality & service is already on the visit. Pick a different service, or rename it to tell them apart.');
+        return;
+      }
+      setEditServices(prev => [
+        ...prev,
+        {
+          id:               editingAppointment._primaryServiceId || null,
+          serviceName:      String(editingAppointment.service || '').trim(),
+          modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+          amount:           Number(editingAppointment.amount) || 0,
+          referralCutValue: Number(editingAppointment.referralCutValue) || 0,
+        },
+      ]);
+      setEditingAppointment(prev => ({
+        ...prev,
+        service: '',
+        amount: 0,
+        referralCutValue: 0,
+        _primaryServiceId: null,
+      }));
+    };
+
+    const editLine = (idx) => {
+      const line = editServices[idx];
+      const currentDraft = draftHasService ? {
+        id:               editingAppointment._primaryServiceId || null,
+        serviceName:      String(editingAppointment.service || '').trim(),
+        modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+        amount:           Number(editingAppointment.amount) || 0,
+        referralCutValue: Number(editingAppointment.referralCutValue) || 0,
+      } : null;
+
+      setEditServices(prev => {
+        const copy = [...prev];
+        copy.splice(idx, 1);
+        if (currentDraft) copy.push(currentDraft);
+        return copy;
+      });
+      
+      setEditingAppointment(prev => ({
+        ...prev,
+        service: line.serviceName,
+        modality: line.modality,
+        amount: line.amount,
+        referralCutValue: line.referralCutValue,
+        _primaryServiceId: line.id
+      }));
+    };
+
+    const removeLine = (idx) => {
+      setEditServices(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const removePrimary = () => {
+      const list = editServices || [];
+      if (list.length > 0) {
+        const [next, ...remaining] = list;
+        setEditingAppointment(p => ({
+          ...p,
+          modality:         next.modality || p.modality,
+          service:          next.serviceName || '',
+          amount:           Number(next.amount) || 0,
+          referralCutValue: Number(next.referralCutValue) || 0,
+          _primaryServiceId: next.id || null,
+        }));
+        setEditServices(remaining);
+      } else {
+        setEditingAppointment(p => ({ ...p, service: '', amount: 0, referralCutValue: 0, _primaryServiceId: null }));
+      }
+    };
+
+    return (
+      <div className="android-booking-activity">
+        {/* Top App Bar */}
+        <div className="android-booking-topbar">
+          <button
+            type="button"
+            className="android-booking-back-btn"
+            onClick={() => { setIsEditingOpen(false); setEditServices([]); }}
+            title="Close"
+          >✕</button>
+          <div className="android-booking-title-area">
+            <div className="android-booking-title">Modify Appointment</div>
+            <div className="android-booking-subtitle">
+              ID: {editingAppointment.id || editingAppointment.displayId || editingAppointment.appointmentId} • 1-Tap Editing
+            </div>
+          </div>
+          <span className={`android-sync-badge ${isOnline ? 'online' : 'offline'}`}>
+            {isOnline ? '🟢 INSTANT SYNC' : '⚡ OFFLINE READY'}
+          </span>
+        </div>
+
+        {/* Scrollable Content Body */}
+        <div className="android-booking-body">
+          {/* Card 1: Patient Demographics */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">👤 PATIENT DEMOGRAPHICS</span>
+            </div>
+            <div className="android-form-group">
+              <label className="android-label">FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
+              <input
+                type="text"
+                placeholder="e.g. Michael Thorne"
+                className="android-input"
+                value={editingAppointment.patientName || ''}
+                onChange={e => setEditingAppointment({ ...editingAppointment, patientName: e.target.value })}
+              />
+            </div>
+
+            {/* Row 1: Age */}
+            <div className="android-form-group" style={{ marginTop: '4px' }}>
+              <label className="android-label">AGE <span style={{ color: '#e74c3c' }}>*</span></label>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <input
+                  type="number"
+                  placeholder="Age"
+                  className="android-input"
+                  style={{ flex: 1 }}
+                  value={editingAppointment.patientAgeValue || ''}
+                  onChange={e => setEditingAppointment({ ...editingAppointment, patientAgeValue: e.target.value })}
+                />
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {['Y', 'M', 'D'].map(u => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setEditingAppointment({ ...editingAppointment, patientAgeUnit: u })}
+                      style={{
+                        padding: '0 14px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #0f52ba',
+                        background: editingAppointment.patientAgeUnit === u ? '#0f52ba' : 'white',
+                        color: editingAppointment.patientAgeUnit === u ? 'white' : '#0f52ba',
+                        fontWeight: 900,
+                        fontSize: '13px',
+                        cursor: 'pointer'
+                      }}
+                    >{u}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="android-quick-tray">
+                {quickAges.map(qa => (
+                  <button
+                    key={qa.label}
+                    type="button"
+                    className="android-quick-chip"
+                    onClick={() => setEditingAppointment({ ...editingAppointment, patientAgeValue: qa.val, patientAgeUnit: qa.unit })}
+                  >{qa.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Row 2: Gender */}
+            <div className="android-form-group" style={{ marginTop: '8px' }}>
+              <label className="android-label">GENDER <span style={{ color: '#e74c3c' }}>*</span></label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {['Female', 'Male', 'Other'].map(g => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setEditingAppointment({ ...editingAppointment, patientGender: g })}
+                    style={{
+                      flex: 1,
+                      padding: '12px 6px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #0f52ba',
+                      background: editingAppointment.patientGender === g ? '#0f52ba' : '#f8fafc',
+                      color: editingAppointment.patientGender === g ? 'white' : '#0f52ba',
+                      fontWeight: 900,
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >{g === 'Female' ? '👩 Female' : g === 'Male' ? '👨 Male' : '🧑 Other'}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '12px' }}>
+              <label className="android-label">MOBILE NUMBER <span style={{ fontSize: '11px', color: '#64748b' }}>(Optional)</span></label>
+              <input
+                type="tel"
+                placeholder="10-digit mobile number"
+                className="android-input"
+                value={editingAppointment.mobile || ''}
+                onChange={e => setEditingAppointment({ ...editingAppointment, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+              />
+            </div>
+          </div>
+
+          {/* Card 2: Contact & Discovery */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">📞 CONTACT & DISCOVERY</span>
+            </div>
+            <div className="android-form-group">
+              <label className="android-label">
+                <span>SOURCE OF INFORMATION</span>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Type or select below</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Newspaper, Friend, Camp..."
+                className="android-input"
+                style={{ marginBottom: '8px', background: '#f8fafc' }}
+                value={editingAppointment.sourceOfInfo || ''}
+                onChange={e => setEditingAppointment({ ...editingAppointment, sourceOfInfo: e.target.value })}
+              />
+              <div className="android-quick-tray">
+                {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
+                  <button
+                    key={opt}
+                    type="button"
+                    className={`android-quick-chip ${editingAppointment.sourceOfInfo === opt ? 'selected' : ''}`}
+                    onClick={() => setEditingAppointment({ ...editingAppointment, sourceOfInfo: opt })}
+                  >{opt}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px' }}>
+              <div className="android-form-group">
+                <label className="android-label">VILLAGE</label>
+                <input
+                  type="text"
+                  placeholder="Village"
+                  className="android-input"
+                  style={{ fontSize: '12px', padding: '10px 8px' }}
+                  value={editingAppointment.village || ''}
+                  onChange={e => setEditingAppointment({ ...editingAppointment, village: e.target.value })}
+                />
+              </div>
+              <div className="android-form-group">
+                <label className="android-label">BLOCK</label>
+                <input
+                  type="text"
+                  placeholder="Block"
+                  className="android-input"
+                  style={{ fontSize: '12px', padding: '10px 8px' }}
+                  value={editingAppointment.block || ''}
+                  onChange={e => setEditingAppointment({ ...editingAppointment, block: e.target.value })}
+                />
+              </div>
+              <div className="android-form-group">
+                <label className="android-label">DISTRICT</label>
+                <input
+                  type="text"
+                  placeholder="District"
+                  className="android-input"
+                  style={{ fontSize: '12px', padding: '10px 8px' }}
+                  value={editingAppointment.district || ''}
+                  onChange={e => setEditingAppointment({ ...editingAppointment, district: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '8px' }}>
+              <label className="android-label">ADDRESS / RESIDENCE DATA</label>
+              <input
+                type="text"
+                placeholder="Street, Landmark, City..."
+                className="android-input"
+                value={editingAppointment.address || ''}
+                onChange={e => setEditingAppointment({ ...editingAppointment, address: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Card 3: Referring Doctor */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">⚡ REFERRING DOCTOR / CLINIC</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAppointment(prev => ({
+                    ...prev,
+                    referredBy: 'Self',
+                    referrerId: null,
+                    referrerIsDoctor: false,
+                    referrerSupportedByDoctor: ownerDetails?.name || '',
+                  }));
+                  setReferrers([]);
+                }}
+                style={{
+                  background: (editingAppointment.referredBy || '').trim().toLowerCase() === 'self' ? '#0f52ba' : '#f0f7ff',
+                  color: (editingAppointment.referredBy || '').trim().toLowerCase() === 'self' ? 'white' : '#0f52ba',
+                  border: '1.5px solid #0f52ba',
+                  padding: '5px 12px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: 900,
+                  cursor: 'pointer'
+                }}
+              >🚶 SELF / WALK-IN</button>
+            </div>
+
+            {quickRefs.length > 0 && (
+              <div className="android-form-group">
+                <label className="android-label">
+                  <span>QUICK PICK REFERRERS</span>
+                  <span className="android-label-hint">1-Tap Select</span>
+                </label>
+                <div className="android-quick-tray">
+                  {quickRefs.map(qr => {
+                    const isSel = editingAppointment.referredBy === qr.name;
+                    return (
+                      <button
+                        key={qr.referrerId || qr.name}
+                        type="button"
+                        className={`android-quick-chip ${isSel ? 'selected' : ''}`}
+                        onClick={() => setEditingAppointment({ ...editingAppointment, referredBy: qr.name, referrerId: qr.referrerId || null })}
+                      >👨‍⚕️ {qr.name}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="android-form-group" style={{ marginTop: '6px', position: 'relative' }}>
+              <label className="android-label">
+                <span>SEARCH OR TYPE REFERRER</span>
+                <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>Auto-adds on save</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Search existing or type new doctor name..."
+                className="android-input"
+                value={editingAppointment.referredBy || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setEditingAppointment({ ...editingAppointment, referredBy: val, referrerId: null });
+                  if (val.trim().length > 1) searchReferrers(val);
+                  else setReferrers([]);
+                }}
+              />
+              {/* Typeahead match suggestions */}
+              {(() => {
+                if (editingAppointment.referrerId) return null;
+                const q = (editingAppointment.referredBy || '').trim().toLowerCase();
+                if (q.length < 1) return null;
+                const matches = (referrers || []).filter(r => (r.name || '').toLowerCase().includes(q) && (r.name || '').toLowerCase() !== q).slice(0, 5);
+                if (matches.length === 0) return null;
+                return (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', borderRadius: '12px', border: '1.5px solid #0f52ba', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 100, maxHeight: '180px', overflowY: 'auto', marginTop: '4px' }}>
+                    {matches.map((s, i) => (
+                      <div
+                        key={s.referrerId || i}
+                        onClick={() => {
+                          setEditingAppointment(prev => ({
+                            ...prev,
+                            referredBy: s.name,
+                            referrerId: s.referrerId || s.id,
+                            referrerContact: s.contact || prev.referrerContact || '',
+                            referrerIsDoctor: s.isDoctor !== false,
+                            referrerEmail: s.email || '',
+                            referrerSpecialty: s.specialty || '',
+                            referrerDegree: s.degree || '',
+                            referrerAddress: s.address || '',
+                            referrerSupportedByDoctor: s.isDoctor === false ? (s.supportedByDoctor || ownerDetails?.name || '') : '',
+                          }));
+                          setReferrers([]);
+                        }}
+                        style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', fontWeight: 800, color: '#0f172a', cursor: 'pointer' }}
+                      >👨‍⚕️ {s.name} <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>• {s.contact || 'No contact'}</span></div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* New Referral Source Choice */}
+            {editingAppointment.referredBy && (editingAppointment.referredBy || '').trim().toLowerCase() !== 'self' && !editingAppointment.referrerId && (() => {
+              const refIsDoctor = editingAppointment.referrerIsDoctor !== false;
+              return (
+                <div style={{ marginTop: '12px', padding: '12px', borderRadius: '14px', background: '#f8fafc', border: '1.5px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 900, color: '#475569', letterSpacing: '0.5px' }}>
+                    WHO IS THIS NEW REFERRAL? <span style={{ color: '#0f52ba' }}>(Select One)</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[{ k: true, icon: '👨‍⚕️', label: 'Doctor' }, { k: false, icon: '👤', label: 'Other Person / Agent' }].map(opt => {
+                      const active = refIsDoctor === opt.k;
+                      return (
+                        <button
+                          key={String(opt.k)}
+                          type="button"
+                          onClick={() => setEditingAppointment({ ...editingAppointment, referrerIsDoctor: opt.k })}
+                          style={{
+                            flex: 1, padding: '10px 8px', borderRadius: '12px',
+                            border: `2px solid ${active ? '#0f52ba' : '#cbd5e1'}`,
+                            background: active ? '#eff6ff' : 'white',
+                            color: active ? '#0f52ba' : '#64748b',
+                            fontSize: '12px', fontWeight: 900, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <span style={{ fontSize: '16px' }}>{opt.icon}</span>
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '2px' }}>
+                    <input
+                      type="tel"
+                      placeholder="Mobile (optional)"
+                      className="android-input"
+                      style={{ fontSize: '12px', padding: '8px 12px' }}
+                      value={editingAppointment.referrerContact || ''}
+                      onChange={e => setEditingAppointment({ ...editingAppointment, referrerContact: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    />
+                    {refIsDoctor ? (
+                      <input
+                        type="text"
+                        placeholder="Speciality (optional)"
+                        className="android-input"
+                        style={{ fontSize: '12px', padding: '8px 12px' }}
+                        value={editingAppointment.referrerSpecialty || ''}
+                        onChange={e => setEditingAppointment({ ...editingAppointment, referrerSpecialty: e.target.value })}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Agency / City (opt)"
+                        className="android-input"
+                        style={{ fontSize: '12px', padding: '8px 12px' }}
+                        value={editingAppointment.referrerAddress || ''}
+                        onChange={e => setEditingAppointment({ ...editingAppointment, referrerAddress: e.target.value })}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Supporting Doctor Box */}
+            {editingAppointment.referredBy && (editingAppointment.referredBy || '').trim().toLowerCase() !== 'self' && editingAppointment.referrerIsDoctor === false && (
+              <div style={{ marginTop: '10px', padding: '12px', borderRadius: '14px', background: '#fffbeb', border: '1.5px solid #f59e0b' }}>
+                <label style={{ fontSize: '10px', fontWeight: 900, color: '#b45309', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span>👨‍⚕️</span> SUPPORTING / ATTENDING DOCTOR <span style={{ color: '#e11d48' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Doctor name who gets credited..."
+                  className="android-input"
+                  style={{ fontSize: '13px', background: 'white', border: '1.5px solid #fbbf24' }}
+                  value={editingAppointment.referrerSupportedByDoctor || ''}
+                  onChange={e => setEditingAppointment({ ...editingAppointment, referrerSupportedByDoctor: e.target.value })}
+                />
+              </div>
+            )}
+
+            {/* Selected Referrer Feedback Badge */}
+            {editingAppointment.referredBy && (editingAppointment.referredBy || '').trim().toLowerCase() !== 'self' && (
+              <div style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '14px', background: '#f8fafc', border: '1.5px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 900, padding: '3px 8px', borderRadius: '999px', background: editingAppointment.referrerIsDoctor !== false ? '#eff6ff' : '#fef3c7', color: editingAppointment.referrerIsDoctor !== false ? '#1d4ed8' : '#b45309', flexShrink: 0 }}>
+                    {editingAppointment.referrerIsDoctor !== false ? '👨‍⚕️ Doctor' : '👤 Other Person'}
+                  </span>
+                  <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{editingAppointment.referredBy}</span>
+                </div>
+                {!editingAppointment.referrerId && (
+                  <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 800, flexShrink: 0 }}>Auto-created on save</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Card 4: Service & Billing Details */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">🩺 SERVICE & BILLING DETAILS</span>
+            </div>
+
+            <div className="android-form-group">
+              <label className="android-label">SCHEDULED DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+              <input
+                type="date"
+                required
+                className="android-input"
+                value={editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[0] : (editingAppointment.date || '')}
+                onChange={e => {
+                  const newDate = e.target.value;
+                  let currentTime = '12:00:00';
+                  if (editingAppointment.dateTime && editingAppointment.dateTime.includes('T')) {
+                    const timePart = editingAppointment.dateTime.split('T')[1];
+                    currentTime = timePart.replace('Z', '');
+                  }
+                  setEditingAppointment({ ...editingAppointment, dateTime: `${newDate}T${currentTime}`, date: newDate });
+                }}
+              />
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '8px' }}>
+              <label className="android-label">MODALITY <span style={{ color: '#e74c3c' }}>*</span></label>
+              <select
+                className="android-input"
+                value={editingAppointment.modality || 'X-RAY'}
+                onChange={e => setEditingAppointment({ ...editingAppointment, modality: e.target.value, service: '', amount: 0, referralCutValue: 0 })}
+              >
+                {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '8px', position: 'relative' }}>
+              <label className="android-label">PROCEDURE / SERVICE NAME <span style={{ color: '#e74c3c' }}>*</span></label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Chest X-Ray"
+                className="android-input"
+                value={editingAppointment.service || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setEditingAppointment(prev => ({ ...prev, service: val }));
+                  const match = serviceRegistry.find(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase() === val.toLowerCase());
+                  if (match) {
+                    setEditingAppointment(prev => ({ ...prev, amount: match.amount, referralCutValue: match.referralCutValue || 0 }));
+                  }
+                }}
+              />
+              {editingAppointment.service?.length > 0 && serviceRegistry.some(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase()) && s.serviceName !== editingAppointment.service) && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1.5px solid #0f52ba', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.15)', zIndex: 100, maxHeight: '160px', overflowY: 'auto', marginTop: '4px' }}>
+                  {serviceRegistry.filter(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase())).map(s => (
+                    <div
+                      key={s.id}
+                      onClick={() => setEditingAppointment({ ...editingAppointment, service: s.serviceName, amount: s.amount, referralCutValue: s.referralCutValue || 0 })}
+                      style={{ padding: '12px 14px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{s.serviceName}</div>
+                      <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>₹{s.amount}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '8px' }}>
+              <label className="android-label">AMOUNT (₹) <span style={{ color: '#e74c3c' }}>*</span></label>
+              <input
+                type="number"
+                required
+                className="android-input"
+                value={editingAppointment.amount || 0}
+                onChange={e => setEditingAppointment({ ...editingAppointment, amount: parseFloat(e.target.value) || 0 })}
+              />
+              {editingAppointment.referralCutValue > 0 && (
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', marginTop: '6px' }}>
+                  <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT: </span>₹{(editingAppointment.referralCutValue || 0).toLocaleString()}
+                </div>
+              )}
+            </div>
+
+            {/* New-service quick-add prompt */}
+            {(() => {
+              const mod  = String(editingAppointment.modality || '').trim();
+              const name = String(editingAppointment.service || '').trim();
+              if (!mod || !name) return null;
+              const inCatalogue = serviceRegistry.some(s => String(s.modality).toUpperCase() === mod.toUpperCase() && String(s.serviceName).toLowerCase() === name.toLowerCase());
+              if (inCatalogue) return null;
+              const priced = Number(editingAppointment.amount) > 0;
+              return (
+                <div style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', border: '1px dashed #f59e0b', background: '#fffbeb' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                    NEW SERVICE — NOT IN YOUR {mod.toUpperCase()} CATALOGUE
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#78716c', marginBottom: '10px', lineHeight: 1.4 }}>
+                    Save “{name}” to create its report template and reuse it later.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '9px', fontWeight: 800, color: '#92400e', marginBottom: '2px', display: 'block' }}>MAX REFERRAL (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="android-input"
+                        style={{ padding: '8px 10px', fontSize: '12px' }}
+                        value={editingAppointment.referralCutValue ?? 0}
+                        onChange={e => setEditingAppointment({ ...editingAppointment, referralCutValue: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={editQuickAddBusy || !priced}
+                      onClick={handleEditQuickAddService}
+                      style={{
+                        padding: '10px 14px', borderRadius: '10px', border: 'none',
+                        background: (editQuickAddBusy || !priced) ? '#fcd34d' : '#f59e0b',
+                        color: '#fff', fontSize: '12px', fontWeight: 900, cursor: (editQuickAddBusy || !priced) ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap', marginTop: '14px'
+                      }}
+                    >
+                      {editQuickAddBusy ? 'Saving…' : '＋ Save to catalogue'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Services on this visit tray */}
+            {(lines.length > 0 || draftHasService) && (
+              <div style={{ marginTop: '14px', padding: '12px', background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lines.length > 0 ? '8px' : '0' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', letterSpacing: '0.5px' }}>
+                    SERVICES ON THIS VISIT
+                  </span>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a' }}>
+                    {lines.length + (draftHasService ? 1 : 0)} item{lines.length + (draftHasService ? 1 : 0) === 1 ? '' : 's'} · ₹{_totalAmount.toLocaleString()}
+                  </span>
+                </div>
+
+                {lines.map((line, idx) => {
+                  const isExisting = !!line.id;
+                  const isReported = ['REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
+                  return (
+                    <div key={line.id || `new-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: 'white', marginBottom: '6px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', background: '#eff6ff', padding: '3px 6px', borderRadius: '6px' }}>{line.modality || 'OT'}</span>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{line.serviceName}</span>
+                      {isExisting && (
+                        <span style={{ fontSize: '9px', fontWeight: 900, color: '#047857', background: '#d1fae5', padding: '2px 6px', borderRadius: '999px' }}>SAVED</span>
+                      )}
+                      <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f172a' }}>₹{Number(line.amount || 0).toLocaleString()}</span>
+                      <button type="button" onClick={() => editLine(idx)} style={{ width: '26px', height: '26px', borderRadius: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontWeight: 900, cursor: 'pointer' }}>✎</button>
+                      <button type="button" onClick={() => removeLine(idx)} style={{ width: '26px', height: '26px', borderRadius: '8px', background: '#fff1f2', border: '1px solid #fecdd3', color: '#e11d48', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                    </div>
+                  );
+                })}
+
+                {draftHasService && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: '#eff6ff', border: '1.5px dashed #93c5fd', marginTop: '6px' }}>
+                    <span style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', background: 'white', padding: '3px 6px', borderRadius: '6px' }}>{(editingAppointment.modality || 'OT').toUpperCase()}</span>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{editingAppointment.service} <span style={{ opacity: 0.6, fontSize: '10px' }}>· primary</span></span>
+                    <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f172a' }}>₹{Number(editingAppointment.amount || 0).toLocaleString()}</span>
+                    <button type="button" onClick={removePrimary} style={{ width: '26px', height: '26px', borderRadius: '8px', background: '#fff1f2', border: '1px solid #fecdd3', color: '#e11d48', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={addCurrentDraft}
+              disabled={!draftHasService}
+              style={{
+                marginTop: '12px',
+                width: '100%',
+                padding: '12px',
+                borderRadius: '12px',
+                border: '1.5px dashed #93c5fd',
+                background: draftHasService ? '#eff6ff' : '#f8fafc',
+                color: draftHasService ? '#1d4ed8' : '#94a3b8',
+                cursor: draftHasService ? 'pointer' : 'not-allowed',
+                fontSize: '12px',
+                fontWeight: 900,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+              }}
+            >
+              <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span>
+              Add Another Service To Visit
+            </button>
+          </div>
+
+          {/* Card 5: Clinical Routing & Notes */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">🏥 CLINICAL ROUTING & NOTES</span>
+            </div>
+
+            <div className="android-form-group">
+              <label className="android-label">PRIORITY <span style={{ color: '#e74c3c' }}>*</span></label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {[
+                  { id: 'STAT', label: '🚨 STAT', color: '#dc2626' },
+                  { id: 'URGENT', label: '⚠️ Urgent', color: '#d97706' },
+                  { id: 'ROUTINE', label: '🟢 Routine', color: '#16a34a' },
+                ].map(opt => {
+                  const active = (editingAppointment.priority || 'ROUTINE') === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setEditingAppointment({ ...editingAppointment, priority: opt.id })}
+                      style={{
+                        padding: '12px 6px',
+                        borderRadius: '12px',
+                        border: `2px solid ${active ? opt.color : '#e2e8f0'}`,
+                        background: active ? opt.color : '#f8fafc',
+                        color: active ? 'white' : opt.color,
+                        fontWeight: 900,
+                        fontSize: '12px',
+                        cursor: 'pointer'
+                      }}
+                    >{opt.label}</button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '12px' }}>
+              <label className="android-label">LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
+              <select
+                className="android-input"
+                value={editingAppointment.doctor || ''}
+                onChange={e => setEditingAppointment({ ...editingAppointment, doctor: e.target.value })}
+              >
+                <option value="">Select Specialist...</option>
+                {doctors.map(d => <option key={d} value={d}>👨‍⚕️ {d}</option>)}
+              </select>
+            </div>
+
+            <div className="android-form-group" style={{ marginTop: '12px' }}>
+              <label className="android-label">CLINICAL NOTES</label>
+              <textarea
+                placeholder="Any additional instructions or context..."
+                className="android-input"
+                style={{ minHeight: '80px', resize: 'vertical' }}
+                value={editingAppointment.notes || ''}
+                onChange={e => setEditingAppointment({ ...editingAppointment, notes: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Card 6: Visit Summary Tile */}
+          <div className="android-card" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: 'white', border: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '10px', fontWeight: 900, color: '#93c5fd', letterSpacing: '1px' }}>TOTAL BILL SUMMARY</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#38bdf8' }}>₹{_totalAmount.toLocaleString()}</span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>
+              {editingAppointment.patientName || 'Unnamed Patient'} • {editingAppointment.doctor || 'No Specialist'} • {editingAppointment.priority || 'ROUTINE'}
+            </div>
+            {_totalCut > 0 && (
+              <div style={{ fontSize: '11px', color: '#fcd34d', fontWeight: 800, marginTop: '6px' }}>
+                Total Referral Cut • ₹{_totalCut.toLocaleString()}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Action Bar */}
+        <div className="android-booking-bottombar">
+          <button
+            type="button"
+            className="android-btn-secondary"
+            onClick={() => { setIsEditingOpen(false); setEditServices([]); }}
+          >✕ CANCEL</button>
+          <button
+            type="button"
+            className="android-btn-primary success"
+            disabled={isSavingEdit}
+            onClick={() => handleEditAppointment()}
+          >
+            {isSavingEdit ? '⏳ SAVING...' : `💾 SAVE CHANGES • ₹${_totalAmount.toLocaleString()}`}
+          </button>
+        </div>
+
+        {/* Reschedule-to-future refund choice modal */}
+        {futureRefundModal && (
+          <div onClick={() => setFutureRefundModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(8,12,30,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100001, padding: '20px' }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '400px', background: 'white', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }}>
+              <div style={{ padding: '20px', background: 'linear-gradient(135deg, #0a1628, #0f52ba)', color: 'white' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', opacity: 0.8 }}>MOVING TO FUTURE DATE</div>
+                <div style={{ fontSize: '18px', fontWeight: 900, marginTop: '4px' }}>Return Collected Payment</div>
+              </div>
+              <div style={{ padding: '20px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', lineHeight: 1.5, marginBottom: '16px' }}>
+                  This visit is moving to a future date. How should any money already collected be handled?
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button type="button" onClick={() => { setFutureRefundModal(false); handleEditAppointment('WALLET'); }}
+                    style={{ padding: '14px', borderRadius: '14px', border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '13px', fontWeight: 900, cursor: 'pointer', textAlign: 'left' }}>
+                    💳 Hold as Credit (Carry forward / Refundable later)
+                  </button>
+                  <button type="button" onClick={() => { setFutureRefundModal(false); handleEditAppointment('CASH'); }}
+                    style={{ padding: '14px', borderRadius: '14px', border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: '13px', fontWeight: 900, cursor: 'pointer', textAlign: 'left' }}>
+                    💵 Refund as Cash Now
+                  </button>
+                  <button type="button" onClick={() => setFutureRefundModal(false)}
+                    style={{ padding: '12px', borderRadius: '14px', border: '1.5px solid #dee2e6', background: 'white', color: '#64748b', fontSize: '13px', fontWeight: 900, cursor: 'pointer', textAlign: 'center' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // PREMIUM EDIT APPOINTMENT DRAWER
   const renderEditDrawer = () => {
     if (!isEditingOpen || !editingAppointment) return null;
+    if (isMobile) return renderMobileAndroidEditing();
 
     return (
       <div
@@ -5226,8 +6860,8 @@ export default function AppointmentBoard() {
                     setEditServices(prev => [
                       ...prev,
                       {
-                        // No id — new line. Server inserts on reconcile.
-                        id:               null,
+                        // Preserve the ID if this is an existing service line
+                        id:               editingAppointment._primaryServiceId || null,
                         serviceName:      String(editingAppointment.service || '').trim(),
                         modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
                         amount:           Number(editingAppointment.amount) || 0,
@@ -5243,6 +6877,34 @@ export default function AppointmentBoard() {
                       service: '',
                       amount: 0,
                       referralCutValue: 0,
+                      _primaryServiceId: null,
+                    }));
+                  };
+
+                  const editLine = (idx) => {
+                    const line = editServices[idx];
+                    const currentDraft = draftHasService ? {
+                      id:               editingAppointment._primaryServiceId || null,
+                      serviceName:      String(editingAppointment.service || '').trim(),
+                      modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+                      amount:           Number(editingAppointment.amount) || 0,
+                      referralCutValue: Number(editingAppointment.referralCutValue) || 0,
+                    } : null;
+
+                    setEditServices(prev => {
+                      const copy = [...prev];
+                      copy.splice(idx, 1);
+                      if (currentDraft) copy.push(currentDraft);
+                      return copy;
+                    });
+                    
+                    setEditingAppointment(prev => ({
+                      ...prev,
+                      service: line.serviceName,
+                      modality: line.modality,
+                      amount: line.amount,
+                      referralCutValue: line.referralCutValue,
+                      _primaryServiceId: line.id
                     }));
                   };
 
@@ -5322,6 +6984,18 @@ export default function AppointmentBoard() {
                                 <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
                                   ₹{Number(line.amount || 0).toLocaleString()}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() => editLine(idx)}
+                                  aria-label={`Edit ${line.serviceName}`}
+                                  title="Edit this service"
+                                  style={{
+                                    width: '22px', height: '22px', borderRadius: '6px',
+                                    background: '#eff6ff', border: '1px solid #bfdbfe',
+                                    color: '#1d4ed8', cursor: 'pointer', fontSize: '11px', fontWeight: 900,
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  }}
+                                >✎</button>
                                 <button
                                   type="button"
                                   onClick={() => removeLine(idx)}
@@ -5404,7 +7078,62 @@ export default function AppointmentBoard() {
 
               <div style={{ marginBottom: '25px' }}>
                 <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Routing & Notes</h4>
-                
+
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Appointment Date <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input
+                      type="date"
+                      required
+                      value={(() => {
+                        const raw = editingAppointment.dateTime || '';
+                        const m = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+                        return m ? m[1] : '';
+                      })()}
+                      onChange={e => {
+                        const newDate = e.target.value;
+                        if (!newDate) return;
+                        // Keep the existing time-of-day — only the day is meaningful
+                        // for rescheduling (re-tokenization / move-to-future refund
+                        // logic both key off the DATE, not the clock time).
+                        const prevD = editingAppointment.dateTime ? new Date(editingAppointment.dateTime) : null;
+                        const pad = n => String(n).padStart(2, '0');
+                        const timePart = prevD && !Number.isNaN(prevD.getTime())
+                          ? `${pad(prevD.getHours())}:${pad(prevD.getMinutes())}:${pad(prevD.getSeconds())}`
+                          : '00:00:00';
+                        setEditingAppointment({ ...editingAppointment, dateTime: `${newDate}T${timePart}` });
+                      }}
+                      style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', height: '44px' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Priority</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                      {[
+                        { id: 'STAT',    label: 'STAT',    color: '#dc2626' },
+                        { id: 'URGENT',  label: 'Urgent',  color: '#d97706' },
+                        { id: 'ROUTINE', label: 'Routine', color: '#16a34a' },
+                      ].map(opt => {
+                        const active = (editingAppointment.priority || 'ROUTINE') === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setEditingAppointment({ ...editingAppointment, priority: opt.id })}
+                            style={{
+                              height: '44px', borderRadius: '12px', cursor: 'pointer',
+                              border: `2px solid ${active ? opt.color : '#e2e8f0'}`,
+                              background: active ? opt.color : '#f8fafc',
+                              color: active ? 'white' : opt.color,
+                              fontWeight: 900, fontSize: '11px', letterSpacing: '0.3px',
+                            }}
+                          >{opt.label}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Lead Specialist <span style={{ color: '#ef4444' }}>*</span></label>
@@ -6116,10 +7845,346 @@ export default function AppointmentBoard() {
   };
 
   // ============================================================
+  //  NATIVE ANDROID MOBILE TOKEN PASS ACTIVITY
+  // ============================================================
+  const renderMobileAndroidTokenModal = () => {
+    if (!tokenPrintData) return null;
+
+    const tokenVal = (tokenPrintData.tokenNo ?? tokenPrintData.dailyTokenNumber) != null
+      ? formatToken(tokenPrintData.tokenNo ?? tokenPrintData.dailyTokenNumber)
+      : null;
+    const lines = getServiceLines(tokenPrintData);
+    const totalAmount = lines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+    const patientName = (tokenPrintData.patientName || 'Patient').toUpperCase();
+    const patientId = tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId || '—';
+    const clinicName = activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS';
+    const shareUrl = tokenPrintQrUrl || (typeof window !== 'undefined' ? `${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}` : '');
+
+    const handleWhatsAppShare = () => {
+      const msg = `🏥 *${clinicName}*\n\nHello *${patientName}*, your visit is confirmed!\n\n🎟️ *TODAY'S TOKEN NO: ${tokenVal || 'ISSUED ON ARRIVAL'}*\n🆔 Patient ID: ${patientId}\n📅 Date: ${new Date(tokenPrintData.dateTime || Date.now()).toLocaleDateString('en-GB')}\n🩺 Modality: ${tokenPrintData.modality || 'OT'}\n\n🔗 *Live Report Tracking Link:*\n${shareUrl}\n\nThank you for choosing us!`;
+      const phone = (tokenPrintData.mobile || '').replace(/\D/g, '');
+      if (phone && phone.length >= 10) {
+        window.open(`https://wa.me/91${phone.slice(-10)}?text=${encodeURIComponent(msg)}`, '_blank');
+      } else {
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+      }
+    };
+
+    const handleCopyLink = () => {
+      if (navigator.clipboard && shareUrl) {
+        navigator.clipboard.writeText(shareUrl);
+        showNotif('success', 'LINK COPIED', 'Tracking URL copied to clipboard! Share it with the patient.');
+      } else {
+        showNotif('info', 'TRACKING URL', shareUrl || 'No tracking URL generated yet.');
+      }
+    };
+
+    return (
+      <div className="android-booking-activity" style={{ zIndex: 100000 }}>
+        {/* Top App Bar */}
+        <div className="android-booking-topbar">
+          <button
+            type="button"
+            className="android-booking-back-btn"
+            onClick={() => setTokenPrintData(null)}
+            title="Close"
+          >✕</button>
+          <div className="android-booking-title-area">
+            <div className="android-booking-title">Digital Queue Pass</div>
+            <div className="android-booking-subtitle">
+              ID: {patientId} • 1-Tap PWA Pass
+            </div>
+          </div>
+          <span className={`android-sync-badge ${isOnline ? 'online' : 'offline'}`}>
+            {isOnline ? '🟢 LIVE TOKEN' : '⚡ OFFLINE PASS'}
+          </span>
+        </div>
+
+        {/* Scrollable Content Body */}
+        <div className="android-booking-body">
+          {/* Card 1: VIP Token Banner */}
+          <div className="android-card" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #1e3a8a 100%)', color: 'white', border: '1px solid #3b82f6', position: 'relative', overflow: 'hidden', padding: '22px 18px', textAlign: 'center' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #38bdf8, #818cf8, #34d399)' }} />
+            <div style={{ fontSize: '11px', fontWeight: 900, color: '#93c5fd', letterSpacing: '2px', textTransform: 'uppercase' }}>
+              {clinicName}
+            </div>
+            <div style={{ fontSize: '9px', fontWeight: 800, color: '#cbd5e1', letterSpacing: '1px', marginTop: '2px', marginBottom: '14px' }}>
+              DIAGNOSTIC QUEUE PASS
+            </div>
+
+            {tokenVal ? (
+              <div style={{ margin: '10px 0 14px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 950, color: '#38bdf8', letterSpacing: '1.5px', marginBottom: '4px' }}>TODAY&apos;S TOKEN NO</div>
+                <div style={{ fontSize: '64px', fontWeight: 950, color: '#ffffff', lineHeight: 1, fontVariantNumeric: 'tabular-nums', textShadow: '0 4px 16px rgba(56,189,248,0.4)' }}>
+                  {tokenVal}
+                </div>
+              </div>
+            ) : (
+              <div style={{ margin: '16px 0', padding: '12px', background: 'rgba(245, 158, 11, 0.15)', border: '1.5px dashed #f59e0b', borderRadius: '14px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 900, color: '#fbbf24' }}>⏳ TOKEN ISSUED ON ARRIVAL</div>
+                <div style={{ fontSize: '11px', color: '#fde68a', marginTop: '4px', lineHeight: 1.4 }}>
+                  Mark this patient as ARRIVED at reception to generate a sequential Token Number.
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'inline-block', padding: '5px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(4px)', fontSize: '11px', fontWeight: 900, color: '#e0f2fe' }}>
+              ⚡ PWA Low-Bandwidth Verified
+            </div>
+          </div>
+
+          {/* Card 2: 1-Tap Mobile Actions */}
+          <div className="android-card" style={{ padding: '14px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '0.8px', marginBottom: '10px' }}>
+              ⚡ INSTANT MOBILE ACTIONS (1-TAP)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={handleWhatsAppShare}
+                style={{ padding: '14px 10px', borderRadius: '14px', border: 'none', background: '#16a34a', color: 'white', fontWeight: 900, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(22,163,74,0.3)' }}
+              >
+                <span style={{ fontSize: '18px' }}>💬</span> WhatsApp Pass
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                style={{ padding: '14px 10px', borderRadius: '14px', border: '1.5px solid #0f52ba', background: '#eff6ff', color: '#0f52ba', fontWeight: 900, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <span style={{ fontSize: '18px' }}>🔗</span> Copy Link
+              </button>
+              {tokenPrintData.mobile ? (
+                <a
+                  href={`tel:${tokenPrintData.mobile}`}
+                  style={{ padding: '12px 10px', borderRadius: '14px', border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#1e293b', fontWeight: 900, fontSize: '12px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  <span style={{ fontSize: '16px' }}>📞</span> Call Patient
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  style={{ padding: '12px 10px', borderRadius: '14px', border: '1px solid #f1f5f9', background: '#f8fafc', color: '#94a3b8', fontWeight: 800, fontSize: '12px' }}
+                >
+                  📞 No Mobile
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                style={{ padding: '12px 10px', borderRadius: '14px', border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#1e293b', fontWeight: 900, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <span style={{ fontSize: '16px' }}>🖨️</span> System Print
+              </button>
+            </div>
+          </div>
+
+          {/* Card 3: Patient Overview */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">👤 PATIENT &amp; VISIT DETAILS</span>
+              <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{tokenAgeSex(tokenPrintData)}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>Patient Name</span>
+                <span style={{ fontWeight: 900, color: '#0f172a' }}>{patientName}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>Patient ID / MRN</span>
+                <span style={{ fontWeight: 900, color: '#0f52ba' }}>{patientId}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>Scheduled Date</span>
+                <span style={{ fontWeight: 800 }}>{new Date(tokenPrintData.dateTime || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+              </div>
+              {tokenReferredBy(tokenPrintData) && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Referred By</span>
+                  <span style={{ fontWeight: 900, color: '#16a34a' }}>{tokenReferredBy(tokenPrintData)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Card 4: Services Availed Ledger */}
+          <div className="android-card">
+            <div className="android-card-header">
+              <span className="android-card-title">🩺 SERVICES AVAILED ({lines.length})</span>
+              {totalAmount > 0 && <span style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>₹{totalAmount.toLocaleString()}</span>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {lines.map((line, idx) => (
+                <div key={line.id || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <span style={{ padding: '3px 8px', borderRadius: '6px', background: '#eff6ff', color: '#0f52ba', fontSize: '10px', fontWeight: 950 }}>
+                    {line.modality || 'OT'}
+                  </span>
+                  <span style={{ flex: 1, fontSize: '12.5px', fontWeight: 800, color: '#1e293b' }}>
+                    {line.serviceName || '—'}
+                  </span>
+                  {Number(line.amount) > 0 && (
+                    <span style={{ fontSize: '12px', fontWeight: 950, color: '#0f172a' }}>
+                      ₹{Number(line.amount).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Card 5: Low-Bandwidth Live QR Tracker */}
+          <div className="android-card" style={{ textAlign: 'center', padding: '20px', background: '#f8fafc', border: '1.5px dashed #cbd5e1' }}>
+            <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '4px' }}>
+              ⚡ LOW-BANDWIDTH LIVE TRACKER
+            </div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '16px', lineHeight: 1.4 }}>
+              Patient or staff can scan this locally-generated QR code to track diagnostic report status in real time.
+            </div>
+            <div style={{ display: 'inline-flex', padding: '12px', background: 'white', borderRadius: '16px', boxShadow: '0 8px 25px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+              <QRCodeCanvas value={shareUrl || ''} size={160} level="M" includeMargin={false} />
+            </div>
+            <div style={{ marginTop: '12px', fontSize: '10px', fontWeight: 800, color: '#94a3b8' }}>
+              POWERED BY NEXEAGLE • OFFLINE FIRST PWA
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Action Bar */}
+        <div className="android-booking-bottombar">
+          <button
+            type="button"
+            className="android-btn-secondary"
+            onClick={() => setTokenPrintData(null)}
+          >✕ CLOSE</button>
+          <button
+            type="button"
+            className="android-btn-primary success"
+            onClick={handleWhatsAppShare}
+          >
+            💬 SEND VIA WHATSAPP (1-TAP)
+          </button>
+        </div>
+
+        <style>{`@media print { body * { visibility: hidden !important; } .android-booking-activity, .android-booking-activity * { visibility: visible !important; } .android-booking-activity { position: absolute; left: 0; top: 0; width: 100%; background: white !important; } .android-booking-topbar, .android-booking-bottombar, button { display: none !important; } }`}</style>
+      </div>
+    );
+  };
+
+  // ============================================================
+  //  NATIVE ANDROID MOBILE ARRIVAL CELEBRATION SHEET
+  // ============================================================
+  const renderMobileAndroidArrivedModal = () => {
+    if (!arrivedModal.open) return null;
+
+    const tokenVal = arrivedModal.tokenNo != null ? formatToken(arrivedModal.tokenNo) : null;
+    const patientName = (arrivedModal.patientName || 'Patient').toUpperCase();
+    const clinicName = activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS';
+    const appObj = arrivedModal.app || appointments.find(a => (a.id || a.appointmentId) === arrivedModal.appointmentId) || {
+      patientName: arrivedModal.patientName,
+      tokenNo: arrivedModal.tokenNo,
+      mobile: arrivedModal.mobile,
+      dateTime: new Date().toISOString(),
+      services: arrivedModal.services
+    };
+    const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/track/${appObj.appointmentId || appObj.id || ''}` : '';
+
+    const handleWhatsAppShare = () => {
+      const msg = `🎉 *${clinicName}*\n\nHello *${patientName}*, you have checked in successfully!\n\n🎟️ *YOUR QUEUE TOKEN NO: ${tokenVal || 'ASSIGNED'}*\n\nPlease wait in our comfortable seating lounge. Track your turn and reports live here:\n${shareUrl}\n\nThank you!`;
+      const phone = (arrivedModal.mobile || appObj.mobile || '').replace(/\D/g, '');
+      if (phone && phone.length >= 10) {
+        window.open(`https://wa.me/91${phone.slice(-10)}?text=${encodeURIComponent(msg)}`, '_blank');
+      } else {
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+      }
+    };
+
+    const handleOpenPass = () => {
+      setArrivedModal({ open: false, tokenNo: null, patientName: '', mobile: '', app: null, services: [] });
+      setTokenPrintData(appObj);
+    };
+
+    return (
+      <div onClick={() => setArrivedModal({ open: false, tokenNo: null, patientName: '', mobile: '', app: null, services: [] })}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(8,12,30,0.75)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100005, padding: '0', animation: 'fadeIn 0.2s ease-out' }}>
+        <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '500px', background: '#ffffff', borderRadius: '28px 28px 0 0', overflow: 'hidden', boxShadow: '0 -20px 60px rgba(0,0,0,0.5)', paddingBottom: 'safe-area-inset-bottom' }}>
+          {/* Top Grab Bar / Header */}
+          <div style={{ padding: '24px 20px 20px', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', color: 'white', textAlign: 'center', position: 'relative' }}>
+            <div style={{ width: '40px', height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.4)', margin: '0 auto 16px' }} />
+            <div style={{ fontSize: '38px', lineHeight: 1 }}>🎉</div>
+            <div style={{ fontSize: '18px', fontWeight: 950, marginTop: '8px', letterSpacing: '-0.3px' }}>PATIENT ARRIVED &amp; QUEUED!</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, opacity: 0.9, marginTop: '4px' }}>{patientName}</div>
+          </div>
+
+          {/* Body Content */}
+          <div style={{ padding: '24px 20px' }}>
+            {tokenVal ? (
+              <div style={{ textAlign: 'center', marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '20px', border: '2px solid #e2e8f0' }}>
+                <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1.5px' }}>ASSIGNED QUEUE TOKEN</div>
+                <div style={{ fontSize: '60px', fontWeight: 950, color: '#0f52ba', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums', margin: '6px 0' }}>
+                  {tokenVal}
+                </div>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#16a34a' }}>🟢 Active in Queue • Ready for Technicians</div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '20px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '13px', fontWeight: 700 }}>
+                Token will appear once assigned by server.
+              </div>
+            )}
+
+            {arrivedModal.services && arrivedModal.services.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>
+                  SCHEDULED SERVICES ({arrivedModal.services.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {arrivedModal.services.map((s, i) => (
+                    <span key={i} style={{ padding: '6px 12px', borderRadius: '10px', background: '#f1f5f9', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#0e7490', background: '#ecfeff', padding: '2px 6px', borderRadius: '4px' }}>{(s.modality || 'OT').toUpperCase()}</span>
+                      {s.serviceName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 1-Tap Action Grid */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={handleWhatsAppShare}
+                style={{ width: '100%', padding: '15px', borderRadius: '16px', border: 'none', background: '#16a34a', color: 'white', fontWeight: 900, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 8px 20px rgba(22,163,74,0.3)' }}
+              >
+                <span style={{ fontSize: '20px' }}>💬</span> WhatsApp Token &amp; Tracking Link
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenPass}
+                style={{ width: '100%', padding: '15px', borderRadius: '16px', border: '1.5px solid #0f52ba', background: '#eff6ff', color: '#0f52ba', fontWeight: 900, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <span style={{ fontSize: '20px' }}>🎟️</span> View / Print Digital Queue Pass
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setArrivedModal({ open: false, tokenNo: null, patientName: '', mobile: '', app: null, services: [] })}
+                style={{ width: '100%', padding: '14px', borderRadius: '16px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 900, fontSize: '14px', cursor: 'pointer', marginTop: '4px' }}
+              >
+                ✔️ Done • Next Patient
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
   //  PRINT MODAL
   // ============================================================
   const renderTokenModal = () => {
     if (!tokenPrintData) return null;
+    if (isMobile) return renderMobileAndroidTokenModal();
     return (
       <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
         <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -6280,12 +8345,265 @@ export default function AppointmentBoard() {
   // ============================================================
   return (
     <div className="appointment-board-container">
-      {/* --- PAGE HEADER --- */}
-      <div className="appt-page-top">
+      {isMobile ? (
+        /* ==========================================================================
+           PREMIUM MOBILE ANDROID APP VIEW (ONLY FOR PHONES < 768px)
+           ========================================================================== */
+        <div className="mobile-android-appt-header">
+          {/* 1. Android Sticky App Bar */}
+          <div className="mobile-app-bar">
+            <div className="mobile-app-bar-top">
+              <div className="mobile-app-title">
+                <span className="title-icon">📅</span> APPOINTMENTS
+              </div>
+              <button 
+                type="button"
+                onClick={handleMobileSync}
+                disabled={mobileSyncing}
+                className={`mobile-sync-pill ${!isOnline || (counts?.pending > 0) ? 'offline' : 'online'}`}
+              >
+                <span className={mobileSyncing ? 'spin-icon' : ''}>
+                  {!isOnline ? '📴' : ((counts?.pending > 0) ? '🔄' : '🟢')}
+                </span>
+                <span>
+                  {!isOnline ? 'Offline' : ((counts?.pending > 0) ? `${counts.pending} Outbox` : (mobileSyncing ? 'Syncing...' : 'Live Sync'))}
+                </span>
+              </button>
+            </div>
+            
+            <div className="mobile-app-bar-bottom">
+              <div className="mobile-tab-pills">
+                <button 
+                  className={`mobile-tab-pill ${activeTab === 'TODAY' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('TODAY')}
+                >
+                  Today <span className="tab-badge">{stats.total || 0}</span>
+                </button>
+                <button 
+                  className={`mobile-tab-pill ${activeTab === 'PAST' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('PAST')}
+                >
+                  Past <span className="tab-badge">{stats.noShow || 0}</span>
+                </button>
+                <button 
+                  className={`mobile-tab-pill ${activeTab === 'FUTURE' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('FUTURE')}
+                >
+                  Future <span className="tab-badge">{stats.expected || 0}</span>
+                </button>
+              </div>
+              <button 
+                className="mobile-fab-btn" 
+                onClick={() => { resetBooking(); setIsBookingOpen(true); }}
+              >
+                <span>+</span> New
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Horizontal Thumb-Scroll Stats Carousel */}
+          <div className="mobile-stats-carousel">
+            <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #0f52ba' }}>
+              <span className="stat-label">TOTAL VOLUME</span>
+              <div className="stat-value">{stats.total || 0}</div>
+              <span className="stat-sub" style={{ color: '#10b981' }}>↑ {activeRate}% Active</span>
+            </div>
+            <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #64748b' }}>
+              <span className="stat-label">{activeTab === 'PAST' ? 'NO SHOW' : 'EXPECTED'}</span>
+              <div className="stat-value" style={{ color: activeTab === 'PAST' ? '#dc2626' : '#475569' }}>
+                {activeTab === 'PAST' ? (stats.noShow || 0) : (stats.expected || 0)}
+              </div>
+              <span className="stat-sub">{activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting in Queue'}</span>
+            </div>
+            <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #059669' }}>
+              <span className="stat-label">ARRIVED</span>
+              <div className="stat-value" style={{ color: '#059669' }}>{stats.arrived || 0}</div>
+              <span className="stat-sub">Waiting in Clinic</span>
+            </div>
+            <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #d97706' }}>
+              <span className="stat-label">SCANNING</span>
+              <div className="stat-value" style={{ color: '#d97706' }}>
+                {stats.scanning || 0} <span style={{ fontSize: '13px', color: '#cbd5e1' }}>/</span> {stats.scanned || 0}
+              </div>
+              <span className="stat-sub">In Progress / Scanned</span>
+            </div>
+            <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #7c3aed' }}>
+              <span className="stat-label">REPORTING</span>
+              <div className="stat-value" style={{ color: '#7c3aed' }}>
+                {stats.reporting || 0} <span style={{ fontSize: '13px', color: '#cbd5e1' }}>/</span> {stats.finalized || 0}
+              </div>
+              <span className="stat-sub">Drafting / Ready</span>
+            </div>
+            <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #0284c7' }}>
+              <span className="stat-label">DELIVERED</span>
+              <div className="stat-value" style={{ color: '#0284c7' }}>{stats.delivered || 0}</div>
+              <span className="stat-sub">Handed to Patient</span>
+            </div>
+            {activeTab !== 'FUTURE' && (
+              <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #e11d48' }}>
+                <span className="stat-label">CANCELLED</span>
+                <div className="stat-value" style={{ color: '#e11d48' }}>{stats.cancelled || 0}</div>
+                <span className="stat-sub">Voided</span>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Touch-Friendly Filter Console (Android App Style) */}
+          <div className="mobile-filter-strip">
+            {/* Top Row: Search & "Not Arrived" Tactile Toggle + Reset */}
+            <div className="mobile-search-toggle-row">
+              <div className="mobile-search-box">
+                <span className="mobile-search-icon">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search patient, mobile, referrer..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button type="button" className="clear-search-btn" onClick={() => setSearchQuery('')}>✕</button>
+                )}
+              </div>
+
+              {(() => {
+                const waiting = (stats.expected || 0) > 0;
+                const on = filters.notArrived;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ ...filters, notArrived: !filters.notArrived })}
+                    className={`mobile-not-arrived-toggle ${on ? 'active-amber' : (waiting ? 'pulse-amber' : '')}`}
+                    title="Toggle Not Arrived Patients"
+                  >
+                    <span className="toggle-icon">🕒</span>
+                    <span className="toggle-text">Not Arrived</span>
+                    <span className="toggle-badge">{stats.expected || 0}</span>
+                  </button>
+                );
+              })()}
+
+              {(searchQuery || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || filters.notArrived) && (
+                <button 
+                  type="button" 
+                  className="mobile-reset-btn"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL', notArrived: false });
+                  }}
+                  title="Reset All Filters"
+                >
+                  ✕ Reset
+                </button>
+              )}
+            </div>
+
+            {/* Middle Row: Modality Quick-Tap Pills */}
+            <div className="mobile-modality-bar">
+              <span className="modality-bar-label">MODALITY:</span>
+              <div className="modality-pills-scroll">
+                <button
+                  type="button"
+                  onClick={() => setFilters({ ...filters, modality: 'ALL' })}
+                  className={`mod-quick-pill ${filters.modality === 'ALL' ? 'active' : ''}`}
+                >
+                  All
+                </button>
+                {MODALITIES.map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setFilters({ ...filters, modality: m })}
+                    className={`mod-quick-pill ${filters.modality === m ? 'active' : ''}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Bottom Row: Specialist Quick-Tap Pills (No Dropdown!) */}
+            <div className="mobile-modality-bar" style={{ borderTop: 'none', paddingTop: 0 }}>
+              <span className="modality-bar-label">SPECIALIST:</span>
+              <div className="modality-pills-scroll">
+                <button
+                  type="button"
+                  onClick={() => setFilters({ ...filters, doctor: 'ALL' })}
+                  className={`mod-quick-pill ${filters.doctor === 'ALL' ? 'active-doctor' : ''}`}
+                >
+                  All Specialists
+                </button>
+                {doctors.map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setFilters({ ...filters, doctor: d })}
+                    className={`mod-quick-pill ${filters.doctor === d ? 'active-doctor' : ''}`}
+                  >
+                    🩺 {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Archive Filter Row (Only for PAST tab) */}
+            {activeTab === 'PAST' && (
+              <div className="mobile-modality-bar" style={{ borderTop: 'none', paddingTop: 0 }}>
+                <span className="modality-bar-label">ARCHIVE:</span>
+                <div className="modality-pills-scroll">
+                  <button
+                    type="button"
+                    onClick={() => setArchiveFilterMode('ALL')}
+                    className={`mod-quick-pill ${archiveFilterMode === 'ALL' ? 'active' : ''}`}
+                  >
+                    All Past Data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArchiveFilterMode('YESTERDAY')}
+                    className={`mod-quick-pill ${archiveFilterMode === 'YESTERDAY' ? 'active' : ''}`}
+                  >
+                    Yesterday
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArchiveFilterMode('RANGE')}
+                    className={`mod-quick-pill ${archiveFilterMode === 'RANGE' ? 'active' : ''}`}
+                  >
+                    Custom Date Range
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'PAST' && archiveFilterMode === 'RANGE' && (
+              <div className="mobile-date-range-box">
+                <input 
+                  type="date" 
+                  value={pastDateRange.start}
+                  max={TODAY}
+                  onChange={e => setPastDateRange(prev => ({ ...prev, start: e.target.value }))}
+                />
+                <span>to</span>
+                <input 
+                  type="date" 
+                  value={pastDateRange.end}
+                  max={TODAY}
+                  onChange={e => setPastDateRange(prev => ({ ...prev, end: e.target.value }))}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ==========================================================================
+           DESKTOP & IPAD VIEW (PRESERVED 100% UNTOUCHED)
+           ========================================================================== */
+        <>
+          {/* --- PAGE HEADER --- */}
+          <div className="appt-page-top">
         <div className="appt-page-header">
           <div className="appt-page-title-block">
-            <h1 className="appt-page-title">Appointment Command</h1>
-            <p className="appt-page-subtitle">Strategic Clinical Mission Control</p>
+            <h1 className="appt-page-title">Appointment Board</h1>
           </div>
 
           <div className="appt-page-actions">
@@ -6311,7 +8629,7 @@ export default function AppointmentBoard() {
             </div>
             
             <button className="appt-new-mission-btn" onClick={() => { resetBooking(); setIsBookingOpen(true); }}>
-              + New Mission
+              + Add Appointment
             </button>
           </div>
         </div>
@@ -6337,7 +8655,7 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Volume</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Appointments</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', fontFamily: 'monospace' }}>{stats.total}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#10b981', fontWeight: 800 }}>
             ↑ {activeRate}% Active
@@ -6359,7 +8677,7 @@ export default function AppointmentBoard() {
           <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? 'No Show' : 'Expected Today'}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: activeTab === 'PAST' ? '#dc2626' : '#475569', fontFamily: 'monospace' }}>{activeTab === 'PAST' ? stats.noShow : stats.expected}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>
-            {activeTab === 'PAST' ? 'Did Not Attend' : 'Intake Pending'}
+            {activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting to Check-in'}
           </div>
         </div>
 
@@ -6378,7 +8696,7 @@ export default function AppointmentBoard() {
           <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>Arrived In Hall</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#059669', fontFamily: 'monospace' }}>{stats.arrived}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#059669', fontWeight: 800 }}>
-            Queue Waiting
+            Waiting in Clinic
           </div>
         </div>
 
@@ -6439,7 +8757,7 @@ export default function AppointmentBoard() {
           <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>Delivered Reports</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#0284c7', fontFamily: 'monospace' }}>{stats.delivered}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>
-            Handed Over ({completionRate}% Efficacy)
+            Handed to Patient
           </div>
         </div>
 
@@ -6459,7 +8777,7 @@ export default function AppointmentBoard() {
             <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>Cancelled</span>
             <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#e11d48', fontFamily: 'monospace' }}>{stats.cancelled}</div>
             <div className="intel-trend" style={{ fontSize: '10px', color: '#be123c', fontWeight: 800 }}>
-              Aborted Missions
+              Cancelled Appointments
             </div>
           </div>
         )}
@@ -6579,6 +8897,8 @@ export default function AppointmentBoard() {
           Reset Filters
         </button>
       </div>
+        </>
+      )}
 
       <div style={{ marginBottom: '20px' }}>
         <div ref={listTopRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -7163,6 +9483,7 @@ export default function AppointmentBoard() {
 
       {/* Patient-arrived success popup — token + patient + services. */}
       {arrivedModal.open && (
+        isMobile ? renderMobileAndroidArrivedModal() : (
         <div onClick={() => setArrivedModal({ open: false, tokenNo: null, patientName: '', services: [] })}
           style={{ position: 'fixed', inset: 0, background: 'rgba(8,12,30,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100002, padding: '20px', animation: 'fadeIn 0.25s ease-out' }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '420px', background: '#ffffff', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.45)' }}>
@@ -7196,6 +9517,7 @@ export default function AppointmentBoard() {
             </div>
           </div>
         </div>
+        )
       )}
 
       {/* Appointment-updated success popup — what changed + the new service set. */}

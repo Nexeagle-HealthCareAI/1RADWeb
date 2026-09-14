@@ -86,13 +86,19 @@ function ToastItem({ toast, onDismiss }) {
         const next = e + 100;
         if (next >= AUTODISMISS_MS) {
           clearInterval(intervalRef.current);
-          onDismiss(toast.id);
         }
         return next;
       });
     }, 100);
     return () => clearInterval(intervalRef.current);
-  }, [hovered, onDismiss, toast.id]);
+  }, [hovered]);
+
+  // Handle dismiss cleanly outside the state updater
+  useEffect(() => {
+    if (elapsed >= AUTODISMISS_MS) {
+      onDismiss(toast.id);
+    }
+  }, [elapsed, onDismiss, toast.id]);
 
   const theme = SEVERITY_THEME[toast.severity] || SEVERITY_THEME.error;
   const progress = Math.min(100, (elapsed / AUTODISMISS_MS) * 100);

@@ -379,16 +379,43 @@ const ExpenseLedger = ({
             ]}
           />
           {timeFilter === 'CUSTOM' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${C.border}`, fontSize: '12px', color: C.textPrimary }}
-              />
-              <span style={{ fontSize: '11px', color: C.textTertiary }}>→</span>
-              <input
-                type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${C.border}`, fontSize: '12px', color: C.textPrimary }}
-              />
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '4px',
+              animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)', 
+              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.05)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)'; }}
+            >
+               <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                 <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#3b82f6', letterSpacing: '1px', pointerEvents: 'none' }}>FROM</span>
+                 <input 
+                   type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                   style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
+                 />
+               </div>
+               
+               <div style={{ width: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#94a3b8', fontSize: '14px', fontWeight: 300 }}>
+                 →
+               </div>
+               
+               <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', background: 'white', borderRadius: '8px', padding: '0 8px', border: '1px solid transparent', transition: 'border-color 0.2s' }}
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#ec4899'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}>
+                 <span style={{ position: 'absolute', left: '12px', fontSize: '8px', fontWeight: 900, color: '#ec4899', letterSpacing: '1px', pointerEvents: 'none' }}>UNTIL</span>
+                 <input 
+                   type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                   style={{ flex: 1, padding: '10px 10px 10px 42px', border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#1e293b', outline: 'none', cursor: 'pointer', WebkitAppearance: 'none' }}
+                 />
+               </div>
             </div>
           )}
 
@@ -705,9 +732,13 @@ const CategoryBreakdown = ({ categories, total }) => {
 };
 
 const FilterGroup = ({ label, value, onChange, options }) => (
-  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-    <span style={{ fontSize: '11px', color: C.textSecondary, fontWeight: 600 }}>{label}:</span>
-    <div style={{ display: 'inline-flex', background: C.surfaceAlt, padding: '3px', borderRadius: '8px', border: `1px solid ${C.border}` }}>
+  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', maxWidth: '100%' }}>
+    <span style={{ fontSize: '11px', color: C.textSecondary, fontWeight: 600, flexShrink: 0 }}>{label}:</span>
+    <div className="filter-group-tabs" style={{ 
+      display: 'inline-flex', background: C.surfaceAlt, padding: '4px', borderRadius: '999px', border: `1px solid ${C.border}`,
+      overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch'
+    }}>
+      <style>{`.filter-group-tabs::-webkit-scrollbar { display: none; }`}</style>
       {options.map(opt => {
         const active = value === opt.key;
         return (
@@ -716,12 +747,13 @@ const FilterGroup = ({ label, value, onChange, options }) => (
             type="button"
             onClick={() => onChange(opt.key)}
             style={{
-              padding: '5px 10px', borderRadius: '6px', border: 'none',
+              padding: '6px 14px', borderRadius: '999px', border: 'none',
               background: active ? C.surface : 'transparent',
               color: active ? C.textPrimary : C.textSecondary,
-              fontSize: '12px', fontWeight: active ? 600 : 500,
+              fontSize: '12px', fontWeight: active ? 700 : 600,
               cursor: 'pointer', transition: 'all 0.15s',
-              boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+              boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+              whiteSpace: 'nowrap', flexShrink: 0
             }}
           >{opt.label}</button>
         );

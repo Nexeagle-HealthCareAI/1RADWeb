@@ -25,10 +25,17 @@ function Brand({ size = 34 }) {
 
 export default function SharedStudyPage() {
   const { token } = useParams();
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 767);
   const [state, setState] = useState('loading'); // loading | ready | expired | invalid | error
   const [series, setSeries] = useState([]);
   const [active, setActive] = useState(0);
   const [meta, setMeta] = useState(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 767);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,11 +140,31 @@ export default function SharedStudyPage() {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', minHeight: 0 }}>
         {series.length > 1 && (
-          <div style={{ width: 92, flexShrink: 0, background: 'linear-gradient(180deg,#0f172a,#1e293b)', borderRight: '2px solid #334155', overflowY: 'auto', padding: 8 }}>
+          <div className="shared-series-list" style={{ 
+            width: isMobile ? '100%' : 92, 
+            height: isMobile ? 110 : 'auto',
+            flexShrink: 0, 
+            background: 'linear-gradient(180deg,#0f172a,#1e293b)', 
+            borderRight: isMobile ? 'none' : '2px solid #334155',
+            borderTop: isMobile ? '2px solid #334155' : 'none',
+            overflowY: isMobile ? 'hidden' : 'auto',
+            overflowX: isMobile ? 'auto' : 'hidden', 
+            padding: 8,
+            display: 'flex',
+            flexDirection: isMobile ? 'row' : 'column',
+            gap: 8,
+            WebkitOverflowScrolling: 'touch'
+          }}>
             {series.map((s, i) => (
-              <button key={i} onClick={() => setActive(i)} style={{ width: '100%', marginBottom: 8, padding: 6, borderRadius: 8, cursor: 'pointer', textAlign: 'center', background: active === i ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' : 'rgba(255,255,255,0.05)', border: active === i ? '2px solid #8b5cf6' : '2px solid transparent', color: 'white' }}>
+              <button key={i} onClick={() => setActive(i)} style={{ 
+                width: isMobile ? 80 : '100%', 
+                flexShrink: 0,
+                padding: 6, borderRadius: 8, cursor: 'pointer', textAlign: 'center', 
+                background: active === i ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' : 'rgba(255,255,255,0.05)', 
+                border: active === i ? '2px solid #8b5cf6' : '2px solid transparent', color: 'white' 
+              }}>
                 {s.thumbnailUrl && <img src={s.thumbnailUrl} alt="" loading="lazy" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'contain', borderRadius: 6, background: '#000', marginBottom: 4 }} />}
                 <div style={{ fontSize: 9, fontWeight: 800 }}>S{i + 1}</div>
                 <div style={{ fontSize: 8, opacity: 0.7 }}>{s.files.length} slc</div>
