@@ -125,11 +125,23 @@ jobs:
           # build (driven by azure-pipelines.yml) is unaffected.
           VITE_API_URL: /api/v1
 
-      - name: Cache dist artifact
-        uses: actions/cache/save@v4
+      # actions/cache is keyed by run_id + run_attempt, which breaks the very
+      # scenario it needs to survive: "Re-run failed jobs" bumps run_attempt
+      # for the WHOLE run but only re-executes the jobs that failed — if Build
+      # already succeeded, it does NOT re-run, so no new cache entry is ever
+      # saved under the new attempt's key, and the downstream restore
+      # (fail-on-cache-miss: true) fails outright. actions/upload-artifact is
+      # a run-level store that survives exactly this — it doesn't care which
+      # attempt produced it. `overwrite: true` covers the other direction
+      # ("Re-run ALL jobs", where Build genuinely does re-run and would
+      # otherwise collide with the still-live artifact from the first attempt).
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: easyrad-dist-${{ github.run_id }}
           path: dist/
-          key: easyrad-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          overwrite: true
 
       - name: Write build summary
         if: always()
@@ -155,12 +167,11 @@ jobs:
     environment: development
 
     steps:
-      - name: Restore dist artifact
-        uses: actions/cache/restore@v4
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
         with:
+          name: easyrad-dist-${{ github.run_id }}
           path: dist/
-          key: easyrad-dist-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
 
       - name: Ensure web root exists on VM
         uses: appleboy/ssh-action@v1.0.3
@@ -303,12 +314,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Restore dist artifact
-        uses: actions/cache/restore@v4
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
         with:
+          name: easyrad-dist-${{ github.run_id }}
           path: dist/
-          key: easyrad-dist-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
 
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
