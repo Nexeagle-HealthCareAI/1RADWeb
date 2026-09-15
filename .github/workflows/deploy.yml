@@ -17,6 +17,9 @@
 #   PROD_SSH_HOST       Prod VM IP
 #   PROD_SSH_USER       root
 #   PROD_SSH_KEY_B64    base64-encoded private key for prod VM
+#   MAPBOX_TOKEN        Mapbox token, PUBLIC scopes only (styles:read,
+#                       fonts:read, datasets:read, vision:read) — this ships
+#                       inside the client bundle. Same value for Dev and Prod.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # ONE-TIME VM SETUP (run once on the Dev VM)
@@ -124,6 +127,10 @@ jobs:
           # Pipeline env wins over .env.production, so the Azure Static Web App
           # build (driven by azure-pipelines.yml) is unaffected.
           VITE_API_URL: /api/v1
+          # Real value lives in GitHub Secrets, not committed — .env's
+          # REPLACE_WITH_A_PUBLIC_SCOPED_MAPBOX_TOKEN placeholder is only a
+          # local-dev fallback; this wins for every pipeline-built bundle.
+          VITE_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
 
       # actions/cache is keyed by run_id + run_attempt, which breaks the very
       # scenario it needs to survive: "Re-run failed jobs" bumps run_attempt
@@ -253,6 +260,8 @@ jobs:
           VITE_API_URL: ${{ github.ref == 'refs/heads/main' && vars.PROD_API_URL || vars.DEV_API_URL }}
           STORAGE_ENDPOINT: ${{ github.ref == 'refs/heads/main' && vars.PROD_STORAGE_ENDPOINT || vars.DEV_STORAGE_ENDPOINT }}
           STORAGE_BUCKET: ${{ github.ref == 'refs/heads/main' && vars.PROD_STORAGE_BUCKET || vars.DEV_STORAGE_BUCKET }}
+          # Same desktop-app codebase renders the Hospital Settings map picker.
+          VITE_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
         shell: bash
         run: |
           # Strip trailing slash from endpoint just in case, then construct the feed URL

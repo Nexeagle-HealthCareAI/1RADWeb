@@ -667,7 +667,9 @@ export default function ReferralsPage() {
     registrationNumber: '',
     pan: '',
     nabhNumber: '',
-    isAutoBillingEnabled: false
+    isAutoBillingEnabled: false,
+    latitude: null,
+    longitude: null
   });
   const [mappedHospitals, setMappedHospitals] = useState([]);
   const [viewingHubId, setViewingHubId] = useState(null); // null = show list
@@ -787,7 +789,11 @@ export default function ReferralsPage() {
         registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
         pan: res.data.pan || res.data.PAN || '',
         nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
-        isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
+        isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false,
+        // Nullable: a centre with no pin set yet has neither field, and 0 is
+        // a valid coordinate (equator/prime meridian) so this can't use `||`.
+        latitude: res.data.latitude ?? res.data.Latitude ?? null,
+        longitude: res.data.longitude ?? res.data.Longitude ?? null
       };
       setHospitalData(data);
       setViewingHubId(hubId);
@@ -1179,7 +1185,9 @@ export default function ReferralsPage() {
       gstin: hospitalData.gstin,
       registrationNumber: hospitalData.registrationNumber,
       pan: hospitalData.pan,
-      nabhNumber: hospitalData.nabhNumber
+      nabhNumber: hospitalData.nabhNumber,
+      latitude: hospitalData.latitude,
+      longitude: hospitalData.longitude
     };
 
     if (!isOnline) {
