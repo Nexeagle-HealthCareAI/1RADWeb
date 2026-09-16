@@ -1,8 +1,10 @@
-import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
-import ReportPreviewModal from '../components/ReportPreviewModal';
+// Lazy — pulls in react-pdf/qrcode, which don't need to be part of the
+// board's own bundle.
+const ReportPreviewModal = lazy(() => import('../components/ReportPreviewModal'));
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import useTickClock from '../utils/useTickClock';
@@ -12,6 +14,7 @@ import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { formatPatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { fingerprintRows } from '../utils/arrayFingerprint';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
 import { notifyToast } from '../utils/toast';
@@ -109,6 +112,7 @@ export default function DoctorBoard() {
   // Renders instantly, works fully OFFLINE (the SyncEngine keeps the cache fresh
   // and it survives reloads), and auto-updates on every delta — replacing the
   // old direct fetch + 5s poll + nativeStorage snapshot fallback.
+  const casesFingerprintRef = useRef('');
   useEffect(() => {
     const sub = watchAppointments({ mode: 'all' }).subscribe({
       next: (rows) => {
@@ -121,7 +125,13 @@ export default function DoctorBoard() {
           priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
           isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
         }));
-        setCases(prev => (JSON.stringify(prev) === JSON.stringify(allCases) ? prev : allCases));
+        // Cheap id+version fingerprint instead of JSON.stringify-ing the
+        // whole worklist on every sync tick just to maybe skip a re-render.
+        const fp = fingerprintRows(allCases);
+        if (fp !== casesFingerprintRef.current) {
+          casesFingerprintRef.current = fp;
+          setCases(allCases);
+        }
         setLoading(false);
       },
       error: (err) => {
@@ -826,14 +836,16 @@ export default function DoctorBoard() {
       {renderQueue()}
 
       
-      <ReportPreviewModal 
-        isOpen={isPreviewOpen}
-        onClose={() => setIsPreviewOpen(false)}
-        doctorId={previewAppointment?.doctorId}
-        appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
-        patientData={previewAppointment}
-        reportContent={previewReport}
-      />
+      <Suspense fallback={null}>
+        <ReportPreviewModal
+          isOpen={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+          doctorId={previewAppointment?.doctorId}
+          appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
+          patientData={previewAppointment}
+          reportContent={previewReport}
+        />
+      </Suspense>
       <style>{`
         .gamified-btn { background: #0f52ba; color: white; border: none; font-weight: 950; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(15, 82, 186, 0.2); }
         .gamified-btn:hover { background: #0d44a0; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(15, 82, 186, 0.3); }

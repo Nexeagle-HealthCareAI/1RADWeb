@@ -725,7 +725,19 @@ export function stopSyncEngine() {
 // an appointment status change doesn't need invoices/expenses/personnel
 // re-pulled. Omit it for the old "refresh everything" behaviour.
 export async function syncNow(scope = null) {
-  if (pulling) return;
+  // A page-mount/navigation call landing while the 30s heartbeat (or
+  // another syncNow) is mid-flight used to just no-op here — no retry —
+  // so a fresh navigation could silently show stale cache for up to the
+  // next 30s tick. Wait briefly for the in-flight cycle to free up before
+  // giving up; callers already await this off the render path, so a
+  // short wait doesn't block anything the user sees.
+  if (pulling) {
+    const waitStart = Date.now();
+    while (pulling && Date.now() - waitStart < 3000) {
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    if (pulling) return; // still busy after the wait — give up as before
+  }
   if (!navigator.onLine) return;
   if (!getActiveHospitalId()) return;
   pulling = true;

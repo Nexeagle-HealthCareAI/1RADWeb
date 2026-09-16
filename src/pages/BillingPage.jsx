@@ -220,15 +220,9 @@ export default function BillingPage() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
-      setWindowWidth(window.innerWidth);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
+  // Resize listener lives in the mount effect below (it also kicks off
+  // refreshAllFinancialData) — this used to be a separate, duplicate
+  // listener doing the identical setIsMobile/setWindowWidth work.
 
   // B3 Slice 1 — invoices are now offline-first. The legacy fetchInvoices
   // function survives so post-mutation calls still work, but reading is
@@ -434,7 +428,15 @@ export default function BillingPage() {
   // nothing else re-requests the authoritative server matrix once the
   // fallback effect stops running, so the numbers can silently stay stale.
   useEffect(() => {
-    if (billingViewMode === 'ANALYTICS' || billingViewMode === 'FINANCE') {
+    // SERVICES (Service Performance) also renders AnalyticsHub off this same
+    // matrix — it was missing here, so switching to that tab (or changing
+    // the date filter while on it) never refetched. It silently kept
+    // whatever matrix a prior Analytics/Finance visit had left behind (a
+    // different date range), or — if the page never fetched a matrix at all
+    // yet — fell through to the offline keyword-matching fallback instead of
+    // the backend's authoritative per-service numbers. Either way the
+    // figures shown didn't match the rest of the page.
+    if (billingViewMode === 'ANALYTICS' || billingViewMode === 'FINANCE' || billingViewMode === 'SERVICES') {
       void fetchMatrix();
     }
   }, [billingViewMode, fetchMatrix, isOnline, pendingCount]);
@@ -518,14 +520,23 @@ export default function BillingPage() {
     return () => sub.unsubscribe();
   }, []);
 
+  // searchTerm itself stays instant (it also drives invoice filtering
+  // elsewhere on this page) — only this liveQuery re-subscription, which
+  // re-runs a Dexie query on every keystroke, is debounced.
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   // B3 Slice 4 — referrers liveQuery.
   useEffect(() => {
-    const sub = watchReferrers({ search: searchTerm }).subscribe({
+    const sub = watchReferrers({ search: debouncedSearchTerm }).subscribe({
       next: (rows) => setReferrers(rows),
       error: (err) => console.warn('[BillingPage] referrers liveQuery error', err),
     });
     return () => sub.unsubscribe();
-  }, [searchTerm]);
+  }, [debouncedSearchTerm]);
 
   // Load the approval-request map on mount (powers the Revenue approval column).
   useEffect(() => { 
@@ -642,17 +653,6 @@ export default function BillingPage() {
     setPatientSearchQuery,
     newInvoiceData, setNewInvoiceData,
   });
-
-  // Handle window resize for responsive layout
-  useEffect(() => {
-    const handleResize = () => {
-      const newWidth = window.innerWidth;
-      setWindowWidth(newWidth);
-      setIsMobile(newWidth < 1024);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const handleSyncLegacyData = async () => {
     const legacy = JSON.parse(localStorage.getItem('1rad_invoices') || '[]');
@@ -785,9 +785,9 @@ export default function BillingPage() {
             `}</style>
             {[
               { id: 'INVOICES',      label: 'Revenue' },
-              { id: 'EXPENSES',      label: 'Expenses' },
               { id: 'REFERRAL_CUTS', label: 'Incentives' },
-              { id: 'SERVICES',      label: 'Metrics' },
+              { id: 'EXPENSES',      label: 'Expenses' },
+              { id: 'SERVICES',      label: 'Service Performance' },
               { id: 'FINANCE',       label: 'Pricing' },
               { id: 'ANALYTICS',     label: 'Analytics' },
             ].map(tab => {
@@ -1160,9 +1160,6 @@ export default function BillingPage() {
         onDismiss={() => setPaymentSuccess(null)}
         isMobile={isMobile}
       />
-
-      {/* ── Unified Billing Notice Modal ──────────────────────────────────── */}
-      <BillingNoticeModal {...noticeProps} />
     </div>
   );
 }

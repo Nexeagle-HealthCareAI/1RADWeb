@@ -181,8 +181,20 @@ export const useBillingData = ({
   }, [filteredInvoices, expenses, referralCommissions]);
 
   const combinedReferralCuts = useMemo(() => {
+    // O(1) lookups instead of an O(invoices) .find() per expense AND per
+    // referral commission below — unmemoized, that made this whole block
+    // O(invoices × (expenses + commissions)), growing quadratically as
+    // history accumulates even though the outer computation is memoized.
+    const invoicesByRef = new Map();
+    const invoicesByAppt = new Map();
+    for (const inv of (invoices || [])) {
+        if (inv.displayId)     invoicesByRef.set(inv.displayId, inv);
+        if (inv.invoiceId)     invoicesByRef.set(inv.invoiceId, inv);
+        if (inv.appointmentId) invoicesByAppt.set(inv.appointmentId, inv);
+    }
+
     const legacyCuts = (expenses || []).filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => {
-        const inv = (invoices || []).find(i => i.displayId === e.referenceNumber || i.invoiceId === e.referenceNumber);
+        const inv = invoicesByRef.get(e.referenceNumber);
         return {
             id: e.id,
             date: e.transactionDate,
@@ -199,10 +211,7 @@ export const useBillingData = ({
     const derivePatientPaymentStatus = (c) => {
         const ref = c.referenceNumber || c.reference;
         const apptId = c.appointmentId || c.AppointmentId;
-        const inv = (invoices || []).find(i =>
-            (ref && (i.displayId === ref || i.invoiceId === ref)) ||
-            (apptId && i.appointmentId === apptId)
-        );
+        const inv = (ref && invoicesByRef.get(ref)) || (apptId && invoicesByAppt.get(apptId));
         if (inv) {
             const paid = Number(inv.paidAmount) || 0;
             const total = Number(inv.totalAmount) || 0;
