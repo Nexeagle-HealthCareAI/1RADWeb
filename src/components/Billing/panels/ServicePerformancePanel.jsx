@@ -21,8 +21,8 @@ import React, { useMemo, useState } from 'react';
 const COLUMNS = [
   { key: 'serviceName',          label: 'SERVICE NAME',  align: 'left' },
   { key: 'scanCount',            label: 'SCAN VOL',      align: 'center' },
-  { key: 'grossRevenue',         label: 'GROSS (₹)',     align: 'center' },
-  { key: 'referralCut',          label: 'DISC/COMM (₹)', align: 'center' },
+  { key: 'grossRevenue',         label: 'GROSS LIST (₹)', align: 'center' },
+  { key: 'referralCut',          label: 'COMMISSION (₹)', align: 'center' },
   { key: 'netRevenue',           label: 'NET YIELD (₹)', align: 'center' },
   { key: 'avgValue',             label: 'AVG VALUE (₹)', align: 'center' },
   { key: 'collectionEfficiency', label: 'EFFICIENCY',    align: 'right' },
@@ -98,8 +98,9 @@ export default function ServicePerformancePanel({
   return (
     <div style={{ animation: 'fadeIn 0.2s', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <h4 style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b', margin: 0 }}>SERVICE PERFORMANCE ANALYSIS</h4>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <h4 style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b', margin: 0 }}>SERVICE PERFORMANCE ANALYSIS</h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <input
             type="text"
@@ -153,6 +154,10 @@ export default function ServicePerformancePanel({
             </button>
           )}
         </div>
+        </div>
+        <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, margin: 0 }}>
+          GROSS is the pre-discount list price for services performed; NET YIELD is the actual billed amount (after discounts) minus real referral commission owed — it should track Revenue's Clinic Income. For cash collected and other billing detail, see the Revenue tab.
+        </p>
       </div>
 
       {compareEnabled && comparisonLoading && (
@@ -166,7 +171,7 @@ export default function ServicePerformancePanel({
         }, {
           label: 'TOTAL SCANS', value: allServicesData.reduce((s, x) => s + (x.scanCount || 0), 0), color: '#0891b2', bg: '#e0f2fe', prior: kpiPrior.totalScans
         }, {
-          label: 'GROSS BILLING', value: allServicesData.reduce((s, x) => s + (x.grossRevenue || 0), 0), color: '#059669', bg: '#ecfdf5', prior: kpiPrior.grossRevenue, isMoney: true
+          label: 'GROSS (LIST PRICE)', value: allServicesData.reduce((s, x) => s + (x.grossRevenue || 0), 0), color: '#059669', bg: '#ecfdf5', prior: kpiPrior.grossRevenue, isMoney: true
         }, {
           label: 'NET YIELD', value: allServicesData.reduce((s, x) => s + (x.netRevenue || 0), 0), color: '#dc2626', bg: '#fef2f2', prior: kpiPrior.netRevenue, isMoney: true
         }].map((kpi, i) => (
