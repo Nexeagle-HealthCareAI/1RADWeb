@@ -1827,13 +1827,17 @@ export default function AppointmentBoard() {
     // `_primaryServiceId` — sending it back tells the server's
     // reconciler to update that row in place (preserving its status,
     // TAT timestamps, attached report / study / commission rows)
-    // instead of soft-deleting and recreating it.
+    // instead of HARD-deleting and recreating it (a service dropped from
+    // this list is a real, permanent SQL DELETE server-side, not a
+    // soft-delete/tombstone — this `id` is the only thing preventing that
+    // for a line the user isn't actually trying to remove).
     //
     // The remaining lines are whatever the user committed via "Add
     // another service". Existing rows carry their `id`; new rows have
     // `id: null`. Any pre-existing line the user removed in the UI is
-    // simply absent here — the reconciler soft-deletes anything not
-    // present in the incoming array.
+    // simply absent here — the reconciler HARD-deletes anything not
+    // present in the incoming array (after settling its billing/commission
+    // records — see ReconcileServicesAsync server-side).
     const serviceLines = [
       ...(draftHasService ? [{
         id:               editingAppointment._primaryServiceId || null,
