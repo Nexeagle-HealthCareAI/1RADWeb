@@ -1631,21 +1631,34 @@ export default function AppointmentBoard() {
     // landed, leaving services[].id = null for an already-invoiced service.
     // The routine 30s poll can't repair this either: the summary DTO it pulls
     // doesn't carry services at all. Submitting a null id for an EXISTING
-    // service makes the backend treat it as removed + re-added as new,
-    // desyncing the invoice total from what's actually paid. So refetch the
-    // canonical, id-bearing appointment here before building the edit form —
-    // this is the one place editing actually depends on those ids being real.
-    if (isOnline && appIn?.appointmentId) {
-      try {
-        const full = await apiClient.get(`/appointments/${appIn.appointmentId}`);
-        if (full?.data?.appointmentId) {
-          app = { ...appIn, ...full.data };
-          applyServerDeltas([full.data]).catch(() => {});
-        }
-      } catch {
-        // Offline blip / request failure — fall back to the cached row below
-        // rather than blocking the edit entirely.
+    // service makes the backend treat it as removed + re-added as new —
+    // desyncing the invoice total from what's actually paid, silently
+    // clawing back a referral commission that was already PAID out, or (if
+    // the service has a report/scan attached) hard-blocking the ENTIRE edit
+    // with a confusing error, all for a service the user never touched. So
+    // refetch the canonical, id-bearing appointment before building the edit
+    // form — this is the one place editing actually depends on those ids
+    // being real — and refuse to open the drawer at all if that fails,
+    // rather than silently risking any of the above on stale cached ids.
+    if (!isOnline) {
+      showNotif('warning', 'OFFLINE', 'Editing needs a live connection to load the latest appointment data. Please reconnect and try again.');
+      return;
+    }
+    if (!appIn?.appointmentId) {
+      showNotif('error', 'MISSING APPOINTMENT', 'This appointment could not be identified. Please refresh and try again.');
+      return;
+    }
+    try {
+      const full = await apiClient.get(`/appointments/${appIn.appointmentId}`);
+      if (!full?.data?.appointmentId) {
+        showNotif('error', 'COULD NOT LOAD', 'Could not load the latest appointment data. Please try again.');
+        return;
       }
+      app = { ...appIn, ...full.data };
+      applyServerDeltas([full.data]).catch(() => {});
+    } catch {
+      showNotif('error', 'COULD NOT LOAD', 'Could not load the latest appointment data. Please check your connection and try again.');
+      return;
     }
 
     const matchedRef = (referrers || []).find(r => (r.name || '').toLowerCase() === (app.referredBy || '').toLowerCase());
