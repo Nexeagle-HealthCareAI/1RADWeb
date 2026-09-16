@@ -730,7 +730,7 @@ const RevenueHub = ({
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#ef4444' }}>₹{liveStats.totalDiscount.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>INCENTIVE PAID</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>INCENTIVE ACCRUED</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#881337' }}>₹{liveStats.totalCommission.toLocaleString()}</div>
             </div>
           </>
