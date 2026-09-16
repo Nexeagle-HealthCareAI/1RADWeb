@@ -100,17 +100,60 @@ function ymdKolkata(input) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
-// Watch the appointments cache in one of three "tab modes":
+// UTC instant (ms) for 00:00:00 IST on the given "YYYY-MM-DD" day. India
+// doesn't observe DST, so "start of the next IST day" is always exactly
+// +24h — no calendar math needed for range bounds below.
+function istDayStartMs(ymd) {
+  return new Date(`${ymd}T00:00:00+05:30`).getTime();
+}
+// [dayStart, dayStart + 1 day) as ISO bounds for an indexed `dateTime`
+// range query — an EXCLUSIVE upper bound at the next day's start, not
+// "23:59:59.999", so it can never miss a row due to sub-millisecond
+// precision the server's timestamps carry that a JS-computed literal
+// end-of-day string wouldn't lexicographically dominate.
+function istDayRangeIso(ymd) {
+  const startMs = istDayStartMs(ymd);
+  return [new Date(startMs).toISOString(), new Date(startMs + 86_400_000).toISOString()];
+}
+
+// How far back the archive's default (no explicit range picked) view and
+// the "all" mode's date-recency half reach. An explicit startIso/endIso on
+// 'past' still reaches further back via its own indexed query below — this
+// only bounds the *default* view, which otherwise re-loads the hospital's
+// entire lifetime history on every single appointment write, forever.
+const DEFAULT_PAST_WINDOW_DAYS = 90;
+const ALL_MODE_RECENT_DAYS = 60;
+// 'all' mode's status half: rows in these terminal states are dropped once
+// they age out of the recency window — everything else (still somewhere in
+// the workflow) stays visible regardless of age, so an old STAT report
+// nobody ever finalized can't silently vanish from a worklist.
+const ALL_MODE_FINALIZED_STATUSES = ['CANCELLED', 'DELIVERED'];
+
+// Watch the appointments cache in one of five "tab modes":
 //
-//   mode: 'today'   — dateIso required; returns only that day's appointments.
-//   mode: 'future'  — returns appointments strictly AFTER today.
-//   mode: 'past'    — returns appointments strictly BEFORE today, optionally
-//                     bounded by startIso / endIso (inclusive).
+//   mode: 'today'      — dateIso required; returns only that day's appointments.
+//   mode: 'future'     — returns appointments strictly AFTER today.
+//   mode: 'past'       — returns appointments strictly BEFORE today, optionally
+//                        bounded by startIso / endIso (inclusive); with neither
+//                        given, defaults to the last DEFAULT_PAST_WINDOW_DAYS.
+//   mode: 'all'        — recent (last ALL_MODE_RECENT_DAYS) OR not yet in a
+//                        finalized status, regardless of age. Used by the
+//                        always-open clinical worklists (Doctor/Operations/
+//                        Technician boards), which need "everything still in
+//                        play", not the hospital's entire history.
+//   mode: 'allHistory' — genuinely unbounded, every cached row regardless of
+//                        date or status. Only for lightweight ALL-TIME
+//                        aggregation (e.g. "most used services" frequency
+//                        stats) that deliberately wants real history, not a
+//                        worklist — anything holding full rows per visit
+//                        should use 'all' instead.
 //
-// The sync engine pulls every appointment delta the user has access to (no
-// date filter), so all three modes are served from the same cached table.
-// The mode just controls which slice is rendered. status='ALL' disables the
-// status filter; otherwise it's case-insensitive on the appointment status.
+// Each mode is an indexed range/status query, not a full-table load — the
+// old version did `t.toArray()` unconditionally and filtered every row in
+// JS, which re-ran on EVERY write to the table (this is a Dexie liveQuery:
+// any appointment change anywhere re-fires it for every open subscriber)
+// and got slower forever as the hospital's appointment history grew.
+// status='ALL' disables the status filter; otherwise it's case-insensitive.
 export function watchAppointments({
   mode = 'today',
   dateIso,
@@ -120,24 +163,42 @@ export function watchAppointments({
 } = {}) {
   return liveQuery(async () => {
     const t = tables.appointments();
-    let arr = await t.toArray();
     const todayIso = ymdKolkata(new Date());
+    let arr;
 
     if (mode === 'today') {
       if (!dateIso) return [];
-      arr = arr.filter(a => a.dateTime && ymdKolkata(a.dateTime) === dateIso);
+      const [lo, hi] = istDayRangeIso(dateIso);
+      arr = await t.where('dateTime').between(lo, hi, true, false).toArray();
     } else if (mode === 'future') {
-      arr = arr.filter(a => a.dateTime && ymdKolkata(a.dateTime) > todayIso);
+      const [, tomorrowStart] = istDayRangeIso(todayIso);
+      arr = await t.where('dateTime').aboveOrEqual(tomorrowStart).toArray();
     } else if (mode === 'past') {
-      arr = arr.filter(a => {
-        if (!a.dateTime) return false;
-        const d = ymdKolkata(a.dateTime);
-        if (!d || d >= todayIso) return false;          // strictly past
-        if (startIso && d < startIso) return false;     // optional lower bound
-        if (endIso   && d > endIso)   return false;     // optional upper bound
-        return true;
-      });
+      const [todayStart] = istDayRangeIso(todayIso);
+      if (startIso || endIso) {
+        const lo = startIso ? istDayRangeIso(startIso)[0] : undefined;
+        const hi = endIso ? istDayRangeIso(endIso)[1] : todayStart;
+        arr = lo
+          ? await t.where('dateTime').between(lo, hi, true, false).toArray()
+          : await t.where('dateTime').below(hi).toArray();
+      } else {
+        const cutoff = new Date(Date.now() - DEFAULT_PAST_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+        arr = await t.where('dateTime').between(cutoff, todayStart, true, false).toArray();
+      }
+    } else if (mode === 'all') {
+      const cutoff = new Date(Date.now() - ALL_MODE_RECENT_DAYS * 24 * 3600 * 1000).toISOString();
+      const [recent, active] = await Promise.all([
+        t.where('dateTime').aboveOrEqual(cutoff).toArray(),
+        t.where('status').noneOf(ALL_MODE_FINALIZED_STATUSES).toArray(),
+      ]);
+      const byId = new Map();
+      for (const row of recent) byId.set(row.appointmentId, row);
+      for (const row of active) byId.set(row.appointmentId, row);
+      arr = Array.from(byId.values());
+    } else {
+      arr = await t.toArray();
     }
+
     if (status && status !== 'ALL') {
       arr = arr.filter(a => (a.status || '').toUpperCase() === status.toUpperCase());
     }

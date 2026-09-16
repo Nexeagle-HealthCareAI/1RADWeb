@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import apiClient from '../api/apiClient';
@@ -12,7 +12,9 @@ import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
 import '../styles/MobileAndroidBooking.css';
-import ReportPreviewModal from '../components/ReportPreviewModal';
+// Lazy — pulls in react-pdf/qrcode, which don't need to be part of the
+// board's own bundle.
+const ReportPreviewModal = lazy(() => import('../components/ReportPreviewModal'));
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
@@ -943,7 +945,7 @@ export default function AppointmentBoard() {
   // for this hospital, not just the day on screen. Re-keyed on centre so it
   // refreshes when the user switches facilities.
   useEffect(() => {
-    const sub = watchAppointments({ mode: 'all', status: 'ALL' }).subscribe({
+    const sub = watchAppointments({ mode: 'allHistory', status: 'ALL' }).subscribe({
       next: (rows) => setStatsAppointments(rows || []),
       error: (err) => console.warn('[AppointmentBoard] stats liveQuery error', err),
     });
@@ -1176,22 +1178,38 @@ export default function AppointmentBoard() {
 
   const itemsPerPage = 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
-  const paginatedAppointments = activeTab === 'PAST'
-    ? filteredAppointments
-    : filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  // PAST used to render the WHOLE filtered list regardless of page (while
+  // still computing totalPages/showing page controls as if it were paged) —
+  // every past visit for the selected range got built into a full row
+  // component on every render, with the page buttons doing nothing visible.
+  // Paginating it the same as every other tab fixes both the dead controls
+  // and the unbounded render cost.
+  const paginatedAppointments = filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const stats = {
-    total: appointmentsForTab.length,
-    expected: appointmentsForTab.filter(a => ['scheduled', 'booked'].includes(a.status?.toLowerCase())).length,
-    noShow: appointmentsForTab.filter(a => ['no_show', 'noshow'].includes(a.status?.toLowerCase())).length,
-    arrived: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'confirmed').length,
-    scanning: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
-    scanned: appointmentsForTab.filter(a => ['scanned', 'completed'].includes(a.status?.toLowerCase())).length,
-    reporting: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reporting').length,
-    finalized: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
-    delivered: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'delivered').length,
-    cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
-  };
+  // Single pass instead of 9 separate O(n) .filter() scans over
+  // appointmentsForTab (unbounded on the PAST tab) run directly in the
+  // render body on every render; memoized so it only re-runs when the
+  // underlying tab data actually changes.
+  const stats = useMemo(() => {
+    const s = {
+      total: appointmentsForTab.length,
+      expected: 0, noShow: 0, arrived: 0, scanning: 0, scanned: 0,
+      reporting: 0, finalized: 0, delivered: 0, cancelled: 0,
+    };
+    for (const a of appointmentsForTab) {
+      const status = a.status?.toLowerCase();
+      if (status === 'scheduled' || status === 'booked') s.expected++;
+      else if (status === 'no_show' || status === 'noshow') s.noShow++;
+      else if (status === 'confirmed') s.arrived++;
+      else if (status === 'in_progress') s.scanning++;
+      else if (status === 'scanned' || status === 'completed') s.scanned++;
+      else if (status === 'reporting') s.reporting++;
+      else if (status === 'reported') s.finalized++;
+      else if (status === 'delivered') s.delivered++;
+      else if (status === 'cancelled') s.cancelled++;
+    }
+    return s;
+  }, [appointmentsForTab]);
   const activeCount = stats.total - stats.cancelled;
   const activeRate = stats.total > 0 ? Math.round((activeCount / stats.total) * 100) : 0;
   const completionRate = activeCount > 0 ? Math.round(((stats.finalized + stats.delivered) / activeCount) * 100) : 0;
@@ -9050,19 +9068,21 @@ export default function AppointmentBoard() {
         </div>
       )}
       
-      <ReportPreviewModal
-        isOpen={isPreviewOpen}
-        onClose={() => { setIsPreviewOpen(false); setPreviewServiceId(null); }}
-        doctorId={previewAppointment?.doctorId}
-        appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
-        // Multi-service rollout — the per-service "Print prescription"
-        // button from the expanded row passes a service id here so the
-        // modal's patient banner + thank-you line name THAT service
-        // line, not the visit's primary scalar.
-        appointmentServiceId={previewServiceId}
-        patientData={previewAppointment}
-        reportContent={previewReport}
-      />
+      <Suspense fallback={null}>
+        <ReportPreviewModal
+          isOpen={isPreviewOpen}
+          onClose={() => { setIsPreviewOpen(false); setPreviewServiceId(null); }}
+          doctorId={previewAppointment?.doctorId}
+          appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
+          // Multi-service rollout — the per-service "Print prescription"
+          // button from the expanded row passes a service id here so the
+          // modal's patient banner + thank-you line name THAT service
+          // line, not the visit's primary scalar.
+          appointmentServiceId={previewServiceId}
+          patientData={previewAppointment}
+          reportContent={previewReport}
+        />
+      </Suspense>
 
       {/* Premium Glassmorphic Error Dialog Modal */}
       {errorModal.isOpen && (

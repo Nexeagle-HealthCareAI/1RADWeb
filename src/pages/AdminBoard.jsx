@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
@@ -11,7 +11,9 @@ import useFinanceRevision from '../hooks/useFinanceRevision';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
-import HospitalLocationPicker from '../components/HospitalLocationPicker';
+// Lazy — pulls in mapbox-gl, which doesn't need to be part of the board's
+// own bundle.
+const HospitalLocationPicker = lazy(() => import('../components/HospitalLocationPicker'));
 import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
@@ -2188,11 +2190,13 @@ export default function AdminBoard() {
 
               <div>
                   <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Location</label>
-                  <HospitalLocationPicker
-                      latitude={hospitalData.latitude}
-                      longitude={hospitalData.longitude}
-                      onChange={(lat, lng) => setHospitalData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
-                  />
+                  <Suspense fallback={null}>
+                    <HospitalLocationPicker
+                        latitude={hospitalData.latitude}
+                        longitude={hospitalData.longitude}
+                        onChange={(lat, lng) => setHospitalData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
+                    />
+                  </Suspense>
               </div>
 
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>

@@ -1858,4 +1858,7 @@ const RevenueHub = ({
    );
 };
 
-export default RevenueHub;
+// Memoized — this tree is large enough that skipping a re-render when
+// BillingPage re-renders for an unrelated reason (props unchanged) is
+// worth the shallow-compare cost.
+export default React.memo(RevenueHub);

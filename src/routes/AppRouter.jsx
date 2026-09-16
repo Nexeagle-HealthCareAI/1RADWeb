@@ -1,38 +1,67 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import ProtectedRoute from './ProtectedRoute';
-import { ROLE_HOME } from '../data/roles';
+import { ROLE_HOME, getRolePermissions } from '../data/roles';
 
+// AppLayout is the authenticated shell — needed immediately on every
+// protected route, so it stays a static import. LoginPage is the very
+// first thing an unauthenticated visitor sees, so it also stays eager to
+// avoid a loading flash on the app's first paint. Every other page is
+// lazy — previously all 28 of these were one eager bundle, so navigating
+// anywhere (or even just loading the login screen) paid the parse/exec
+// cost of every page in the app, including the ~580KB AppointmentBoard.
 import AppLayout from '../layouts/AppLayout';
 import LoginPage from '../pages/LoginPage';
-import RegisterPage from '../pages/RegisterPage';
-import SharedStudyPage from '../pages/SharedStudyPage';
-import ForgotPassword from '../pages/ForgotPassword';
-import AccessDenied from '../pages/AccessDenied';
-import AppointmentBoard from '../pages/AppointmentBoard';
-import TechnicianPage from '../pages/TechnicianPage';
-import DoctorBoard from '../pages/DoctorBoard';
-import AdminBoard from '../pages/AdminBoard';
-import ReferralsPage from '../pages/ReferralsPage';
-import StaffPage from '../pages/StaffPage';
-import StaffDashboardPage from '../pages/StaffDashboardPage';
-import ViewerPage from '../pages/ViewerPage';
-import BillingPage from '../pages/BillingPage';
-import ReportingPage from '../pages/ReportingPage';
-import DicomViewerPage from '../pages/DicomViewerPage';
-import StudiesPage from '../pages/StudiesPage';
-import SubscriptionPage from '../pages/SubscriptionPage';
-import PatientTimelinePage from '../pages/PatientTimelinePage';
-import ActiveSessionsPage from '../pages/ActiveSessionsPage';
-import SecuritySettingsPage from '../pages/SecuritySettingsPage';
-import SyncStatusPage from '../pages/SyncStatusPage';
-import SettingsHomePage from '../pages/SettingsHomePage';
-import DicomBridgePage from '../pages/DicomBridgePage';
-import ConfigurationPage from '../pages/ConfigurationPage';
-import ApprovalsPage from '../pages/ApprovalsPage';
-import OperationsBoard from '../pages/OperationsBoard';
 
-import { getRolePermissions } from '../data/roles';
+const RegisterPage = lazy(() => import('../pages/RegisterPage'));
+const SharedStudyPage = lazy(() => import('../pages/SharedStudyPage'));
+const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
+const AccessDenied = lazy(() => import('../pages/AccessDenied'));
+const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
+const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
+const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
+const AdminBoard = lazy(() => import('../pages/AdminBoard'));
+const ReferralsPage = lazy(() => import('../pages/ReferralsPage'));
+const StaffPage = lazy(() => import('../pages/StaffPage'));
+const StaffDashboardPage = lazy(() => import('../pages/StaffDashboardPage'));
+const ViewerPage = lazy(() => import('../pages/ViewerPage'));
+const BillingPage = lazy(() => import('../pages/BillingPage'));
+const ReportingPage = lazy(() => import('../pages/ReportingPage'));
+const DicomViewerPage = lazy(() => import('../pages/DicomViewerPage'));
+const StudiesPage = lazy(() => import('../pages/StudiesPage'));
+const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage'));
+const PatientTimelinePage = lazy(() => import('../pages/PatientTimelinePage'));
+const ActiveSessionsPage = lazy(() => import('../pages/ActiveSessionsPage'));
+const SecuritySettingsPage = lazy(() => import('../pages/SecuritySettingsPage'));
+const SyncStatusPage = lazy(() => import('../pages/SyncStatusPage'));
+const SettingsHomePage = lazy(() => import('../pages/SettingsHomePage'));
+const DicomBridgePage = lazy(() => import('../pages/DicomBridgePage'));
+const ConfigurationPage = lazy(() => import('../pages/ConfigurationPage'));
+const ApprovalsPage = lazy(() => import('../pages/ApprovalsPage'));
+const OperationsBoard = lazy(() => import('../pages/OperationsBoard'));
+const StatusTracking = lazy(() => import('../pages/StatusTracking'));
+const DoctorReferralPortal = lazy(() => import('../pages/DoctorReferralPortal'));
+const WaitingAreaBoard = lazy(() => import('../pages/WaitingAreaBoard'));
+
+// Minimal centered fallback while a lazy page chunk loads — typically a
+// few hundred ms on a warm cache, so deliberately lightweight rather than
+// a full skeleton.
+function RouteLoadingFallback() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', width: '100%',
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: '50%',
+        border: '3px solid #e2e8f0', borderTopColor: '#3b82f6',
+        animation: 'arw-spin 0.7s linear infinite',
+      }} />
+      <style>{'@keyframes arw-spin { to { transform: rotate(360deg); } }'}</style>
+    </div>
+  );
+}
 
 function RootRedirect() {
   const { currentUser, activeCenter } = useAuth();
@@ -69,14 +98,11 @@ function RootRedirect() {
   return <Navigate to={homePath} replace />;
 }
 
-import StatusTracking from '../pages/StatusTracking';
-import DoctorReferralPortal from '../pages/DoctorReferralPortal';
-import WaitingAreaBoard from '../pages/WaitingAreaBoard';
-
 export default function AppRouter() {
   const { hasAdminDoctor } = useAuth();
 
   return (
+    <Suspense fallback={<RouteLoadingFallback />}>
     <Routes>
       {/* Public / Semi-Public */}
       <Route path="/track/:id" element={<StatusTracking />} />
@@ -317,5 +343,6 @@ export default function AppRouter() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }

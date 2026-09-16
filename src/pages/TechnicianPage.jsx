@@ -16,6 +16,7 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { fingerprintRows } from '../utils/arrayFingerprint';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
 import useOffline from '../hooks/useOffline';
@@ -125,6 +126,7 @@ export default function TechnicianPage() {
   // instantly, works fully OFFLINE (the SyncEngine keeps the cache fresh in the
   // background and the cache survives reloads), and AUTO-updates whenever a new
   // delta is written — so no per-page polling is needed here.
+  const studiesFingerprintRef = useRef('');
   useEffect(() => {
     const sub = watchAppointments({ mode: 'all' }).subscribe({
       next: (rows) => {
@@ -140,9 +142,13 @@ export default function TechnicianPage() {
           priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
           isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
         }));
-        // Only swap state when the data actually changed — avoids needless
-        // re-renders/flicker when a liveQuery fires with identical rows.
-        setStudies(prev => (JSON.stringify(prev) === JSON.stringify(worklist) ? prev : worklist));
+        // Cheap id+version fingerprint instead of JSON.stringify-ing the
+        // whole worklist on every sync tick just to maybe skip a re-render.
+        const fp = fingerprintRows(worklist);
+        if (fp !== studiesFingerprintRef.current) {
+          studiesFingerprintRef.current = fp;
+          setStudies(worklist);
+        }
         setLoading(false);
       },
       error: (err) => {

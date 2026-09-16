@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
@@ -7,6 +7,7 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { fingerprintRows } from '../utils/arrayFingerprint';
 import { syncNow } from '../sync/SyncEngine';
 import useOffline from '../hooks/useOffline';
 import '../styles/global.css';
@@ -150,13 +151,25 @@ export default function OperationsBoard() {
 
   // Offline-first board: read the appointments from the local Dexie cache via a
   // liveQuery. Renders instantly, works offline, and auto-updates whenever the
-  // SyncEngine writes a delta. The page filters this set by the selected date
-  // client-side, so we pull the whole cached set (mode: 'all').
+  // SyncEngine writes a delta. Scoped to the selected date via an indexed
+  // query (re-subscribes when the date navigator changes) — this used to
+  // pull mode:'all' (the hospital's ENTIRE appointment history, re-loaded on
+  // every single write anywhere) and filter to the date client-side; every
+  // filter below this effect already narrows within one already-date-scoped
+  // day, so nothing here depended on holding other dates in memory.
+  const appointmentsFingerprintRef = useRef('');
   useEffect(() => {
-    const sub = watchAppointments({ mode: 'all' }).subscribe({
+    const sub = watchAppointments({ mode: 'today', dateIso: selectedDate }).subscribe({
       next: (rows) => {
         const allAppts = rows || [];
-        setAppointments(prev => (JSON.stringify(prev) === JSON.stringify(allAppts) ? prev : allAppts));
+        // Cheap id+version fingerprint instead of JSON.stringify-ing the
+        // whole day's worklist on every sync tick just to maybe skip a
+        // re-render.
+        const fp = fingerprintRows(allAppts);
+        if (fp !== appointmentsFingerprintRef.current) {
+          appointmentsFingerprintRef.current = fp;
+          setAppointments(allAppts);
+        }
         setLoading(false);
       },
       error: (err) => {
@@ -165,7 +178,7 @@ export default function OperationsBoard() {
       },
     });
     return () => sub.unsubscribe();
-  }, []);
+  }, [selectedDate]);
 
   // Reset pagination to first page when filtering parameters change
   useEffect(() => {

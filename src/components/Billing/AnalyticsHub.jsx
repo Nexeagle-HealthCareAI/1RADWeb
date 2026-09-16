@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx-js-style';
+import { fetchFinancialMatrix } from '../../api/billing/reportingApi';
 import RevenueCollectionsPanel from './panels/RevenueCollectionsPanel';
 import DiscountReferralPanel from './panels/DiscountReferralPanel';
 import ModalityPerformancePanel from './panels/ModalityPerformancePanel';
@@ -378,6 +379,81 @@ const AnalyticsHub = ({
     ).sort((a, b) => b.grossRevenue - a.grossRevenue);
   }, [servicePerformanceData]);
 
+  // ── Service Performance: compare-to-prior-period ──────────────────────
+  // Only meaningful for a BOUNDED range (TODAY or a CUSTOM start/end) —
+  // PAST/ALL have no natural "same-length period right before this one".
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [priorMatrix, setPriorMatrix] = useState(null);
+  const [priorLoading, setPriorLoading] = useState(false);
+  const canCompare = timeFilter === 'TODAY' || timeFilter === 'CUSTOM';
+
+  const shiftDateStr = (dateStr, days) => {
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().split('T')[0];
+  };
+
+  const priorRange = useMemo(() => {
+    if (timeFilter === 'TODAY') {
+      const y = shiftDateStr(TODAY, -1);
+      return { start: y, end: y, label: 'vs yesterday' };
+    }
+    if (timeFilter === 'CUSTOM' && startDate && endDate) {
+      const spanDays = Math.round((new Date(`${endDate}T00:00:00Z`) - new Date(`${startDate}T00:00:00Z`)) / 86400000) + 1;
+      const priorEnd = shiftDateStr(startDate, -1);
+      const priorStart = shiftDateStr(startDate, -spanDays);
+      return { start: priorStart, end: priorEnd, label: `vs prior ${spanDays}d` };
+    }
+    return null;
+  }, [timeFilter, startDate, endDate, TODAY]);
+
+  useEffect(() => {
+    if (!compareEnabled || currentSection !== 'SERVICES' || !canCompare || !priorRange) {
+      setPriorMatrix(null);
+      return;
+    }
+    let alive = true;
+    setPriorLoading(true);
+    fetchFinancialMatrix({ startDate: priorRange.start, endDate: priorRange.end })
+      .then(data => { if (alive) setPriorMatrix(data); })
+      .catch(() => { if (alive) setPriorMatrix(null); })
+      .finally(() => { if (alive) setPriorLoading(false); });
+    return () => { alive = false; };
+  }, [compareEnabled, currentSection, canCompare, priorRange]);
+
+  // Same shape as servicePerformanceData, built from the prior-period matrix.
+  const priorServiceLookup = useMemo(() => {
+    const lookup = new Map();
+    if (!priorMatrix || !Array.isArray(priorMatrix.modalityProfitability)) return lookup;
+    for (const m of priorMatrix.modalityProfitability) {
+      for (const s of (m.services || [])) {
+        lookup.set(`${m.modality}|${s.serviceName}`, {
+          grossRevenue: s.grossRevenue || 0,
+          netRevenue: s.netRevenue || 0,
+          scanCount: s.scanCount || 0,
+        });
+      }
+    }
+    return lookup;
+  }, [priorMatrix]);
+
+  const priorTotals = useMemo(() => {
+    let totalServices = 0, totalScans = 0, grossRevenue = 0, netRevenue = 0;
+    if (priorMatrix && Array.isArray(priorMatrix.modalityProfitability)) {
+      for (const m of priorMatrix.modalityProfitability) {
+        for (const s of (m.services || [])) {
+          totalServices += 1;
+          totalScans += s.scanCount || 0;
+          grossRevenue += s.grossRevenue || 0;
+          netRevenue += s.netRevenue || 0;
+        }
+      }
+    }
+    return { totalServices, totalScans, grossRevenue, netRevenue };
+  }, [priorMatrix]);
+
+  const toggleCompare = useCallback(() => setCompareEnabled(v => !v), []);
+
   // ==========================================
   // TAB 4: PATIENT & REFERRAL TRENDS CALCULATIONS
   // ==========================================
@@ -686,6 +762,13 @@ const AnalyticsHub = ({
                 modalityGroupedServices={modalityGroupedServices}
                 allServicesData={allServicesData}
                 onExportExcel={handleExportToExcel}
+                canCompare={canCompare}
+                compareEnabled={compareEnabled}
+                onToggleCompare={toggleCompare}
+                comparisonLoading={priorLoading}
+                comparisonLabel={priorRange?.label || ''}
+                priorServiceLookup={priorServiceLookup}
+                priorTotals={priorTotals}
               />
             )}
 
