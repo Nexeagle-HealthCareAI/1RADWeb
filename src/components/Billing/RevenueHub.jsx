@@ -690,7 +690,12 @@ const RevenueHub = ({
           })()}
       </div>
 
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(6, 1fr)', gap: '15px', marginBottom: '40px' }}>
+      {timeFilter !== 'FUTURE' && (
+        <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, margin: '-10px 0 15px' }}>
+          GROSS (LIST PRICE) is the pre-discount price for services billed — it should match Service Performance's GROSS. PATIENT BILL is what's actually invoiced after discounts (the same figure the transaction table below calls PATIENT BILL); CLINIC INCOME is Patient Bill minus referral incentive — it should track Service Performance's NET YIELD.
+        </p>
+      )}
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(7, 1fr)', gap: '15px', marginBottom: '40px' }}>
         {timeFilter === 'FUTURE' ? (
           <>
             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', gridColumn: isMobile ? '1' : 'span 2' }}>
@@ -709,27 +714,31 @@ const RevenueHub = ({
           </>
         ) : (
           <>
-            <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>BASE FEE</p>
+            <div className="kpi-card" style={{ background: '#ecfdf5', padding: '20px', borderRadius: '24px', border: '1px solid #05966922', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Pre-discount list price for every service billed in this range — the same figure as Service Performance's GROSS card.">
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#059669', letterSpacing: '1px', marginBottom: '12px' }}>GROSS (LIST PRICE)</p>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#065f46' }}>₹{liveStats.totalGross.toLocaleString()}</div>
+            </div>
+            <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="What's actually invoiced after discounts — Gross minus Discounts Given.">
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PATIENT BILL</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
             </div>
-            <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+            <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Patient Bill still owed — Patient Bill minus Total Collected, floored per invoice so an overpaid invoice never shows as negative (the excess is held as patient credit instead).">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PENDING AMOUNT</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
             </div>
-            <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+            <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Cash actually received against invoices in this range.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '12px' }}>TOTAL COLLECTED</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{liveStats.totalCollected.toLocaleString()}</div>
             </div>
-            <div className="kpi-card" style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
+            <div className="kpi-card" style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }} title="Patient Bill minus Incentive Accrued — the centre's take-home after the referral cut. Matches Service Performance's NET YIELD.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>CLINIC INCOME</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#14532d' }}>₹{liveStats.netProfit.toLocaleString()}</div>
             </div>
-            <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+            <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Total concession given — Gross minus Patient Bill.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>DISCOUNTS GIVEN</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#ef4444' }}>₹{liveStats.totalDiscount.toLocaleString()}</div>
             </div>
-            <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
+            <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }} title="Referral commission owed to referrers on invoices in this range, whether or not it's been paid out yet. Not the same as cash actually disbursed — see the Referral Hub for PAID vs UNPAID.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>INCENTIVE ACCRUED</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#881337' }}>₹{liveStats.totalCommission.toLocaleString()}</div>
             </div>
@@ -796,8 +805,8 @@ const RevenueHub = ({
                          <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GENERATED AT</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TEST DETAILS</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textAlign: 'right' }}>BASE FEE</th>
-                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>EXTRA</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textAlign: 'right' }}>GROSS</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }} title="Already included within Gross to its left — shown for reference, not additive.">EXTRA</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'right' }}>INCENTIVE</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', textAlign: 'right' }}>CLINIC INCOME</th>
                     </>
@@ -806,8 +815,8 @@ const RevenueHub = ({
                       <th onClick={() => handleSort('serviceDate')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOKEN & DATE {getSortIcon('serviceDate')}</th>
                       <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT INFO {getSortIcon('patientName')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TEST DETAILS</th>
-                      <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>BASE FEE {getSortIcon('grossAmount')}</th>
-                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', background: '#f8fafc', textAlign: 'right' }}>EXTRA</th>
+                      <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }} title="Pre-discount list price, same figure as the GROSS (LIST PRICE) KPI above.">GROSS {getSortIcon('grossAmount')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', background: '#f8fafc', textAlign: 'right' }} title="Already included within Gross to its left — shown for reference, not additive.">EXTRA</th>
                       <th onClick={() => handleSort('discountAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT {getSortIcon('discountAmount')}</th>
                       <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>PATIENT BILL {getSortIcon('totalAmount')}</th>
                       <th onClick={() => handleSort('commissionAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>INCENTIVE {getSortIcon('commissionAmount')}</th>
@@ -1436,9 +1445,9 @@ const RevenueHub = ({
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                            <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '10px' }}>
-                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginBottom: '2px' }}>BASE FEE</div>
+                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginBottom: '2px' }}>GROSS</div>
                              <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 900 }}>₹{(inv.grossAmount || 0).toLocaleString()}</div>
-                             {(inv.additionalCharges || 0) > 0 && <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '2px' }}>+₹{(inv.additionalCharges || 0).toLocaleString()} extra</div>}
+                             {(inv.additionalCharges || 0) > 0 && <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '2px' }}>incl. ₹{(inv.additionalCharges || 0).toLocaleString()} extra</div>}
                            </div>
                            <div style={{ background: '#f0f4ff', padding: '12px', borderRadius: '10px' }}>
                              <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, marginBottom: '2px' }}>PATIENT BILL</div>
