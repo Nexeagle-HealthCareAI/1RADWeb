@@ -65,11 +65,21 @@ export const useBillingData = ({
         const ap = approvalForInvoice(approvalMap, inv);
         if (!ap || ap.status !== 'PENDING') return false;
       }
+      // ServiceDate (backend-persisted, kept in sync with the appointment's
+      // date on creation/reschedule — see UpdateAppointmentCommand) is the
+      // SAME field every backend report (Service Performance, exports) uses
+      // to bucket this invoice by day. Preferring it here — instead of
+      // re-deriving a date from the linked appointment's live record or
+      // CreatedAt — is what makes Revenue's date-range filtering agree with
+      // Service Performance's for the exact same invoice. The old fallback
+      // chain is kept for legacy cached invoices fetched before this field
+      // existed on the DTO.
+      const svcDateStr = inv.serviceDate ? getIstDateStr(inv.serviceDate) : null;
       const linkedApp = appointmentById.get(inv.appointmentId);
       const appDateStr = linkedApp ? (linkedApp.date || (linkedApp.dateTime ? linkedApp.dateTime.split('T')[0] : null)) : null;
       const invDateStr = inv.createdAt ? getIstDateStr(inv.createdAt) : null;
-      
-      const targetDate = appDateStr || invDateStr;
+
+      const targetDate = svcDateStr || appDateStr || invDateStr;
 
       if (timeFilter === 'TODAY' && targetDate !== today) return false;
       if (timeFilter === 'PAST' && targetDate >= today) return false;
