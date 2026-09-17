@@ -20,12 +20,12 @@ import React, { useMemo, useState } from 'react';
 
 const COLUMNS = [
   { key: 'serviceName',          label: 'SERVICE NAME',  align: 'left' },
-  { key: 'scanCount',            label: 'SCAN VOL',      align: 'center' },
-  { key: 'grossRevenue',         label: 'GROSS LIST (₹)', align: 'center' },
-  { key: 'referralCut',          label: 'COMMISSION (₹)', align: 'center' },
-  { key: 'netRevenue',           label: 'NET YIELD (₹)', align: 'center' },
-  { key: 'avgValue',             label: 'AVG VALUE (₹)', align: 'center' },
-  { key: 'collectionEfficiency', label: 'EFFICIENCY',    align: 'right' },
+  { key: 'scanCount',            label: 'SCAN VOL',      align: 'center', title: 'Number of times this service was performed in the selected range.' },
+  { key: 'grossRevenue',         label: 'GROSS LIST (₹)', align: 'center', title: 'Pre-discount list price for this service.' },
+  { key: 'referralCut',          label: 'COMMISSION (₹)', align: 'center', title: 'Referral commission accrued on this service, whether or not it has been paid out yet.' },
+  { key: 'netRevenue',           label: 'NET YIELD (₹)', align: 'center', title: 'Billed amount after discounts, minus commission — what the centre actually keeps from this service.' },
+  { key: 'avgValue',             label: 'AVG VALUE (₹)', align: 'center', title: 'Gross list price divided by scan volume — the average pre-discount price per scan.' },
+  { key: 'collectionEfficiency', label: 'EFFICIENCY',    align: 'right', title: 'Share of this service\'s billed amount that has actually been collected so far.' },
 ];
 
 const sortValue = (svc, key) => {
@@ -156,7 +156,7 @@ export default function ServicePerformancePanel({
         </div>
         </div>
         <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, margin: 0 }}>
-          GROSS is the pre-discount list price for services performed; NET YIELD is the actual billed amount (after discounts) minus real referral commission owed — it should track Revenue's Clinic Income. For cash collected and other billing detail, see the Revenue tab.
+          GROSS is the pre-discount list price for services performed — it should match Revenue's GROSS (LIST PRICE). NET YIELD is the actual billed amount (after discounts, i.e. Revenue's PATIENT BILL) minus real referral commission owed — it should track Revenue's CLINIC INCOME. For cash collected and other billing detail, see the Revenue tab.
         </p>
       </div>
 
@@ -167,15 +167,19 @@ export default function ServicePerformancePanel({
       {/* Summary KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: '16px' }}>
         {[{
-          label: 'TOTAL SERVICES', value: allServicesData.length, color: '#4f46e5', bg: '#eef2ff', prior: kpiPrior.totalServices
+          label: 'TOTAL SERVICES', value: allServicesData.length, color: '#4f46e5', bg: '#eef2ff', prior: kpiPrior.totalServices,
+          title: 'Number of distinct service names billed in this range (a multi-service visit counts once per service, not once per visit).'
         }, {
-          label: 'TOTAL SCANS', value: allServicesData.reduce((s, x) => s + (x.scanCount || 0), 0), color: '#0891b2', bg: '#e0f2fe', prior: kpiPrior.totalScans
+          label: 'TOTAL SCANS', value: allServicesData.reduce((s, x) => s + (x.scanCount || 0), 0), color: '#0891b2', bg: '#e0f2fe', prior: kpiPrior.totalScans,
+          title: 'Total scan volume across every service line — how many times a service was actually performed.'
         }, {
-          label: 'GROSS (LIST PRICE)', value: allServicesData.reduce((s, x) => s + (x.grossRevenue || 0), 0), color: '#059669', bg: '#ecfdf5', prior: kpiPrior.grossRevenue, isMoney: true
+          label: 'GROSS (LIST PRICE)', value: allServicesData.reduce((s, x) => s + (x.grossRevenue || 0), 0), color: '#059669', bg: '#ecfdf5', prior: kpiPrior.grossRevenue, isMoney: true,
+          title: 'Pre-discount list price for every service performed — matches Revenue\'s GROSS (LIST PRICE) KPI exactly.'
         }, {
-          label: 'NET YIELD', value: allServicesData.reduce((s, x) => s + (x.netRevenue || 0), 0), color: '#dc2626', bg: '#fef2f2', prior: kpiPrior.netRevenue, isMoney: true
+          label: 'NET YIELD', value: allServicesData.reduce((s, x) => s + (x.netRevenue || 0), 0), color: '#dc2626', bg: '#fef2f2', prior: kpiPrior.netRevenue, isMoney: true,
+          title: 'Actual billed amount after discounts, minus real referral commission owed — should track Revenue\'s CLINIC INCOME.'
         }].map((kpi, i) => (
-          <div key={i} style={{ background: kpi.bg, borderRadius: '18px', padding: '18px', border: `1px solid ${kpi.color}22` }}>
+          <div key={i} title={kpi.title} style={{ background: kpi.bg, borderRadius: '18px', padding: '18px', border: `1px solid ${kpi.color}22` }}>
             <div style={{ fontSize: '8px', fontWeight: 950, color: kpi.color, letterSpacing: '1px', marginBottom: '8px' }}>{kpi.label}</div>
             <div style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', display: 'flex', alignItems: 'baseline' }}>
               {kpi.isMoney ? '₹' + Math.round(kpi.value).toLocaleString() : kpi.value}
@@ -238,6 +242,7 @@ export default function ServicePerformancePanel({
                             <th
                               key={col.key}
                               onClick={() => toggleSort(col.key)}
+                              title={col.title}
                               style={{
                                 padding: '10px 14px', fontSize: '8px', fontWeight: 950,
                                 color: active ? '#0f52ba' : '#94a3b8', letterSpacing: '0.5px',
