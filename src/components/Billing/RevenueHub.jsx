@@ -88,6 +88,7 @@ const RevenueHub = ({
   approvalFilter = 'ALL',
   setApprovalFilter = () => {},
   liveStats,
+  matrix,
   searchTerm,
   setSearchTerm,
   timeFilter,
@@ -134,6 +135,39 @@ const RevenueHub = ({
   useEffect(() => {
     setActionsPortalNode(document.getElementById('billing-header-actions-portal'));
   }, []);
+
+  // Prefer the backend's live-DB aggregate (matrix.revenueSummary — the same
+  // GetFinancialMatrixQuery Service Performance reads for the same date
+  // range) over liveStats, which is derived from the local offline cache.
+  // That cache is only ever a rolling recent window (see evictOlderThan in
+  // the sync engine) — for a date range reaching outside it, liveStats
+  // silently undercounts even though every individual figure it computes is
+  // correct, because it's missing invoices entirely. Falls back to liveStats
+  // when offline or before the matrix has loaded for the current filter, so
+  // the KPI strip never goes blank.
+  const revenueKpis = useMemo(() => {
+    const rs = matrix?.revenueSummary;
+    if (isOnline && rs && typeof rs.patientBill === 'number') {
+      return {
+        grossListPrice: rs.grossListPrice || 0,
+        patientBill: rs.patientBill || 0,
+        pendingAmount: rs.pendingAmount || 0,
+        totalCollected: rs.totalCollected || 0,
+        clinicIncome: rs.clinicIncome || 0,
+        discountsGiven: rs.discountsGiven || 0,
+        incentiveAccrued: rs.incentiveAccrued || 0,
+      };
+    }
+    return {
+      grossListPrice: liveStats?.totalGross || 0,
+      patientBill: liveStats?.totalRevenue || 0,
+      pendingAmount: liveStats?.pendingRevenue || 0,
+      totalCollected: liveStats?.totalCollected || 0,
+      clinicIncome: liveStats?.netProfit || 0,
+      discountsGiven: liveStats?.totalDiscount || 0,
+      incentiveAccrued: liveStats?.totalCommission || 0,
+    };
+  }, [matrix, isOnline, liveStats]);
 
   // Whether the referrer's commission for this invoice is already PAID. Once it
   // is, "Update payout" is locked by default — money has already changed hands,
@@ -716,31 +750,31 @@ const RevenueHub = ({
           <>
             <div className="kpi-card" style={{ background: '#ecfdf5', padding: '20px', borderRadius: '24px', border: '1px solid #05966922', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Pre-discount list price for every service billed in this range — the same figure as Service Performance's GROSS card.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#059669', letterSpacing: '1px', marginBottom: '12px' }}>GROSS (LIST PRICE)</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#065f46' }}>₹{liveStats.totalGross.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#065f46' }}>₹{revenueKpis.grossListPrice.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="What's actually invoiced after discounts — Gross minus Discounts Given.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PATIENT BILL</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{revenueKpis.patientBill.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Patient Bill still owed — Patient Bill minus Total Collected, floored per invoice so an overpaid invoice never shows as negative (the excess is held as patient credit instead).">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PENDING AMOUNT</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#f39c12' }}>₹{revenueKpis.pendingAmount.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Cash actually received against invoices in this range.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '12px' }}>TOTAL COLLECTED</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{liveStats.totalCollected.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{revenueKpis.totalCollected.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }} title="Patient Bill minus Incentive Accrued — the centre's take-home after the referral cut. Matches Service Performance's NET YIELD.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>CLINIC INCOME</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#14532d' }}>₹{liveStats.netProfit.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#14532d' }}>₹{revenueKpis.clinicIncome.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Total concession given — Gross minus Patient Bill.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>DISCOUNTS GIVEN</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#ef4444' }}>₹{liveStats.totalDiscount.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#ef4444' }}>₹{revenueKpis.discountsGiven.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }} title="Referral commission owed to referrers on invoices in this range, whether or not it's been paid out yet. Not the same as cash actually disbursed — see the Referral Hub for PAID vs UNPAID.">
               <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>INCENTIVE ACCRUED</p>
-              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#881337' }}>₹{liveStats.totalCommission.toLocaleString()}</div>
+              <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#881337' }}>₹{revenueKpis.incentiveAccrued.toLocaleString()}</div>
             </div>
           </>
         )}
