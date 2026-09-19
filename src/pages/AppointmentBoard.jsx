@@ -23,9 +23,7 @@ import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/pat
 import { formatToken } from '../utils/tokenFormat';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments, insertCachedAppointment, applyServerDeltas } from '../db/repos/appointmentsRepo';
-import { watchInvoices, applyServerDeltas as applyInvoiceDeltas } from '../db/repos/invoicesRepo';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
-import { getAllReferrers } from '../db/repos/referrersRepo';
 import { fetchApprovalMap, approvalForAppointment, approvalBadge } from '../utils/approvalLookup';
 import { withDoctorPrefix } from '../utils/referrerFormat';
 import { celebrate } from '../utils/celebrate';
@@ -210,16 +208,23 @@ export default function AppointmentBoard() {
     return () => { alive = false; };
   }, []);
   // Payment-received visibility — appointment IDs whose invoice is fully PAID, so
-  // a card can show a green "paid" tick. Sourced from the shared invoices cache
-  // (kept fresh by the sync engine) and updated live.
+  // a card can show a green "paid" tick. Invoices are no longer offline-cached
+  // (Billing reads the live API directly), so this fetches straight from the
+  // backend instead of subscribing to a local liveQuery — refreshed on mount
+  // and after any action likely to have changed an invoice's paid status (see
+  // fetchPaidApptIds() call sites below).
   const [paidApptIds, setPaidApptIds] = useState(() => new Set());
-  useEffect(() => {
-    const sub = watchInvoices({ status: 'PAID' }).subscribe({
-      next: (invs) => setPaidApptIds(new Set((invs || []).filter(i => i.appointmentId).map(i => i.appointmentId))),
-      error: (err) => console.warn('[AppointmentBoard] paid-invoice watch error', err),
-    });
-    return () => sub.unsubscribe();
+  const fetchPaidApptIds = useCallback(async () => {
+    try {
+      const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
+      const res = await apiClient.get('/finance/invoices', { params: { status: 'PAID', startDate: cutoff } });
+      const rows = Array.isArray(res?.data) ? res.data : [];
+      setPaidApptIds(new Set(rows.filter(i => i.appointmentId).map(i => i.appointmentId)));
+    } catch (err) {
+      console.warn('[AppointmentBoard] paid-invoice fetch failed', err);
+    }
   }, []);
+  useEffect(() => { fetchPaidApptIds(); }, [fetchPaidApptIds]);
   // Multi-service edit state. The drawer's draft inputs (service /
   // modality / amount / referralCutValue) on editingAppointment model
   // the "in-progress" line; editServices is the list of lines already
@@ -722,27 +727,15 @@ export default function AppointmentBoard() {
     try { await syncNow(['patients']); } catch (_err) { /* engine already logs */ }
   }, []);
 
+  // Referrers are no longer offline-cached — this always hits the live API.
   const fetchReferrers = useCallback(async (query) => {
     try {
-      if (!navigator.onLine) {
-        const local = await getAllReferrers();
-        const q = (query || '').toLowerCase().trim();
-        setReferrers(q ? local.filter(r => (r.name || '').toLowerCase().includes(q)) : local);
-        return;
-      }
       const response = await apiClient.get('/referrers', {
         params: { search: query }
       });
       setReferrers(response.data);
     } catch (error) {
-      console.error('Failed to fetch referrers, falling back to offline cache:', error);
-      try {
-        const local = await getAllReferrers();
-        const q = (query || '').toLowerCase().trim();
-        setReferrers(q ? local.filter(r => (r.name || '').toLowerCase().includes(q)) : local);
-      } catch (cacheErr) {
-        console.error('Offline referrer cache lookup failed:', cacheErr);
-      }
+      console.error('Failed to fetch referrers:', error);
     }
   }, []);
 
@@ -1005,10 +998,12 @@ export default function AppointmentBoard() {
     const name = (newPatient.referredBy || '').trim();
     if (name.length < 3) { setReferrerSuggestions([]); return undefined; }
     let cancelled = false;
-    const handle = setTimeout(async () => {
+    const handle = setTimeout(() => {
       try {
-        const all = await getAllReferrers();
-        const ranked = rankReferrerDuplicates(name, all);
+        // Referrers are no longer offline-cached — rank against the already
+        // live-fetched `referrers` list (populated by fetchReferrers('') on
+        // mount) instead of a separate Dexie read.
+        const ranked = rankReferrerDuplicates(name, referrers || []);
         // Drop an exact (already-typed) name — only suggest genuine variants.
         if (!cancelled) setReferrerSuggestions(ranked.filter(s => (s.referrer.name || '').toLowerCase() !== name.toLowerCase()));
       } catch (err) {
@@ -1016,7 +1011,7 @@ export default function AppointmentBoard() {
       }
     }, 280);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [newPatient.referredBy, newPatient.referrerId]);
+  }, [newPatient.referredBy, newPatient.referrerId, referrers]);
 
   const fetchRegistry = useCallback(async () => {
     try {
@@ -1980,16 +1975,16 @@ export default function AppointmentBoard() {
       // PREVIOUS services/billing until the 30s background poll (whose pull is
       // skipped when one is already running — pullCycle guards on `pulling`).
       const editedApptId = editingAppointment.appointmentId;
-      // Wait for both cache writes before reporting success. Previously these
+      // Wait for both refreshes before reporting success. Previously these
       // background requests raced the user navigating to Revenue, which could
-      // expose the pre-edit cached invoice until the next sync cycle.
+      // expose the pre-edit cached invoice until the next sync cycle. Invoices
+      // are no longer offline-cached, so the paid-tick set is simply refetched
+      // live instead of writing a fresh invoice snapshot into Dexie.
       await Promise.all([
         apiClient.get(`/appointments/${editedApptId}`)
           .then(full => full?.data?.appointmentId ? applyServerDeltas([full.data]) : undefined)
           .catch(() => undefined),
-        apiClient.get('/finance/invoices', { params: { appointmentId: editedApptId } })
-          .then(r => Array.isArray(r?.data) && r.data.length ? applyInvoiceDeltas(r.data) : undefined)
-          .catch(() => undefined),
+        fetchPaidApptIds(),
       ]);
 
       // Build a precise "what changed" summary (pre-edit snapshot vs saved state)

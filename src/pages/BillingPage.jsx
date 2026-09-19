@@ -3,14 +3,8 @@ import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
-import { watchInvoices, watchInvoicesPage } from '../db/repos/invoicesRepo';
-import { watchExpenses, watchExpensesPage } from '../db/repos/expensesRepo';
-import { watchReferrers } from '../db/repos/referrersRepo';
-import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
 import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
-import { syncNow } from '../sync/SyncEngine';
-import { computeMatrix } from '../analytics/financialAggregator';
 import { matchesAnyModality } from '../utils/appointmentServices';
 import { notifyToast } from '../utils/toast';
 import '../styles/BillingPage.css';
@@ -28,7 +22,9 @@ import { exportToExcel } from '../utils/billing/exportHandler';
 
 import { fetchFinancialMatrix, syncLegacyInvoices } from '../api/billing/reportingApi';
 import { fetchRegistry as fetchRegistryApi } from '../api/billing/registryApi';
-import { fetchPendingBillables as fetchPendingBillablesApi } from '../api/billing/invoiceApi';
+import { fetchInvoices as fetchInvoicesApi, fetchPendingBillables as fetchPendingBillablesApi } from '../api/billing/invoiceApi';
+import { fetchExpenses as fetchExpensesApi } from '../api/billing/expenseApi';
+import { fetchCommissions as fetchCommissionsApi } from '../api/billing/payoutApi';
 import { fetchOutstandingCredits as fetchOutstandingCreditsApi } from '../api/billing/creditApi';
 import { fetchAppointments as fetchAppointmentsApi } from '../api/appointments/appointmentApi';
 
@@ -140,7 +136,32 @@ export default function BillingPage() {
   
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  
+
+  // Invoices/Expenses/Referrers/ReferralCommissions are no longer offline
+  // cached — every read hits the live API directly, scoped to the currently
+  // selected date range (same TODAY/PAST/CUSTOM/ALL logic as fetchMatrix)
+  // so a wide or historical range only pulls what's actually being viewed
+  // instead of the whole hospital's history in one shot. Used both by the
+  // direct fetchers below and by the archive/cursor-pagination hooks right
+  // after this, so PAST/ALL get real bounds instead of an unbounded query.
+  const getFinanceDateRange = useCallback(() => {
+    const today = getIstDateStr(new Date().toISOString());
+    let finalStart = null;
+    let finalEnd = null;
+    if (timeFilter === 'TODAY') {
+      finalStart = today;
+      finalEnd = today;
+    } else if (timeFilter === 'PAST') {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      finalEnd = getIstDateStr(yesterday.toISOString());
+    } else if (timeFilter === 'CUSTOM') {
+      finalStart = startDate;
+      finalEnd = endDate;
+    }
+    return { finalStart, finalEnd };
+  }, [timeFilter, startDate, endDate]);
+
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'DESC' });
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -161,52 +182,58 @@ export default function BillingPage() {
   const resetInvoicePage = useCallback(() => setInvoicePageSize(25), []);
   const resetExpensePage = useCallback(() => setExpensePageSize(25), []);
 
-  // ── Archive Mode (Server-side Pagination for >30 days) ───────────────────
-  const isArchive = timeFilter === 'CUSTOM';
-  const { 
-    archiveData: archiveInvoices, 
-    archiveTotal: archiveInvoicesTotal, 
-    archiveLoading: archiveInvoicesLoading, 
-    hasMore: archiveInvoicesHasMore, 
-    loadMore: loadMoreArchiveInvoices 
+  // ── Archive Mode (Server-side Pagination) ─────────────────────────────────
+  // Any range other than TODAY routes the row-level table through real
+  // cursor pagination instead of a flat fetch — a single unpaginated GET
+  // caps at 200 rows server-side (see GetInvoicesQuery's takeCount), which
+  // would silently truncate a busy clinic's PAST/ALL history exactly the
+  // way the old 30-day local cache did, just via a different mechanism.
+  const isArchive = timeFilter !== 'TODAY';
+  const { finalStart: archiveStart, finalEnd: archiveEnd } = getFinanceDateRange();
+  const {
+    archiveData: archiveInvoices,
+    archiveTotal: archiveInvoicesTotal,
+    archiveLoading: archiveInvoicesLoading,
+    hasMore: archiveInvoicesHasMore,
+    loadMore: loadMoreArchiveInvoices
   } = useArchiveData({
     endpoint: '/finance/invoices',
     active: isArchive && billingViewMode === 'INVOICES',
-    startDate,
-    endDate,
+    startDate: archiveStart,
+    endDate: archiveEnd,
     searchTerm,
     statusFilter,
     modalityFilter,
     pageSize: 25
   });
 
-  const { 
-    archiveData: archiveExpenses, 
-    archiveTotal: archiveExpensesTotal, 
-    archiveLoading: archiveExpensesLoading, 
-    hasMore: archiveExpensesHasMore, 
-    loadMore: loadMoreArchiveExpenses 
+  const {
+    archiveData: archiveExpenses,
+    archiveTotal: archiveExpensesTotal,
+    archiveLoading: archiveExpensesLoading,
+    hasMore: archiveExpensesHasMore,
+    loadMore: loadMoreArchiveExpenses
   } = useArchiveData({
     endpoint: '/finance/expenses',
     active: isArchive && billingViewMode === 'EXPENSES',
-    startDate,
-    endDate,
+    startDate: archiveStart,
+    endDate: archiveEnd,
     searchTerm: expenseSearch,
     statusFilter: expenseFilter, // Actually backend might not support this mapping exactly, but we'll try
     pageSize: 25
   });
 
-  const { 
-    archiveData: archiveCommissions, 
-    archiveTotal: archiveCommissionsTotal, 
-    archiveLoading: archiveCommissionsLoading, 
-    hasMore: archiveCommissionsHasMore, 
-    loadMore: loadMoreArchiveCommissions 
+  const {
+    archiveData: archiveCommissions,
+    archiveTotal: archiveCommissionsTotal,
+    archiveLoading: archiveCommissionsLoading,
+    hasMore: archiveCommissionsHasMore,
+    loadMore: loadMoreArchiveCommissions
   } = useArchiveData({
     endpoint: '/referrers/commissions', // Needs to match backend endpoint
     active: isArchive && billingViewMode === 'REFERRAL_CUTS',
-    startDate,
-    endDate,
+    startDate: archiveStart,
+    endDate: archiveEnd,
     searchTerm: referralSearch,
     pageSize: 25
   });
@@ -224,22 +251,16 @@ export default function BillingPage() {
   // refreshAllFinancialData) — this used to be a separate, duplicate
   // listener doing the identical setIsMobile/setWindowWidth work.
 
-  // B3 Slice 1 — invoices are now offline-first. The legacy fetchInvoices
-  // function survives so post-mutation calls still work, but reading is
-  // driven by the liveQuery subscription added in the useEffect below.
-  // fetchInvoices reduces to a SyncEngine nudge that pulls the freshest
-  // delta into the local cache; liveQuery re-emits and the table re-renders.
-  //
-  // Scoped to the financial entity group (invoices/expenses/referrers/
-  // referral commissions) — this is the call every billing action and the
-  // page's own mount funnel through via refreshAllFinancialData(), and none
-  // of them need appointments/reports/personnel/price-registry re-pulled
-  // (those are refreshed independently elsewhere in this file). Previously
-  // this was an unscoped syncNow() that pulled all 9 entities in sequence
-  // before invoices/expenses/commissions even started.
   const fetchInvoices = useCallback(async () => {
-    try { await syncNow(['invoices', 'expenses', 'referrers', 'referralCommissions']); } catch (_) { /* engine logs */ }
-  }, []);
+    try {
+      const { finalStart, finalEnd } = getFinanceDateRange();
+      const data = await fetchInvoicesApi({ startDate: finalStart, endDate: finalEnd });
+      setInvoices(Array.isArray(data) ? data : (data?.items || []));
+    } catch (err) {
+      console.error('[FINANCE] Invoice fetch failed', err);
+      notifyToast('Could not load invoices — check your connection.', 'error');
+    }
+  }, [getFinanceDateRange]);
 
   // B3 Slice 7 — service charges promoted to a Dexie snapshot for
   // consistency with the other offline surfaces. On success: snapshot the
@@ -306,29 +327,49 @@ export default function BillingPage() {
     }
   }, []);
 
-  // B3 Slice 3 — expenses are offline-first. Reading is driven by the
-  // watchExpenses liveQuery added in the same effect block as invoices;
-  // fetchExpenses becomes a SyncEngine nudge so post-mutation refreshes
-  // still work.
   const fetchExpenses = useCallback(async () => {
-    try { await syncNow(['expenses']); } catch (_) {}
-  }, []);
+    try {
+      const { finalStart, finalEnd } = getFinanceDateRange();
+      const data = await fetchExpensesApi({ startDate: finalStart, endDate: finalEnd });
+      setExpenses(Array.isArray(data) ? data : (data?.items || []));
+    } catch (err) {
+      console.error('[FINANCE] Expense fetch failed', err);
+      notifyToast('Could not load expenses — check your connection.', 'error');
+    }
+  }, [getFinanceDateRange]);
 
-  // B3 Slice 4 — referrers offline. fetchReferrers becomes a SyncEngine
-  // nudge; rendering driven by the watchReferrers liveQuery effect below.
+  // searchTerm itself stays instant (it also drives invoice filtering
+  // elsewhere on this page) — only the referrer re-fetch it triggers,
+  // which hits the API on every keystroke otherwise, is debounced.
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const fetchReferrers = useCallback(async () => {
-    try { await syncNow(['referrers']); } catch (_) {}
-  }, []);
+    try {
+      const res = await apiClient.get('/referrers', { params: { search: debouncedSearchTerm } });
+      setReferrers(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('[FINANCE] Referrer fetch failed', err);
+    }
+  }, [debouncedSearchTerm]);
 
-  // B3 Slice 5 — referral commissions offline. NOTE: the legacy
-  // implementation hit /referrers/ledger which returns date-grouped detail.
-  // The cache holds flat per-row commissions; if downstream rendering
-  // needs the date-grouping it can be computed client-side. Keeping the
-  // ledger endpoint cached separately is a future follow-up if a user
-  // surface depends on its specific shape.
+  // NOTE: the legacy implementation hit /referrers/ledger which returns
+  // date-grouped detail. This flat per-row shape is what the rest of the
+  // page (useBillingData, ReferralHub) already expects; if a surface needs
+  // the date-grouping it can be computed client-side.
   const fetchCommissions = useCallback(async () => {
-    try { await syncNow(['referralCommissions']); } catch (_) {}
-  }, []);
+    try {
+      const { finalStart, finalEnd } = getFinanceDateRange();
+      const data = await fetchCommissionsApi({ startDate: finalStart, endDate: finalEnd });
+      setReferralCommissions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('[FINANCE] Commission fetch failed', err);
+      notifyToast('Could not load referral commissions — check your connection.', 'error');
+    }
+  }, [getFinanceDateRange]);
 
   const fetchAppointments = useCallback(async () => {
     const today = getIstDateStr(new Date().toISOString());
@@ -396,17 +437,18 @@ export default function BillingPage() {
   }, [outstandingCredits]);
 
   const refreshAllFinancialData = useCallback(async () => {
-    // One sync refreshes invoices, expenses, referrers, and commissions. The
-    // previous implementation started four concurrent full syncs on each mount.
     await Promise.allSettled([
       fetchInvoices(),
+      fetchExpenses(),
+      fetchReferrers(),
+      fetchCommissions(),
       fetchRegistry(),
       fetchAppointments(),
       fetchPersonnel(),
       fetchOutstandingCredits(),
       loadApprovalMap(),
     ]);
-  }, [fetchInvoices, fetchRegistry, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
+  }, [fetchInvoices, fetchExpenses, fetchReferrers, fetchCommissions, fetchRegistry, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -479,72 +521,13 @@ export default function BillingPage() {
   }, [expenseLoadingMore]);
 
 
-  // Full watchInvoices subscription — fetches all invoices.
-  // The UI arrays (filteredInvoices) will apply the complex filters consistently.
-  useEffect(() => {
-    const sub = watchInvoices({}).subscribe({
-      next: (rows) => setInvoices(rows),
-      error: (err) => console.warn('[BillingPage] invoice liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, []);
+  // Invoices/Expenses/Referrers/ReferralCommissions are fetched live — each
+  // effect re-runs on mount and whenever its fetcher's identity changes
+  // (i.e. the date range or search term it closes over changed).
+  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+  useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+  useEffect(() => { fetchReferrers(); }, [fetchReferrers]);
 
-  // Client-side analytics override. 
-  useEffect(() => {
-    const useComputed = !isOnline || pendingCount > 0;
-    if (!useComputed) return undefined;
-    
-    // Compute date boundaries for analytics based on timeFilter
-    const todayStr = getIstDateStr(new Date().toISOString());
-    let s = undefined, e = undefined;
-    if (timeFilter === 'TODAY') { s = e = todayStr; }
-    else if (timeFilter === 'PAST') { 
-        const d = new Date(); d.setDate(d.getDate() - 1);
-        e = getIstDateStr(d.toISOString()); 
-    }
-    else if (timeFilter === 'CUSTOM') { s = startDate; e = endDate; }
-    
-    const sub = watchInvoices({
-      startDateIso: s,
-      endDateIso:   e,
-    }).subscribe({
-      next: (rows) => {
-        setMatrix(computeMatrix(rows, {
-          from: s || undefined,
-          to:   e || undefined,
-        }));
-      },
-      error: (err) => console.warn('[BillingPage] computed analytics liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, [isOnline, pendingCount, timeFilter, startDate, endDate]);
-
-  // B3 Slice 3 — full expenses liveQuery. Fetches all.
-  useEffect(() => {
-    const sub = watchExpenses({}).subscribe({
-      next: (rows) => setExpenses(rows),
-      error: (err) => console.warn('[BillingPage] expense liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, []);
-
-  // searchTerm itself stays instant (it also drives invoice filtering
-  // elsewhere on this page) — only this liveQuery re-subscription, which
-  // re-runs a Dexie query on every keystroke, is debounced.
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  // B3 Slice 4 — referrers liveQuery.
-  useEffect(() => {
-    const sub = watchReferrers({ search: debouncedSearchTerm }).subscribe({
-      next: (rows) => setReferrers(rows),
-      error: (err) => console.warn('[BillingPage] referrers liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, [debouncedSearchTerm]);
 
   // Load the approval-request map on mount (powers the Revenue approval column).
   useEffect(() => { 
@@ -573,14 +556,7 @@ export default function BillingPage() {
     return () => { alive = false; };
   }, [activeCenter?.id]);
 
-  // B3 Slice 5 — referral commissions liveQuery. Fetches all.
-  useEffect(() => {
-    const sub = watchReferralCommissions({}).subscribe({
-      next: (rows) => setReferralCommissions(rows),
-      error: (err) => console.warn('[BillingPage] commissions liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
-  }, []);
+  useEffect(() => { fetchCommissions(); }, [fetchCommissions]);
 
   // Reactive reference data: the price registry and owner details render from
   // the local cache, refreshed every cycle by the sync engine. A price edited
@@ -651,7 +627,7 @@ export default function BillingPage() {
     handleRequestApproval,
     handleDeleteInvoice,
   } = useInvoiceActions({
-    isOnline, addToOutbox, notify, notifyToast, celebrate,
+    isOnline, notify, notifyToast, celebrate,
     refreshAllFinancialData,
     selectedInvoice, setSelectedInvoice,
     paymentMethod,
@@ -719,7 +695,7 @@ export default function BillingPage() {
     handleWriteOffDeficit,
     handleToggleCommissionStatus,
   } = usePayoutActions({
-    isOnline, addToOutbox, notify, confirmModal,
+    isOnline, notify, confirmModal,
     refreshAllFinancialData, combinedReferralCuts,
     editPayout, setIsPayoutDrawerOpen, setIsSavingPayout,
   });

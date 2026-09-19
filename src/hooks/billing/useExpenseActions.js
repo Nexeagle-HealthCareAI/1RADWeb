@@ -11,6 +11,7 @@ import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // retained for /hospitals
 import { recordExpense, updateExpense, deleteExpense as apiDeleteExpense, updateExpenseStatus } from '../../api/billing/expenseApi';
 import { fetchRegistry as fetchRegistryApi, createServiceCharge, updateServiceCharge, deleteServiceCharge as apiDeleteServiceCharge } from '../../api/billing/registryApi';
+import { notifyFinanceChanged } from '../useFinanceRevision';
 import { useVerifiedBeforeSubmit } from './useVerifiedBeforeSubmit';
 
 /**
@@ -74,14 +75,12 @@ export const useExpenseActions = ({
     // if this becomes a real incident, the fix is a backend GET
     // /finance/expenses/{id} endpoint, not a workaround here.
 
-    const idemKey = crypto.randomUUID();
     if (!isOnline) {
-      await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload, idemKey);
-      notify({ type: 'info', title: 'Offline', message: 'Expense will sync when reconnected.' });
-      setIsExpenseDrawerOpen(false);
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — saving an expense needs a live connection. Please reconnect and try again.' });
       return;
     }
 
+    const idemKey = crypto.randomUUID();
     try {
       setSavingExpense(true);
       if (payload.id) {
@@ -102,26 +101,22 @@ export const useExpenseActions = ({
         costCenter: activeCenter?.name || activeCenter?.hospitalName || 'Default',
         status: 'Paid',
       });
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
-      if (!err.response) {
-        await addToOutbox(payload.id ? 'EXPENSE_UPDATE' : 'EXPENSE', payload, idemKey);
-        notify({ type: 'info', title: 'No connection', message: 'Expense added to offline queue.' });
-        setIsExpenseDrawerOpen(false);
-      } else {
-        notify({ type: 'error', message: 'Failed to save expense.' });
-      }
+      notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Failed to save expense.' });
     } finally {
       setSavingExpense(false);
     }
-  }, [editExpense, isOnline, addToOutbox, notify, setIsExpenseDrawerOpen, setSavingExpense, setEditExpense, refreshAllFinancialData, TODAY, activeCenter]);
+  }, [editExpense, isOnline, notify, setIsExpenseDrawerOpen, setSavingExpense, setEditExpense, refreshAllFinancialData, TODAY, activeCenter]);
 
   // ── Toggle expense status (PAID ↔ UNPAID) ──────────────────────────────────
   const handleToggleExpenseStatus = useCallback(async (id, currentStatus) => {
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
     try {
       await updateExpenseStatus(id, newStatus);
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
@@ -135,54 +130,47 @@ export const useExpenseActions = ({
     console.log(`[FINANCE] Setting expense ${id} status → ${newStatus}`);
 
     if (!isOnline) {
-      await addToOutbox('EXPENSE_STATUS_UPDATE', { id, status: newStatus });
-      notify({ type: 'info', title: 'Offline', message: 'Expense status update queued.' });
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — updating expense status needs a live connection.' });
       return;
     }
 
     try {
       await updateExpenseStatus(id, newStatus);
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
-      if (!err.response) {
-        await addToOutbox('EXPENSE_STATUS_UPDATE', { id, status: newStatus });
-        notify({ type: 'info', title: 'No connection', message: 'Status update added to offline queue.' });
-      } else {
-        const status = err.response?.status;
-        const data = err.response?.data;
-        const errorMsg = data?.message || data?.error || data?.title || err.message || 'Could not update expense status.';
-        notify({
-          type: 'error',
-          title: `Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}`,
-          message: errorMsg,
-        });
-      }
+      const status = err.response?.status;
+      const data = err.response?.data;
+      const errorMsg = !err.response
+        ? 'No connection to the server — please check your network and try again.'
+        : (data?.message || data?.error || data?.title || err.message || 'Could not update expense status.');
+      notify({
+        type: 'error',
+        title: `Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}`,
+        message: errorMsg,
+      });
     }
-  }, [isOnline, addToOutbox, notify, refreshAllFinancialData]);
+  }, [isOnline, notify, refreshAllFinancialData]);
 
   // ── Delete expense (with optional confirm dialog) ───────────────────────────
   const performDeleteExpense = useCallback(async (id, options = {}) => {
     if (!isOnline) {
-      await addToOutbox('EXPENSE_DELETE', { id });
-      if (!options.skipConfirm) notify({ type: 'info', title: 'Offline', message: 'Deletion will sync when reconnected.' });
-      setExpenses(prev => prev.filter(e => e.id !== id));
+      if (!options.skipConfirm) notify({ type: 'error', title: 'No connection', message: 'You are offline — deleting an expense needs a live connection.' });
       return;
     }
     try {
       await apiDeleteExpense(id);
+      setExpenses(prev => prev.filter(e => e.id !== id));
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Failed to delete expense', err);
-      if (!err.response) {
-        await addToOutbox('EXPENSE_DELETE', { id });
-        if (!options.skipConfirm) notify({ type: 'info', title: 'No connection', message: 'Deletion queued.' });
-        setExpenses(prev => prev.filter(e => e.id !== id));
-      } else if (!options.skipConfirm) {
-        notify({ type: 'error', message: 'Could not delete expense.' });
+      if (!options.skipConfirm) {
+        notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not delete expense.' });
       }
     }
-  }, [isOnline, addToOutbox, notify, setExpenses, refreshAllFinancialData]);
+  }, [isOnline, notify, setExpenses, refreshAllFinancialData]);
 
   const handleDeleteExpense = useCallback((id, options = {}) => {
     if (options.skipConfirm) return performDeleteExpense(id, options);

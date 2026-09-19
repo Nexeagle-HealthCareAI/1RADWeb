@@ -7,24 +7,25 @@
 // to refresh on their own after an action instead of going stale until a
 // manual reload.
 //
-// This hook watches the finance-related caches (invoices, expenses, referral
-// commissions) and returns a counter that increments ONLY when their contents
-// actually change — a new invoice/payment/commission synced in, here or from
-// another device. A page adds the counter to its analytics-fetch effect's
-// dependencies; when it bumps, the effect re-runs and re-fetches with whatever
-// timeframe is currently selected.
+// Invoices/Expenses/ReferralCommissions are no longer offline-cached, so this
+// can no longer watch a Dexie liveQuery for changes — instead, the Billing
+// action hooks (useInvoiceActions, useExpenseActions, usePayoutActions)
+// dispatch a `FINANCE_CHANGED_EVENT` window event right after a successful
+// direct-API mutation, and this hook just counts those events. A page adds
+// the counter to its analytics-fetch effect's dependencies; when it bumps,
+// the effect re-runs and re-fetches with whatever timeframe is currently
+// selected.
 //
-// Notes:
-//   • The first liveQuery emission is treated as the baseline (no bump), so a
-//     page's normal mount-time fetch isn't doubled.
-//   • Bumps are debounced (a sync that writes invoices AND commissions in quick
-//     succession collapses to a single re-fetch).
-//   • Value-deduped: a background pull that re-writes identical rows doesn't
-//     bump, so we don't re-fetch heavy analytics every 30s for no reason.
+// Bumps are debounced — a batch of billing actions in quick succession
+// collapses to a single re-fetch.
 
 import { useEffect, useState } from 'react';
-import { liveQuery } from 'dexie';
-import { tables } from '../db/dexie';
+
+export const FINANCE_CHANGED_EVENT = '1rad:finance-changed';
+
+export function notifyFinanceChanged() {
+  try { window.dispatchEvent(new Event(FINANCE_CHANGED_EVENT)); } catch (_) { /* non-browser context */ }
+}
 
 const DEBOUNCE_MS = 800;
 
@@ -32,34 +33,13 @@ export default function useFinanceRevision() {
   const [rev, setRev] = useState(0);
 
   useEffect(() => {
-    let last = null;
-    let first = true;
     let timer = null;
-
-    const sub = liveQuery(async () => {
-      // Count + newest-change marker per table. Counts catch inserts/deletes;
-      // the max _updatedAtMs catches in-place edits (e.g. a payment posted
-      // against an existing invoice).
-      const [invCount, expCount, commCount] = await Promise.all([
-        tables.invoices().count(),
-        tables.expenses().count(),
-        tables.referral_commissions().count(),
-      ]);
-      const invMax  = await tables.invoices().orderBy('_updatedAtMs').reverse().limit(1).first();
-      const commMax = await tables.referral_commissions().orderBy('_updatedAtMs').reverse().limit(1).first();
-      return `${invCount}:${expCount}:${commCount}:${invMax?._updatedAtMs || 0}:${commMax?._updatedAtMs || 0}`;
-    }).subscribe({
-      next: (val) => {
-        if (first) { first = false; last = val; return; }   // baseline only
-        if (val === last) return;                            // identical → ignore
-        last = val;
-        clearTimeout(timer);
-        timer = setTimeout(() => setRev(r => r + 1), DEBOUNCE_MS);
-      },
-      error: (err) => console.warn('[useFinanceRevision] liveQuery error', err),
-    });
-
-    return () => { clearTimeout(timer); sub.unsubscribe(); };
+    const onChange = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setRev(r => r + 1), DEBOUNCE_MS);
+    };
+    window.addEventListener(FINANCE_CHANGED_EVENT, onChange);
+    return () => { clearTimeout(timer); window.removeEventListener(FINANCE_CHANGED_EVENT, onChange); };
   }, []);
 
   return rev;
