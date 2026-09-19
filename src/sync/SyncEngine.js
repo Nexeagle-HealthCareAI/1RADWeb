@@ -38,25 +38,12 @@ import {
   highWatermarkIso  as reportsHighWatermarkIso,
   clearLocalDirty   as clearReportLocalDirty,
 } from '../db/repos/reportsRepo';
-import {
-  applyServerDeltas as applyInvoiceDeltas,
-  highWatermarkIso  as invoicesHighWatermarkIso,
-  evictOlderThan    as evictInvoices,
-} from '../db/repos/invoicesRepo';
-import {
-  applyServerDeltas as applyExpenseDeltas,
-  highWatermarkIso  as expensesHighWatermarkIso,
-  evictOlderThan    as evictExpenses,
-} from '../db/repos/expensesRepo';
-import {
-  applyServerDeltas as applyReferrerDeltas,
-  highWatermarkIso  as referrersHighWatermarkIso,
-} from '../db/repos/referrersRepo';
-import {
-  applyServerDeltas as applyCommissionDeltas,
-  highWatermarkIso  as commissionsHighWatermarkIso,
-  evictOlderThan    as evictReferralCommissions,
-} from '../db/repos/referralCommissionsRepo';
+// Invoices/Expenses/Referrers/ReferralCommissions are no longer offline-cached
+// — Billing/Finance/Referral now reads and writes the live backend directly
+// (see BillingPage.jsx, useInvoiceActions.js, useExpenseActions.js,
+// usePayoutActions.js). The evicted-30-day local cache was the root cause of
+// Revenue/Incentive totals silently disagreeing with Service Performance's
+// live-DB numbers for any date range reaching outside that window.
 import { snapshotPersonnel } from '../db/repos/personnelRepo';
 import { snapshotServiceCharges } from '../db/repos/serviceChargesRepo';
 import {
@@ -222,105 +209,8 @@ async function pullReports() {
   return stats;
 }
 
-// --- Invoices delta pull -----------------------------------------------------
-// Progressive strategy:
-//   Phase A (cold boot): pull the most-recent RECENT_DAYS_WINDOW days first
-//   so the Revenue Hub renders real data instantly, even on a large clinic.
-//   Phase B (background): the full-history pull runs after a short delay.
-//   Steady-state 30s tick: always uses updatedAfter watermark (tiny delta).
-
-const RECENT_DAYS_WINDOW = 30; // days to pull on a fast first-page load
-
-async function pullInvoices({ recentOnly = false } = {}) {
-  const since = await invoicesHighWatermarkIso();
-  const params = { includeDeleted: true };
-  if (since) params.updatedAfter = since;
-
-  // On cold boot with no cached data AND recentOnly mode, scope to the last
-  // RECENT_DAYS_WINDOW days so the initial pull is small and fast. The
-  // full-history pull follows 5 s later on the same boot cycle (Phase B).
-  if (recentOnly && !since) {
-    const cutoff = new Date(Date.now() - RECENT_DAYS_WINDOW * 24 * 3600 * 1000);
-    params.startDate = cutoff.toISOString();
-  }
-
-  const res = await apiClient.get('/finance/invoices', { params });
-  const rows = Array.isArray(res?.data) ? res.data : [];
-  const stats = await withQuotaRetry('invoices', () => applyInvoiceDeltas(rows));
-  if (stats == null) return { applied: 0, deleted: 0 };
-
-  if (stats.applied || stats.deleted) {
-    const tag = recentOnly && !since ? ` [Phase A — last ${RECENT_DAYS_WINDOW}d]` : '';
-    console.info(`[SYNC] Invoices${tag}: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
-  }
-  return stats;
-}
-
-// --- Expenses delta pull -----------------------------------------------------
-
-async function pullExpenses({ recentOnly = false } = {}) {
-  const since = await expensesHighWatermarkIso();
-  const params = { includeDeleted: true };
-  if (since) params.updatedAfter = since;
-
-  if (recentOnly && !since) {
-    const cutoff = new Date(Date.now() - RECENT_DAYS_WINDOW * 24 * 3600 * 1000);
-    params.startDate = cutoff.toISOString();
-  }
-
-  const res = await apiClient.get('/finance/expenses', { params });
-  const rows = Array.isArray(res?.data) ? res.data : [];
-  const stats = await withQuotaRetry('expenses', () => applyExpenseDeltas(rows));
-  if (stats == null) return { applied: 0, deleted: 0 };
-
-  if (stats.applied || stats.deleted) {
-    const tag = recentOnly && !since ? ` [Phase A — last ${RECENT_DAYS_WINDOW}d]` : '';
-    console.info(`[SYNC] Expenses${tag}: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
-  }
-  return stats;
-}
-
-// --- Referrers delta pull ----------------------------------------------------
-
-async function pullReferrers() {
-  const since = await referrersHighWatermarkIso();
-  const params = { includeDeleted: true };
-  if (since) params.updatedAfter = since;
-
-  const res = await apiClient.get('/referrers', { params });
-  const rows = Array.isArray(res?.data) ? res.data : [];
-  const stats = await withQuotaRetry('referrers', () => applyReferrerDeltas(rows));
-  if (stats == null) return { applied: 0, deleted: 0 };
-
-  if (stats.applied || stats.deleted) {
-    console.info(`[SYNC] Referrers: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
-  }
-  return stats;
-}
-
-// --- Referral commissions delta pull -----------------------------------------
-
-async function pullReferralCommissions({ recentOnly = false } = {}) {
-  const since = await commissionsHighWatermarkIso();
-  const params = { includeDeleted: true };
-  if (since) params.updatedAfter = since;
-
-  if (recentOnly && !since) {
-    const cutoff = new Date(Date.now() - RECENT_DAYS_WINDOW * 24 * 3600 * 1000);
-    params.startDate = cutoff.toISOString();
-  }
-
-  const res = await apiClient.get('/referrers/commissions', { params });
-  const rows = Array.isArray(res?.data) ? res.data : [];
-  const stats = await withQuotaRetry('commissions', () => applyCommissionDeltas(rows));
-  if (stats == null) return { applied: 0, deleted: 0 };
-
-  if (stats.applied || stats.deleted) {
-    const tag = recentOnly && !since ? ` [Phase A — last ${RECENT_DAYS_WINDOW}d]` : '';
-    console.info(`[SYNC] Commissions${tag}: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
-  }
-  return stats;
-}
+// Invoices/Expenses/Referrers/ReferralCommissions no longer pull into an
+// offline cache — BillingPage.jsx fetches them directly from the live API.
 
 // --- Reference data snapshots ------------------------------------------------
 // Personnel (doctor/staff lists) and the service-price registry are small,
@@ -350,23 +240,15 @@ async function pullServiceCharges() {
 function resolveRoute(item) {
   const p = item.payload;
   switch (item.type) {
-    case 'INVOICE':              return { method: 'POST',   url: '/finance/invoices' };
-    case 'EXPENSE':              return { method: 'POST',   url: '/finance/expense' };
-    case 'EXPENSE_UPDATE':       return { method: 'PUT',    url: `/finance/expenses/${p.id}` };
-    case 'EXPENSE_STATUS_UPDATE':return { method: 'PUT',    url: `/finance/expenses/${p.id}/status`,
-                                          body: { status: p.status } };
-    case 'PAYMENT':              return { method: 'POST',   url: '/finance/payments' };
-    case 'DISCOUNT':             return { method: 'POST',   url: `/finance/invoices/${p.invoiceId}/discount` };
-    case 'CREDIT':               return { method: 'POST',   url: '/finance/credit/apply' };
+    // Invoice/Expense/Payment/Discount/Credit/Payout mutations no longer go
+    // through the outbox — Billing/Finance/Referral action hooks call the
+    // live API directly and surface a failure immediately instead of
+    // queueing it (see useInvoiceActions.js, useExpenseActions.js,
+    // usePayoutActions.js).
     case 'REPORT':               return { method: 'POST',   url: '/reporting/save' };
     case 'REPORT_FINALIZE':      return { method: 'POST',   url: '/reporting/report/finalize' };
     case 'REPORT_ADDENDUM':      return { method: 'POST',   url: '/reporting/report/addendum' };
     case 'PRICE_UPDATE':         return { method: 'POST',   url: '/finance/registry' };
-    case 'PAYOUT':               return { method: 'POST',   url: '/referrers/commissions' };
-    case 'PAYOUT_BATCH':         return { method: 'POST',   url: '/referrers/commissions/batch' };
-    case 'PAYOUT_UPDATE':        return { method: 'PUT',    url: `/referrers/commissions/${p.commissionId}` };
-    case 'PAYOUT_STATUS_UPDATE': return { method: 'PATCH',  url: `/referrers/commissions/${p.id}/status`,
-                                          body: { status: p.status } };
     case 'APPROVAL_CREATE':      return { method: 'POST',   url: '/approvals' };
     case 'HOSPITAL_UPDATE':      return { method: 'PUT',    url: `/hospitals/${p.id}` };
     case 'PERSONNEL_CREATE':     return { method: 'POST',   url: '/personnel' };
@@ -374,8 +256,6 @@ function resolveRoute(item) {
     case 'PERSONNEL_DELETE':     return { method: 'DELETE', url: `/personnel/${p.id}` };
     case 'CHAIN_DEPLOY':         return { method: 'POST',   url: '/hospitals/chain' };
     case 'PRICE_DELETE':         return { method: 'DELETE', url: `/finance/registry/${p.id}` };
-    case 'EXPENSE_DELETE':       return { method: 'DELETE', url: `/finance/expenses/${p.id}` };
-    case 'INVOICE_DELETE':       return { method: 'DELETE', url: `/finance/invoices/${p.id}` };
     case 'PRESCRIPTION_UPDATE':  return { method: 'POST',   url: '/Prescription' };
     case 'APPOINTMENT_CREATE':   return { method: 'POST',   url: '/appointments' };
     case 'STUDY_ASSIGN':         return { method: 'POST',   url: `/Study/studies/${p.id}/assign`, body: p.body };
@@ -524,10 +404,6 @@ const ENTITY_PULLS = [
   ['appointments',         'Appointments',         pullAppointments],
   ['patients',             'Patients',             pullPatients],
   ['reports',              'Reports',              pullReports],
-  ['invoices',             'Invoices',             pullInvoices],
-  ['expenses',             'Expenses',             pullExpenses],
-  ['referrers',            'Referrers',            pullReferrers],
-  ['referralCommissions',  'Referral commissions', pullReferralCommissions],
   ['personnel',            'Personnel',            pullPersonnel],
   ['serviceCharges',       'Price registry',       pullServiceCharges],
 ];
@@ -575,39 +451,19 @@ async function runAllPulls(scope = null) {
   }
 }
 
-// Progressive cold-boot pull.
-// Phase A: pull the last RECENT_DAYS_WINDOW days of high-value data so the
-//          Revenue Hub renders real data in < 1 second.
-// Phase B: 5 seconds later, pull full history silently in the background.
-//          liveQuery re-emits; the table fills in without any user action.
+// Progressive cold-boot pull. Invoices/Expenses/Referrers/ReferralCommissions
+// are no longer part of this — Billing/Finance/Referral reads the live API
+// directly instead of an offline-cached, eviction-windowed copy.
 async function runProgressivePulls() {
   // Appointments and patients are always pulled fully (they're small + needed for worklist).
   await pullAppointments();
   await pullPatients();
   await pullReports();
-
-  // On boot, purge offline finance data older than 30 days to free up React memory.
-  // Historical data is loaded from the backend when users filter older dates.
-  try {
-    await evictInvoices(RECENT_DAYS_WINDOW);
-    await evictExpenses(RECENT_DAYS_WINDOW);
-    await evictReferralCommissions(RECENT_DAYS_WINDOW);
-  } catch (err) {
-    console.warn('[SYNC] Failed to evict old finance data', err);
-  }
-
-  // Phase A — finance data for the last 30 days. Fast.
-  // Note: We no longer pull full history (Phase B) to prevent browser memory crashes
-  // on massive clinics. Historical data is now paginated via server-side APIs in BillingPage.
-  await pullInvoices({ recentOnly: true });
-  await pullExpenses({ recentOnly: true });
-  await pullReferralCommissions({ recentOnly: true });
-  await pullReferrers();
   try { await pullPersonnel(); }      catch (err) { console.warn('[SYNC] Personnel refresh failed', err?.message || err); }
   try { await pullServiceCharges(); } catch (err) { console.warn('[SYNC] Price registry refresh failed', err?.message || err); }
   await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
 
-  console.info('[SYNC] Progressive pulls complete (30-day offline window for finance)');
+  console.info('[SYNC] Progressive pulls complete');
 }
 
 // The steady-state heartbeat (every PULL_INTERVAL_MS). Unlike the old
@@ -672,17 +528,13 @@ export function startSyncEngine() {
   // Boot sequence:
   // 1. Measure clock skew.
   // 2. Push any queued mutations from a prior offline session.
-  // 3. Progressive pull:
-  //    Phase A — last RECENT_DAYS_WINDOW days (fast, user sees data quickly).
-  //    Phase B — full history 5 s later (background, silent).
-  //
-  // The progressive strategy is only used on a cold boot where the cache
-  // is empty (no watermark). If the cache already has data (returning
-  // user) we run a normal delta pull — it's already fast.
+  // 3. Pull the entities that still cache offline (appointments/patients/
+  //    reports/personnel/price registry). Invoices/Expenses/Referrers/
+  //    ReferralCommissions are read live by BillingPage.jsx instead.
   (async () => {
     await measureClockSkew();
     await pushAndPullCycle();       // flush outbox + targeted pull (appointments/patients/reports)
-    await runProgressivePulls();    // progressive boot for finance data
+    await runProgressivePulls();    // remaining offline-cached entities
   })();
 
   // B2 Track 4 — proactive quota monitoring.
@@ -774,9 +626,5 @@ export async function getSyncDebugInfo() {
     appointmentsHighWater: await appointmentsHighWatermarkIso(),
     patientsHighWater:     await patientsHighWatermarkIso(),
     reportsHighWater:      await reportsHighWatermarkIso(),
-    invoicesHighWater:     await invoicesHighWatermarkIso(),
-    expensesHighWater:     await expensesHighWatermarkIso(),
-    referrersHighWater:    await referrersHighWatermarkIso(),
-    commissionsHighWater:  await commissionsHighWatermarkIso(),
   };
 }

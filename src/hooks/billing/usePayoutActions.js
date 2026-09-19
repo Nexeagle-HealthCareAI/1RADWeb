@@ -10,11 +10,11 @@
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // retained for /approvals
 import { batchSaveCommissions, updateCommissionStatus } from '../../api/billing/payoutApi';
+import { notifyFinanceChanged } from '../useFinanceRevision';
 
 /**
  * @param {object}   opts
  * @param {boolean}  opts.isOnline
- * @param {function} opts.addToOutbox
  * @param {function} opts.notify
  * @param {function} opts.confirmModal
  * @param {function} opts.refreshAllFinancialData
@@ -25,7 +25,6 @@ import { batchSaveCommissions, updateCommissionStatus } from '../../api/billing/
  */
 export const usePayoutActions = ({
   isOnline,
-  addToOutbox,
   notify,
   confirmModal,
   refreshAllFinancialData,
@@ -63,27 +62,22 @@ export const usePayoutActions = ({
         };
 
         if (!isOnline) {
-          await addToOutbox('PAYOUT_BATCH', payload);
-          notify({ type: 'info', title: 'Offline', message: 'Write-off queued for sync.' });
+          notify({ type: 'error', title: 'No connection', message: 'You are offline — writing off a deficit needs a live connection.' });
           return;
         }
 
         try {
           await batchSaveCommissions(payload);
           notify({ type: 'success', title: 'Written off', message: `₹${deficit.toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
+          notifyFinanceChanged();
           refreshAllFinancialData();
         } catch (err) {
           console.error('[FINANCE] Deficit write-off failed', err);
-          if (!err.response) {
-            await addToOutbox('PAYOUT_BATCH', payload);
-            notify({ type: 'info', title: 'No connection', message: 'Write-off added to offline queue.' });
-          } else {
-            notify({ type: 'error', message: 'Could not write off the deficit.' });
-          }
+          notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not write off the deficit.' });
         }
       },
     });
-  }, [combinedReferralCuts, isOnline, addToOutbox, notify, confirmModal, refreshAllFinancialData]);
+  }, [combinedReferralCuts, isOnline, notify, confirmModal, refreshAllFinancialData]);
 
   // ── Toggle commission PAID ↔ UNPAID ────────────────────────────────────────
   const handleToggleCommissionStatus = useCallback(async (id, currentStatus) => {
@@ -96,24 +90,19 @@ export const usePayoutActions = ({
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
 
     if (!isOnline) {
-      await addToOutbox('PAYOUT_STATUS_UPDATE', { id, status: newStatus });
-      notify({ type: 'info', title: 'Offline', message: 'Commission status update queued.' });
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — updating commission status needs a live connection.' });
       return;
     }
 
     try {
       await updateCommissionStatus(id, newStatus);
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
-      if (!err.response) {
-        await addToOutbox('PAYOUT_STATUS_UPDATE', { id, status: newStatus });
-        notify({ type: 'info', title: 'No connection', message: 'Commission status update added to offline queue.' });
-      } else {
-        notify({ type: 'error', message: 'Could not update commission status.' });
-      }
+      notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not update commission status.' });
     }
-  }, [isOnline, addToOutbox, notify, refreshAllFinancialData]);
+  }, [isOnline, notify, refreshAllFinancialData]);
 
   // ── Save payout (create / edit / send for approval) ────────────────────────
   const handleSavePayout = useCallback(async (e) => {
@@ -197,9 +186,7 @@ export const usePayoutActions = ({
       }
 
       if (!isOnline) {
-        await Promise.all(approvals.map(approval => addToOutbox('APPROVAL_CREATE', approval)));
-        notify({ type: 'info', title: 'Offline', message: 'Approval request added to offline queue.' });
-        setIsPayoutDrawerOpen(false);
+        notify({ type: 'error', title: 'No connection', message: 'You are offline — sending this for approval needs a live connection.' });
         return;
       }
 
@@ -211,13 +198,7 @@ export const usePayoutActions = ({
         setIsPayoutDrawerOpen(false);
       } catch (err) {
         console.error('[PAYOUT] approval request failed', err);
-        if (!err.response) {
-          await Promise.all(approvals.map(approval => addToOutbox('APPROVAL_CREATE', approval)));
-          notify({ type: 'info', title: 'No connection', message: 'Approval request added to offline queue.' });
-          setIsPayoutDrawerOpen(false);
-        } else {
-          notify({ type: 'error', message: 'Could not send the change for approval. Please try again.' });
-        }
+        notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not send the change for approval. Please try again.' });
       } finally {
         setIsSavingPayout(false);
       }
@@ -240,33 +221,25 @@ export const usePayoutActions = ({
       lines,
     };
 
-    const idemKey = crypto.randomUUID();
-
     if (!isOnline) {
-      await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
-      notify({ type: 'info', title: 'Offline', message: 'Payout will sync when reconnected.' });
-      setIsPayoutDrawerOpen(false);
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — saving a payout needs a live connection. Please reconnect and try again.' });
       return;
     }
 
+    const idemKey = crypto.randomUUID();
     try {
       setIsSavingPayout(true);
       await batchSaveCommissions(batchPayload, idemKey);
       setIsPayoutDrawerOpen(false);
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
-      if (!err.response) {
-        await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
-        notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
-        setIsPayoutDrawerOpen(false);
-      } else {
-        notify({ type: 'error', message: 'Could not save payout.' });
-      }
+      notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not save payout.' });
     } finally {
       setIsSavingPayout(false);
     }
-  }, [editPayout, isOnline, addToOutbox, notify, setIsPayoutDrawerOpen, setIsSavingPayout, refreshAllFinancialData]);
+  }, [editPayout, isOnline, notify, setIsPayoutDrawerOpen, setIsSavingPayout, refreshAllFinancialData]);
 
   return {
     handleSavePayout,

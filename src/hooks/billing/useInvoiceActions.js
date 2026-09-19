@@ -9,12 +9,16 @@
  *   - handleAddItem           — append a blank line item
  *   - handleRemoveItem        — remove a line item
  *   - handleOpenInvoice       — open the invoice drawer
- *   - handleCollectPayment    — commit settlement (online + offline)
- *   - handleApplyCredit       — apply patient advance to invoice (online + offline)
+ *   - handleCollectPayment    — commit settlement
+ *   - handleApplyCredit       — apply patient advance to invoice
  *   - handleCreateManualInvoice — create a new manual invoice
- *   - handleSaveInvoice       — save-as-draft (discount only, online + offline)
+ *   - handleSaveInvoice       — save-as-draft (discount only)
  *   - handleRequestApproval   — route a change to Finance → Approvals
  *   - handleDeleteInvoice     — delete an invoice (optimistic UI)
+ *
+ * All mutations call the live backend directly — there is no offline queue
+ * for Invoices; a request made while offline or that fails mid-flight
+ * surfaces an error immediately instead of being queued for later.
  */
 
 import { useCallback } from 'react';
@@ -22,26 +26,8 @@ import apiClient from '../../api/apiClient'; // Retained for /approvals
 import { applyDiscount, collectPayment } from '../../api/billing/paymentApi';
 import { generateInvoice, deleteInvoice as apiDeleteInvoice, fetchInvoices, fetchPendingBillables } from '../../api/billing/invoiceApi';
 import { applyCredit } from '../../api/billing/creditApi';
-import { applyServerDeltas as applyInvoiceDeltas } from '../../db/repos/invoicesRepo';
+import { notifyFinanceChanged } from '../useFinanceRevision';
 import { useVerifiedBeforeSubmit } from './useVerifiedBeforeSubmit';
-
-// collectPayment/generateInvoice only return { success } / { invoiceId } —
-// not the updated row — so the table would otherwise sit stale until the
-// next financial sync (refreshAllFinancialData, a few hundred ms away but
-// still a full round trip across 4 entities) picks it up. This does the one
-// cheap, targeted GET (already used by verifyInvoice above) and writes the
-// result straight into Dexie, so the invoice table reflects the just-made
-// change the instant this resolves — no pull cycle required at all.
-// No-ops for invoices with no appointment link (freeform/manual invoices
-// not tied to a visit); those still get picked up by the broader sync below.
-const syncInvoiceFast = async (appointmentId) => {
-  if (!appointmentId) return;
-  try {
-    const fresh = await fetchInvoices({ appointmentId });
-    const items = fresh?.items || (Array.isArray(fresh) ? fresh : []);
-    if (items.length) await applyInvoiceDeltas(items);
-  } catch (_) { /* refreshAllFinancialData() below still covers it */ }
-};
 
 // Fields the drawer's on-screen math (net settlement, balance due, discount
 // caps) was computed against. verifyInvoice's fresh fetch merges server
@@ -61,7 +47,6 @@ const invoiceDriftedSinceOpen = (snapshot, fresh) =>
 /**
  * @param {object}   opts
  * @param {boolean}  opts.isOnline
- * @param {function} opts.addToOutbox
  * @param {function} opts.notify
  * @param {function} opts.notifyToast
  * @param {function} opts.celebrate         — confetti / success animation
@@ -81,7 +66,6 @@ const invoiceDriftedSinceOpen = (snapshot, fresh) =>
  */
 export const useInvoiceActions = ({
   isOnline,
-  addToOutbox,
   notify,
   notifyToast,
   celebrate,
@@ -196,52 +180,40 @@ export const useInvoiceActions = ({
       extraCharges:        meta.additionalChargesReason ? JSON.parse(meta.additionalChargesReason) : [],
     };
 
+    if (!isOnline) {
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — payment collection needs a live connection. Please reconnect and try again.' });
+      return;
+    }
+
     const idemKey = crypto.randomUUID();
     try {
       console.log('[FINANCE] Committing settlement:', payload);
 
-      if (!isOnline) {
-        await addToOutbox('PAYMENT', payload, idemKey);
-        setIsInvoiceDrawerOpen(false);
-        setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: true });
-        return;
-      }
-
       await collectPayment(payload, idemKey);
       celebrate();
       setIsInvoiceDrawerOpen(false);
-      await syncInvoiceFast(invoice.appointmentId);
+      notifyFinanceChanged();
       refreshAllFinancialData();
       setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: false });
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
-      if (!err.response) {
-        await addToOutbox('PAYMENT', payload, idemKey);
-        setIsInvoiceDrawerOpen(false);
-        setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: true });
-      } else {
-        // A real server rejection (e.g. "already settled", a stale invoice
-        // total) used to be swallowed here — the drawer just sat there with
-        // no feedback, which reads as "nothing happened" and invites a
-        // confused retry. Surface it instead.
-        const detail = err.response?.data?.error || err.response?.data?.message || 'Please refresh the invoice and try again.';
-        notify({ type: 'error', title: 'Payment Not Recorded', message: detail });
-      }
+      // A real server rejection (e.g. "already settled", a stale invoice
+      // total) used to be swallowed here — the drawer just sat there with
+      // no feedback, which reads as "nothing happened" and invites a
+      // confused retry. Surface it instead.
+      const detail = !err.response
+        ? 'No connection to the server — please check your network and try again.'
+        : (err.response?.data?.error || err.response?.data?.message || 'Please refresh the invoice and try again.');
+      notify({ type: 'error', title: 'Payment Not Recorded', message: detail });
     }
-  }, [selectedInvoice, paymentMethod, isOnline, verifyInvoice, addToOutbox, notify, celebrate, refreshAllFinancialData, setIsInvoiceDrawerOpen, setPaymentSuccess]);
+  }, [selectedInvoice, paymentMethod, isOnline, verifyInvoice, notify, celebrate, refreshAllFinancialData, setIsInvoiceDrawerOpen, setPaymentSuccess]);
 
   // ── Apply patient advance to invoice ────────────────────────────────────────
   const handleApplyCredit = useCallback(async (invoiceId, amount) => {
     const payload = { invoiceId, amount: amount ?? null };
-    const idemKey = crypto.randomUUID();
 
-    // The "Apply advance" button is disabled while offline, but the connection
-    // can still drop between that check and this call resolving — queue rather
-    // than lose the action.
     if (!isOnline) {
-      await addToOutbox('CREDIT', payload, idemKey);
-      setIsInvoiceDrawerOpen(false);
-      notifyToast('You are offline — this will apply automatically when connection is restored.', 'info');
+      notifyToast('You are offline — applying an advance needs a live connection.', 'error');
       return;
     }
 
@@ -250,20 +222,15 @@ export const useInvoiceActions = ({
       if (data?.success) {
         notifyToast(`Applied ₹${Number(data.applied || 0).toLocaleString('en-IN')} from the patient's advance ✓`, 'success');
         setIsInvoiceDrawerOpen(false);
+        notifyFinanceChanged();
         refreshAllFinancialData();
       } else {
         notifyToast(data?.error || 'Could not apply the advance.', 'error');
       }
     } catch (err) {
-      if (!err.response) {
-        await addToOutbox('CREDIT', payload, idemKey);
-        setIsInvoiceDrawerOpen(false);
-        notifyToast('No connection detected — this has been queued and will apply when back online.', 'info');
-      } else {
-        notifyToast(err?.response?.data?.error || err?.message || 'Could not apply the advance.', 'error');
-      }
+      notifyToast(!err.response ? 'No connection to the server — please try again.' : (err?.response?.data?.error || err?.message || 'Could not apply the advance.'), 'error');
     }
-  }, [isOnline, addToOutbox, notifyToast, setIsInvoiceDrawerOpen, refreshAllFinancialData]);
+  }, [isOnline, notifyToast, setIsInvoiceDrawerOpen, refreshAllFinancialData]);
 
   // ── Create manual invoice ────────────────────────────────────────────────────
   const handleCreateManualInvoice = useCallback(async (e) => {
@@ -321,38 +288,31 @@ export const useInvoiceActions = ({
       })),
     };
 
+    if (!isOnline) {
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — creating an invoice needs a live connection. Please reconnect and try again.' });
+      return;
+    }
+
     const idemKey = crypto.randomUUID();
     const blankInvoiceData = { patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' };
 
     try {
-      if (!isOnline) {
-        await addToOutbox('INVOICE', payload, idemKey);
-        setIsNewInvoiceDrawerOpen(false);
-        setNewInvoiceData(blankInvoiceData);
-        notify({ type: 'info', title: 'Queued for Sync', message: 'You are offline. Invoice has been saved and will sync automatically when connection is restored.' });
-        return;
-      }
-
       await generateInvoice(payload, idemKey);
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
       setNewInvoiceData(blankInvoiceData);
-      await syncInvoiceFast(payload.appointmentId);
+      notifyFinanceChanged();
       refreshAllFinancialData();
       notify({ type: 'success', title: 'Invoice Created', message: 'The invoice has been created and recorded successfully.' });
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
-      if (!err.response) {
-        await addToOutbox('INVOICE', payload, idemKey);
-        notify({ type: 'info', title: 'Queued for Sync', message: 'No connection detected. Invoice has been queued and will sync when back online.' });
-        setIsNewInvoiceDrawerOpen(false);
-      } else {
-        const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to create invoice.';
-        notify({ type: 'error', title: 'Invoice Failed', message: errorMsg });
-      }
+      const errorMsg = !err.response
+        ? 'No connection to the server — please check your network and try again.'
+        : (err.response?.data?.error || err.response?.data?.message || 'Failed to create invoice.');
+      notify({ type: 'error', title: 'Invoice Failed', message: errorMsg });
     }
-  }, [selectedPatient, newInvoiceData, isOnline, addToOutbox, notify, setIsNewInvoiceDrawerOpen, setNewInvoiceData, setSelectedPatient, setPatientSearchQuery, refreshAllFinancialData]);
+  }, [selectedPatient, newInvoiceData, isOnline, notify, setIsNewInvoiceDrawerOpen, setNewInvoiceData, setSelectedPatient, setPatientSearchQuery, refreshAllFinancialData]);
 
   // ── Save-as-draft (discount/charges only) ───────────────────────────────────
   const handleSaveInvoice = useCallback(async (draft = null) => {
@@ -380,32 +340,25 @@ export const useInvoiceActions = ({
         }
       : { discountAmount: invoice.discountAmount };
 
-    const idemKey = crypto.randomUUID();
-
     if (!isOnline) {
-      await addToOutbox('DISCOUNT', { invoiceId: invoice.invoiceId, ...body }, idemKey);
-      setIsInvoiceDrawerOpen(false);
-      notify({ type: 'info', title: 'Queued for Sync', message: 'You are offline. This draft will save automatically when connection is restored.' });
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — saving this draft needs a live connection. Please reconnect and try again.' });
       return;
     }
 
     try {
       await applyDiscount(invoice.invoiceId, body);
+      notifyFinanceChanged();
       refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
       notify({ type: 'success', title: 'Draft Saved', message: 'Your changes were saved. Reopen the invoice to continue.' });
     } catch (err) {
       console.error('[FINANCE] Discount application failed', err);
-      if (!err.response) {
-        await addToOutbox('DISCOUNT', { invoiceId: invoice.invoiceId, ...body }, idemKey);
-        setIsInvoiceDrawerOpen(false);
-        notify({ type: 'info', title: 'Queued for Sync', message: 'No connection detected. This draft has been queued and will save when back online.' });
-      } else {
-        const detail = err.response?.data?.error || err.response?.data?.message || 'Could not update the invoice. Please try again.';
-        notify({ type: 'error', title: 'Update Failed', message: detail });
-      }
+      const detail = !err.response
+        ? 'No connection to the server — please check your network and try again.'
+        : (err.response?.data?.error || err.response?.data?.message || 'Could not update the invoice. Please try again.');
+      notify({ type: 'error', title: 'Update Failed', message: detail });
     }
-  }, [selectedInvoice, verifyInvoice, isOnline, addToOutbox, refreshAllFinancialData, setIsInvoiceDrawerOpen, notify]);
+  }, [selectedInvoice, verifyInvoice, isOnline, refreshAllFinancialData, setIsInvoiceDrawerOpen, notify]);
 
   // ── Request admin approval ───────────────────────────────────────────────────
   const handleRequestApproval = useCallback(async ({ type, title, invoiceId, appointmentId, payload, reason }) => {
@@ -431,27 +384,23 @@ export const useInvoiceActions = ({
   // ── Delete invoice ───────────────────────────────────────────────────────────
   const handleDeleteInvoice = useCallback(async (id, commissionId) => {
     if (!isOnline) {
-      await addToOutbox('INVOICE_DELETE', { id, commissionId });
-      notify({ type: 'info', title: 'Offline', message: 'Invoice deletion queued.' });
-      setInvoices(prev => prev.filter(inv => inv.invoiceId !== id));
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — deleting an invoice needs a live connection.' });
       return;
     }
 
     try {
       await apiDeleteInvoice(id, commissionId);
+      setInvoices(prev => prev.filter(inv => inv.invoiceId !== id));
+      notifyFinanceChanged();
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Failed to delete invoice', err);
-      if (!err.response) {
-        await addToOutbox('INVOICE_DELETE', { id, commissionId });
-        notify({ type: 'info', title: 'No connection', message: 'Deletion added to offline queue.' });
-        setInvoices(prev => prev.filter(inv => inv.invoiceId !== id));
-      } else {
-        const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Could not delete invoice.';
-        notify({ type: 'error', message: errorMsg });
-      }
+      const errorMsg = !err.response
+        ? 'No connection to the server — please check your network and try again.'
+        : (err.response?.data?.error || err.response?.data?.message || 'Could not delete invoice.');
+      notify({ type: 'error', message: errorMsg });
     }
-  }, [isOnline, addToOutbox, notify, setInvoices, refreshAllFinancialData]);
+  }, [isOnline, notify, setInvoices, refreshAllFinancialData]);
 
   return {
     recalculateInvoice,
