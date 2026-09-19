@@ -436,7 +436,15 @@ export default function BillingPage() {
     // yet — fell through to the offline keyword-matching fallback instead of
     // the backend's authoritative per-service numbers. Either way the
     // figures shown didn't match the rest of the page.
-    if (billingViewMode === 'ANALYTICS' || billingViewMode === 'FINANCE' || billingViewMode === 'SERVICES') {
+    //
+    // INVOICES (Revenue) needs it too now: its headline KPI strip reads
+    // matrix.revenueSummary (the same live-DB aggregate Service Performance
+    // uses) instead of re-deriving totals from the local offline cache,
+    // which is only ever a rolling recent window (see evictOlderThan in the
+    // sync engine) and can legitimately be missing older invoices for a
+    // wider date range — that gap was the root cause of Revenue and Service
+    // Performance silently disagreeing for any range beyond "recent".
+    if (billingViewMode === 'ANALYTICS' || billingViewMode === 'FINANCE' || billingViewMode === 'SERVICES' || billingViewMode === 'INVOICES') {
       void fetchMatrix();
     }
   }, [billingViewMode, fetchMatrix, isOnline, pendingCount]);
@@ -922,6 +930,7 @@ export default function BillingPage() {
           approvalFilter={approvalFilter}
           setApprovalFilter={setApprovalFilter}
           liveStats={liveStats}
+          matrix={matrix}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           timeFilter={timeFilter}
@@ -967,6 +976,7 @@ export default function BillingPage() {
       {billingViewMode === 'REFERRAL_CUTS' && (
         <ReferralHub
           isMobile={isMobile}
+          isOnline={isOnline}
           approvalMap={approvalMap}
           filteredReferralCuts={filteredReferralCuts}
           paginatedReferralCuts={paginatedReferralCuts}

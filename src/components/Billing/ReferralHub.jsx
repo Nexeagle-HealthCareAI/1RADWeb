@@ -3,6 +3,16 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
+import { fetchCommissions } from '../../api/billing/payoutApi';
+
+const getIstDateStr = (iso) => {
+  if (!iso) return null;
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+  const d = new Date(hasTz ? iso : `${iso}Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+};
 
 // Self / walk-in visits earn no commission, so their payouts are never editable.
 const isSelfReferrer = (name) => String(name || '').trim().toLowerCase() === 'self';
@@ -67,6 +77,7 @@ const groupCutsByPartner = (cuts) => {
 
 const ReferralHub = ({
   isMobile,
+  isOnline,
   filteredReferralCuts,
   paginatedReferralCuts,
   timeFilter,
@@ -176,8 +187,57 @@ const ReferralHub = ({
   // already earned. Use the filtered list directly.
   const presentCuts = useMemo(() => filteredReferralCuts || [], [filteredReferralCuts]);
 
+  // Prefer a fresh, complete fetch straight from the server for the KPI
+  // headline strip below. presentCuts (above) is built from the local
+  // offline cache, which the sync engine only ever keeps a rolling recent
+  // window of (see evictOlderThan in SyncEngine.js) — for any date range
+  // reaching outside that window these 4 totals silently undercounted, even
+  // though every individual figure was computed correctly, because whole
+  // commission rows were simply missing locally. FUTURE has no server-side
+  // rows yet (those are the client-only "upcoming" estimate built from
+  // not-yet-billed appointments), so it keeps the local computation.
+  const [serverCuts, setServerCuts] = useState(null);
+  useEffect(() => {
+    if (timeFilter === 'FUTURE') { setServerCuts(null); return undefined; }
+    const today = getIstDateStr(new Date().toISOString());
+    let finalStart = null, finalEnd = null;
+    if (timeFilter === 'TODAY') {
+      finalStart = today; finalEnd = today;
+    } else if (timeFilter === 'PAST') {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      finalEnd = getIstDateStr(yesterday.toISOString());
+    } else if (timeFilter === 'CUSTOM') {
+      finalStart = startDate; finalEnd = endDate;
+    }
+    let alive = true;
+    fetchCommissions({ startDate: finalStart, endDate: finalEnd })
+      .then(rows => { if (alive) setServerCuts(Array.isArray(rows) ? rows : null); })
+      .catch(() => { if (alive) setServerCuts(null); });
+    return () => { alive = false; };
+  }, [timeFilter, startDate, endDate]);
+
+  // Same modality/referrer/search filters presentCuts (via useBillingData)
+  // applies — the server call above already scoped by date, so only these
+  // remain. Server rows carry Modality/ReferrerId directly, simpler than the
+  // local cut shape's STRATEGIC-type/description-based modality matching.
+  const serverCutsFiltered = useMemo(() => {
+    if (!serverCuts) return null;
+    const q = referralSearch.trim().toLowerCase();
+    return serverCuts.filter(c => {
+      if (modalityFilter !== 'ALL' && c.modality !== modalityFilter) return false;
+      if (!referrerFilter.includes('ALL') && !referrerFilter.includes(c.referrerId)) return false;
+      if (q) {
+        const hay = [c.patientName, c.referrerName, c.referenceNumber, c.modality, c.serviceName]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [serverCuts, modalityFilter, referrerFilter, referralSearch]);
+
   const referralStats = useMemo(() => {
-    const cuts = presentCuts || [];
+    const cuts = (isOnline && serverCutsFiltered) ? serverCutsFiltered : (presentCuts || []);
     // A commission is ELIGIBLE to pay out once the patient has paid anything
     // (full PAID or part PARTIAL); otherwise it's AWAITING the patient's payment
     // and not yet payable. Carried deficits (amount ≤ 0) aren't a payable.
@@ -197,7 +257,7 @@ const ReferralHub = ({
       }
     });
     return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
-  }, [presentCuts]);
+  }, [presentCuts, serverCutsFiltered, isOnline]);
 
   const [settlementFilter, setSettlementFilter] = useState(['ALL']);
   const [selectedIds, setSelectedIds] = useState(new Set());
