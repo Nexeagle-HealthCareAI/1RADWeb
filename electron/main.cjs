@@ -8,6 +8,16 @@ const os = require('os');
 // ship inside the installer (which is what caused the "Cannot find module
 // 'electron-is-dev'" crash).
 const isDev = !app.isPackaged;
+
+// Electron derives the per-user data folder (localStorage, IndexedDB, the
+// offline outbox, electron-store, saved PINs) from the app name, which follows
+// the package/product name. The product is now "1Rad Flow", but existing
+// installs keep their data in the "1Rad" folder, so pin it — otherwise a
+// rename could boot every desktop user into an empty profile and strand any
+// unsynced local work. Must run before anything reads the userData path
+// (electron-store below does, at construction).
+app.setPath('userData', path.join(app.getPath('appData'), '1Rad'));
+
 const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 
@@ -83,7 +93,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 768,
     show: false,
-    title: "1Rad | Clinical Radiology Desktop",
+    title: "1Rad Flow | Clinical Radiology Desktop",
     icon: path.join(__dirname, '../public/favicon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -309,7 +319,7 @@ function composeReceipt(p, data) {
   p.drawLine();
 
   p.alignCenter();
-  for (const line of (d.footer || ['THANK YOU FOR CHOOSING 1RAD'])) p.println(line);
+  for (const line of (d.footer || ['THANK YOU FOR CHOOSING 1RAD FLOW'])) p.println(line);
   p.println('');
   p.println('Powered by NexEagle');
   p.newLine();
@@ -439,7 +449,7 @@ ipcMain.handle('printer:test', async (event, payload) => {
       width: data.width === 58 ? 32 : 48,
       options: { timeout: 5000 },
     });
-    p.alignCenter(); p.bold(true); p.println('1RAD TEST PRINT'); p.bold(false);
+    p.alignCenter(); p.bold(true); p.println('1RAD FLOW TEST PRINT'); p.bold(false);
     p.println(`${data.width || 80}mm OK`);
     p.println(new Date().toLocaleString());
     p.drawLine(); p.cut();

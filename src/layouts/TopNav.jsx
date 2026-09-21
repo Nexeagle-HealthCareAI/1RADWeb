@@ -458,7 +458,7 @@ export default function TopNav({ currentTime }) {
             <button
               type="button"
               onClick={() => { setDesktopDownloaded(false); setShowDesktopModal(true); }}
-              title="Download the 1Rad desktop app for Windows"
+              title="Download the 1Rad Flow desktop app for Windows"
               className="nav-desktop-download"
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
@@ -524,7 +524,7 @@ export default function TopNav({ currentTime }) {
             <div style={{ padding: '22px 24px', background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontSize: '22px' }}>🖥️</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '15px', fontWeight: 950 }}>Get the 1Rad Desktop App</div>
+                <div style={{ fontSize: '15px', fontWeight: 950 }}>Get the 1Rad Flow Desktop App</div>
                 <div style={{ fontSize: '11px', fontWeight: 600, opacity: 0.85, marginTop: '2px' }}>Faster, works offline, and always one click away.</div>
               </div>
               <button onClick={() => setShowDesktopModal(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: '30px', height: '30px', borderRadius: '8px', fontSize: '15px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -551,7 +551,7 @@ export default function TopNav({ currentTime }) {
                   <div style={{ marginTop: '16px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                     <span style={{ fontSize: '16px' }}>📌</span>
                     <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', lineHeight: 1.5 }}>
-                      Tip: After installing, you can pin 1Rad to your taskbar so it's always one click away. We'll show you how once the download starts.
+                      Tip: After installing, you can pin 1Rad Flow to your taskbar so it's always one click away. We'll show you how once the download starts.
                     </div>
                   </div>
                 </>
@@ -561,10 +561,10 @@ export default function TopNav({ currentTime }) {
                     <span style={{ fontSize: '20px' }}>✅</span>
                     <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>Your download has started</div>
                   </div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>Pin 1Rad to your taskbar for one-click access:</div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>Pin 1Rad Flow to your taskbar for one-click access:</div>
                   <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <li style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5 }}>Open the installer you just downloaded and follow the steps.</li>
-                    <li style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5 }}>Open <strong>1Rad</strong>, then <strong>right-click its icon in the taskbar</strong> and choose <strong>“Pin to taskbar”</strong>.</li>
+                    <li style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5 }}>Open <strong>1Rad Flow</strong>, then <strong>right-click its icon in the taskbar</strong> and choose <strong>“Pin to taskbar”</strong>.</li>
                   </ol>
                   <button
                     type="button"

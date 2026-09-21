@@ -17,7 +17,7 @@ function Brand({ size = 34 }) {
       <img src={LOGO} alt="NexEagle" style={{ width: size, height: size, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.1)', padding: 3 }} />
       <div style={{ lineHeight: 1.1 }}>
         <div style={{ color: 'white', fontSize: size * 0.5, fontWeight: 900, letterSpacing: 0.3 }}>NexEagle</div>
-        <div style={{ color: '#93c5fd', fontSize: size * 0.34, fontWeight: 800, letterSpacing: 1.5 }}>1Rad</div>
+        <div style={{ color: '#93c5fd', fontSize: size * 0.34, fontWeight: 800, letterSpacing: 1.5 }}>1Rad Flow</div>
       </div>
     </div>
   );
@@ -101,18 +101,18 @@ export default function SharedStudyPage() {
                 : 'The shared study could not be loaded. Please request a new link.'}
           </p>
           <div style={{ background: 'linear-gradient(135deg, rgba(29,78,216,0.18), rgba(56,189,248,0.12))', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 16, padding: '18px 18px', textAlign: 'left' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 1.5, color: '#7dd3fc', marginBottom: 8 }}>WHY 1Rad?</div>
+            <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 1.5, color: '#7dd3fc', marginBottom: 8 }}>WHY 1Rad Flow?</div>
             <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', fontSize: 12.5, lineHeight: 1.9 }}>
               <li><strong>Faster reporting</strong> — cloud DICOM that opens in seconds, even on mobile.</li>
               <li><strong>Bank-grade security</strong> — encrypted storage and expiring, audited share links.</li>
               <li><strong>Effortless collaboration</strong> — share studies with any referring doctor instantly.</li>
             </ul>
             <div style={{ color: '#7dd3fc', fontSize: 12, fontWeight: 700, marginTop: 12 }}>
-              Ask your diagnostic centre about NexEagle 1Rad.
+              Ask your diagnostic centre about NexEagle 1Rad Flow.
             </div>
           </div>
         </div>
-        <div style={{ color: '#475569', fontSize: 11, marginTop: 20 }}>Powered by NexEagle 1Rad · Secure cloud radiology</div>
+        <div style={{ color: '#475569', fontSize: 11, marginTop: 20 }}>Powered by NexEagle 1Rad Flow · Secure cloud radiology</div>
       </div>
     );
   }

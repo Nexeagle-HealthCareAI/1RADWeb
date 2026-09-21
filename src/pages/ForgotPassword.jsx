@@ -108,7 +108,7 @@ export default function ForgotPassword() {
           }} />
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
             <span style={{ fontSize: '26px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>NexEagle</span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD FLOW</span>
           </div>
         </div>
         <div style={{ fontSize: '10px', fontWeight: 800, color: 'rgba(15,23,42,0.65)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>

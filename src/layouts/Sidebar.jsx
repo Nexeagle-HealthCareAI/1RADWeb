@@ -429,7 +429,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
               <span style={{ fontSize: '18px', fontWeight: 800, color: T.textHigh, letterSpacing: '-0.4px', fontFamily: FF }}>NexEagle</span>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: T.accent, letterSpacing: '1px', fontFamily: FF, textTransform: 'uppercase', marginTop: '2px' }}>1Rad</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: T.accent, letterSpacing: '1px', fontFamily: FF, textTransform: 'uppercase', marginTop: '2px' }}>1Rad Flow</span>
             </div>
           </div>
         </div>

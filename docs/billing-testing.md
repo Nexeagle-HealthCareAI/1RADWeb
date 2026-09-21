@@ -716,7 +716,7 @@ Billing Page
 | 1 | Click **EXPORT FISCAL DATA** button | Export drawer opens with export options. |
 | 2 | Observe export modes | Two options: **ALL** (export all records) and **RANGE** (select start/end dates). |
 | 3 | Select **ALL** | All dates selected. No date inputs required. |
-| 4 | Click **Export** with ALL selected | API call: `GET /finance/export`. A `.xlsx` file downloads. Filename format: `1Rad_Financials_YYYY-MM-DD.xlsx`. |
+| 4 | Click **Export** with ALL selected | API call: `GET /finance/export`. A `.xlsx` file downloads. Filename format: `1RadFlow_Financials_YYYY-MM-DD.xlsx`. |
 | 5 | Select **RANGE** | Start date and end date inputs appear. |
 | 6 | Enter a valid date range | Dates accepted. |
 | 7 | Click **Export** with RANGE | API call with `?startDate=X&endDate=Y`. XLSX file downloads with only that range's data. |

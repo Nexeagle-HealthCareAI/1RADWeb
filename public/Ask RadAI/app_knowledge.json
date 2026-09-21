@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "purpose": "Grounding knowledge base for RadAI, the in-app help assistant in the 1rad application. RadAI answers user questions about HOW TO USE the app, using ONLY the content in this file. It must never invent features, buttons, or steps not described here. When a question is not covered, RadAI says it is not sure and points the user to support.",
+    "purpose": "Grounding knowledge base for RadAI, the in-app help assistant in the 1Rad Flow application. RadAI answers user questions about HOW TO USE the app, using ONLY the content in this file. It must never invent features, buttons, or steps not described here. When a question is not covered, RadAI says it is not sure and points the user to support.",
     "how_to_use": "Inject the relevant parts of this file into the Flash system prompt (see assistant_system_prompt.md). For a small app the whole file fits in the prompt (cache it). As it grows, switch to retrieval: embed each entry in 'modules' and 'faqs' and fetch the top matches per question.",
     "version": "1.0",
     "maintenance": "GROW THIS FILE from real questions. Whenever a user asks something RadAI could not answer, add an entry. Whenever the app changes, update the affected module. Keep step numbers accurate to the live UI.",
@@ -8,9 +8,9 @@
   },
 
   "app": {
-    "name": "1rad",
+    "name": "1Rad Flow",
     "type": "Diagnostic centre management application (appointments + billing + radiology reporting)",
-    "one_line": "1rad runs the front desk and finance of a diagnostic/radiology centre: booking appointments, billing patients, tracking referral commissions, and producing radiology reports.",
+    "one_line": "1Rad Flow runs the front desk and finance of a diagnostic/radiology centre: booking appointments, billing patients, tracking referral commissions, and producing radiology reports.",
     "primary_users": ["Front-desk / reception staff", "Centre admin", "Admin doctor (can approve)", "Radiologist"],
     "design_principle": "Front-desk staff never decide sensitive money matters - they only record a reason. Admin approves everything sensitive from one queue. One popup style, one 'pending approval' badge, one approvals page."
   },
@@ -225,7 +225,7 @@
     {
       "id": "radai",
       "label": "RadAI (this assistant)",
-      "summary": "The floating help assistant. Ask it how to do anything in 1rad by voice, by tapping a suggested question, or by typing.",
+      "summary": "The floating help assistant. Ask it how to do anything in 1Rad Flow by voice, by tapping a suggested question, or by typing.",
       "where": "Floating button, available on every screen.",
       "how_to": [
         "Tap the floating RadAI button.",
@@ -251,7 +251,7 @@
 
   "support_fallback": {
     "when": "Use this when the user's question is not answered by anything above, or is about a problem rather than how-to (errors, bugs, account access, billing disputes).",
-    "message": "I'm not sure about that one. For this, please contact your centre admin or the 1rad support team so they can help you directly.",
+    "message": "I'm not sure about that one. For this, please contact your centre admin or the 1Rad Flow support team so they can help you directly.",
     "never": "Never invent a feature, button, menu, or step that is not described in this file. If unsure, use the support fallback."
   },
 

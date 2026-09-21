@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RadAI Assistant — 1rad</title>
+<title>RadAI Assistant — 1Rad Flow</title>
 <style>
   :root{
     --brand:#2563eb; --brand-dark:#1e40af; --bg:#ffffff; --panel:#f8fafc;
@@ -118,7 +118,7 @@ const panel = $("radai-panel"), body = $("radai-body"), typing = $("radai-typing
 
 /* ---------- Load knowledge base ---------- */
 fetch(KNOWLEDGE_URL).then(r=>r.json()).then(d=>{KB=d; renderChips(); greet();})
-  .catch(()=>{ KB={suggested_chips:[],faqs:[],modules:[],support_fallback:{message:"Please contact your centre admin or 1rad support."}};
+  .catch(()=>{ KB={suggested_chips:[],faqs:[],modules:[],support_fallback:{message:"Please contact your centre admin or 1Rad Flow support."}};
                greet(); });
 
 /* ---------- Panel open/close ---------- */
@@ -145,8 +145,8 @@ function renderChips(){
 }
 function greet(){
   addBubble("bot", LANG==="hi"
-    ? "नमस्ते! मैं RadAI हूँ। 1rad ऐप के बारे में कुछ भी पूछें — बोलकर, टाइप करके, या नीचे दिए सवाल चुनकर।"
-    : "Hi! I'm RadAI. Ask me anything about using the 1rad app — speak, type, or tap a question below.", false);
+    ? "नमस्ते! मैं RadAI हूँ। 1Rad Flow ऐप के बारे में कुछ भी पूछें — बोलकर, टाइप करके, या नीचे दिए सवाल चुनकर।"
+    : "Hi! I'm RadAI. Ask me anything about using the 1Rad Flow app — speak, type, or tap a question below.", false);
 }
 
 /* ---------- Add a chat bubble ---------- */
@@ -206,7 +206,7 @@ async function askLocal(question){
   (KB.modules||[]).forEach(m=>{ const s=score(m.label)*2+score(m.summary);
     if(s>bestScore){bestScore=s; best={answer:m.summary+(m.how_to?"\n\n"+m.how_to.map((x,i)=>(i+1)+". "+x).join("\n"):"")};} });
   const answer = (best && bestScore>0) ? best.answer
-                 : (KB.support_fallback && KB.support_fallback.message) || "Please contact 1rad support.";
+                 : (KB.support_fallback && KB.support_fallback.message) || "Please contact 1Rad Flow support.";
   // Local mode doesn't translate; backend (Flash) handles Hindi. Echo current LANG.
   return { answer, reply_language: LANG, suggested_followups: (KB.suggested_chips||[]).slice(0,3) };
 }

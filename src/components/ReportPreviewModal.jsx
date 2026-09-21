@@ -1054,7 +1054,7 @@ const ReportPreviewModal = ({
     // Use the same signed-token URL the QR uses so the WhatsApp link works
     // when the patient taps it from their phone (no session).
     const reportUrl = await getTrackingUrl(appointmentId);
-    const message = `Hello ${fullAppointment?.patientName},\n\nYour Diagnostic Report for ${fullAppointment?.service || 'the clinical study'} is now available.\n\n📄 View/Download Report: ${reportUrl}\n\nThank you for choosing ${fullAppointment?.hospitalName || '1Rad Diagnostic Center'}.`;
+    const message = `Hello ${fullAppointment?.patientName},\n\nYour Diagnostic Report for ${fullAppointment?.service || 'the clinical study'} is now available.\n\n📄 View/Download Report: ${reportUrl}\n\nThank you for choosing ${fullAppointment?.hospitalName || '1Rad Flow Diagnostic Center'}.`;
     
     const encoded = encodeURIComponent(message);
     const cleanedMobile = mobile.replace(/\D/g, '');
@@ -1193,7 +1193,7 @@ const ReportPreviewModal = ({
           {/* Brand + title + status + close */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '2.5px', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>NexEagle · 1Rad</div>
+              <div style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '2.5px', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>NexEagle · 1Rad Flow</div>
               <h3 style={{ fontSize: '18px', fontWeight: 950, margin: '5px 0 0', letterSpacing: '-0.3px' }}>Report Preview</h3>
               <div style={{ marginTop: '8px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 900, padding: '3px 10px', borderRadius: '999px', background: isFinalized ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)', color: isFinalized ? '#4ade80' : '#fbbf24', border: `1px solid ${isFinalized ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.4)'}` }}>

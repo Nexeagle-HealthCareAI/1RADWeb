@@ -311,8 +311,8 @@ export const exportToExcel = ({
 
     // ── Download ────────────────────────────────────────────────────────────
     const fname = useRange && (start || end)
-      ? `1Rad_Financials_${start || 'start'}_to_${end || 'end'}.xlsx`
-      : `1Rad_Financials_${new Date().toISOString().split('T')[0]}.xlsx`;
+      ? `1RadFlow_Financials_${start || 'start'}_to_${end || 'end'}.xlsx`
+      : `1RadFlow_Financials_${new Date().toISOString().split('T')[0]}.xlsx`;
 
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob  = new Blob([wbout], { type: 'application/octet-stream' });

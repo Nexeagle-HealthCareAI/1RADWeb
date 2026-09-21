@@ -223,7 +223,7 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
               <div class="box-title">Center Policy</div>
               <p class="patient-meta" style="font-weight: 600; color: #1e293b;">• Final diagnostic results follow settlement.</p>
               <p class="patient-meta">• Valid for clinical review for 30 days.</p>
-              <p class="patient-meta">• Digital copy available via 1Rad Portal.</p>
+              <p class="patient-meta">• Digital copy available via 1Rad Flow Portal.</p>
             </div>
           </div>
 
@@ -267,10 +267,10 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
             <div class="signature-box">
               <div class="signature-line"></div>
               <div class="signature-label">Authorized Signatory</div>
-              <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Finance</div>
+              <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Flow Finance</div>
             </div>
           </div>
-          <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 40px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Powered by NexEagle</div>
+          <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 40px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Flow Powered by NexEagle</div>
         </div>
       </body>
     </html>
@@ -394,7 +394,7 @@ export const printReceiptSlip = (inv, { activeCenter, ownerDetails } = {}) => {
               </div>
             </div>
           </div>
-          <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Powered by NexEagle</div>
+          <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Flow Powered by NexEagle</div>
         </div>
       </body>
     </html>
@@ -451,7 +451,7 @@ export const printThermalSlip = async (inv, { activeCenter, ownerDetails, notify
     paid: Number(inv.paidAmount) || 0,
     balance: Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)),
     status: inv.status || 'PENDING',
-    footer: ['THANK YOU FOR CHOOSING 1RAD', 'DIGITAL REPORT AT 1RAD.HEALTH'],
+    footer: ['THANK YOU FOR CHOOSING 1RAD FLOW', 'DIGITAL REPORT AT 1RAD.HEALTH'],
   });
 
   if (r?.ok) {
@@ -537,10 +537,10 @@ export const printThermalSlip = async (inv, { activeCenter, ownerDetails, notify
         ${partialPayHtml}
         <div class="divider"></div>
         <div class="center" style="margin-top: 15px; font-size: 10px; font-weight: bold;">
-          THANK YOU FOR CHOOSING 1RAD<br/>
+          THANK YOU FOR CHOOSING 1RAD FLOW<br/>
           DIGITAL REPORT AT 1RAD.HEALTH
         </div>
-        <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">1RAD POWERED BY NEXEAGLE</div>
+        <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">1RAD FLOW POWERED BY NEXEAGLE</div>
       </body>
     </html>
   `);

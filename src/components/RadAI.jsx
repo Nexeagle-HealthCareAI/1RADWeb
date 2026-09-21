@@ -67,7 +67,7 @@ export default function RadAI() {
   const setPosBoth = (p) => { posRef.current = p; setPos(p); };
 
   const [messages, setMessages] = useState([
-    { id: uid(), role: 'assistant', text: "Hi! I'm RadAI 🤖 — your 1Rad helper. Ask me anything about using the app, in Hindi or English. You can type or tap the mic." },
+    { id: uid(), role: 'assistant', text: "Hi! I'm RadAI 🤖 — your 1Rad Flow helper. Ask me anything about using the app, in Hindi or English. You can type or tap the mic." },
   ]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);

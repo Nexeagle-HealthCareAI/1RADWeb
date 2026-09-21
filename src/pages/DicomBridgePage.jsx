@@ -148,14 +148,14 @@ export default function DicomBridgePage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
           <div>
             <div style={{ fontSize: '10px', fontWeight: 950, color: 'rgba(255,255,255,0.4)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: isTablet ? '4px' : '8px' }}>
-              1RAD / DICOM BRIDGE
+              1RAD FLOW / DICOM BRIDGE
             </div>
             <h1 style={{ fontSize: isTablet ? '18px' : '28px', fontWeight: 950, color: 'white', letterSpacing: '-1px', margin: isTablet ? '0 0 4px' : '0 0 10px' }}>
               DICOM Bridge Monitor
             </h1>
             {!isTablet && (
               <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600, margin: 0 }}>
-                Orthanc → 1Rad automatic upload pipeline
+                Orthanc → 1Rad Flow automatic upload pipeline
               </p>
             )}
           </div>
@@ -517,7 +517,7 @@ export default function DicomBridgePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '24px', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }}>
               <div>
                 <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', textTransform: 'uppercase', letterSpacing: '1px' }}>Bridge Setup Guide</div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Follow these steps to connect your clinic's Orthanc PACS to 1Rad.</div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Follow these steps to connect your clinic's Orthanc PACS to 1Rad Flow.</div>
               </div>
               <a 
                 href="/1rad-dicom-bridge.zip" 
@@ -560,7 +560,7 @@ export default function DicomBridgePage() {
                   <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Configure the Environment</div>
                   <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '16px' }}>
                     Create a new file named exactly <code>.env</code> inside your extracted bridge folder. 
-                    Download the pre-filled configuration file below, open it with Notepad, and replace <strong>your_password_here</strong> with your 1Rad administrator password.
+                    Download the pre-filled configuration file below, open it with Notepad, and replace <strong>your_password_here</strong> with your 1Rad Flow administrator password.
                   </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: '#1e293b', borderBottom: '1px solid #334155' }}>
                   <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, fontFamily: 'monospace' }}>.env</span>
@@ -642,14 +642,14 @@ export default function DicomBridgePage() {
             <div style={{ marginBottom: '20px' }}>
               <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', textTransform: 'uppercase', letterSpacing: '1px' }}>Modality Worklist (MWL) Setup</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                Publish today's 1Rad appointments to Orthanc so each machine knows who it's scanning — and stamps the Accession Number into every image. This turns fuzzy name-matching into exact, 100%-confidence matching.
+                Publish today's 1Rad Flow appointments to Orthanc so each machine knows who it's scanning — and stamps the Accession Number into every image. This turns fuzzy name-matching into exact, 100%-confidence matching.
               </div>
             </div>
 
             {/* Flow strip */}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: '14px', padding: '16px', marginBottom: '28px' }}>
               {[
-                'Appointment booked in 1Rad',
+                'Appointment booked in 1Rad Flow',
                 'Bridge writes worklist',
                 'Orthanc serves it',
                 'GE queries → stamps Accession',

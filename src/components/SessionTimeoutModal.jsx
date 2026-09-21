@@ -86,7 +86,7 @@ export default function SessionTimeoutModal({ isOpen, onStayConnected, onLogout,
         </div>
 
         <div style={{ marginTop: '24px', fontSize: '10px', color: '#475569', fontWeight: 700, letterSpacing: '1px' }}>
-          1RAD SECURE ACCESS PROTOCOL
+          1RAD FLOW SECURE ACCESS PROTOCOL
         </div>
       </div>
     </div>

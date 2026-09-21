@@ -1155,7 +1155,7 @@ const DicomViewerPage = () => {
                   NexEagle
                 </div>
                 <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: isMobile ? '9px' : '11px', fontWeight: 700, letterSpacing: '1.5px' }}>
-                  1Rad
+                  1Rad Flow
                 </div>
               </div>
             </div>

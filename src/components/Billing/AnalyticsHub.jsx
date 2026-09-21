@@ -501,7 +501,7 @@ const AnalyticsHub = ({
       }}>
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: '20px' }}>
               <div>
-                <h3 style={{ fontSize: isMobile ? '12px' : '14px', fontWeight: 950, color: '#1e293b', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>1RAD CLINICAL HEALTH ANALYTICS ENGINE</h3>
+                <h3 style={{ fontSize: isMobile ? '12px' : '14px', fontWeight: 950, color: '#1e293b', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>1RAD FLOW CLINICAL HEALTH ANALYTICS ENGINE</h3>
                 <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, marginTop: '3px', margin: 0 }}>Advanced real-time metrics, leakage tracking, and physician commission auditing</p>
               </div>
 
@@ -665,7 +665,7 @@ const AnalyticsHub = ({
             </h3>
             
             <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, lineHeight: '1.6', margin: '0 0 25px 0', maxWidth: '460px' }}>
-              Welcome to the <span style={{ color: '#0f52ba', fontWeight: 900 }}>1Rad Clinical Analytics Hub</span>. 
+              Welcome to the <span style={{ color: '#0f52ba', fontWeight: 900 }}>1Rad Flow Clinical Analytics Hub</span>. 
               Real-time cash flows, modality yield metrics, discount leakage audits, and physician ROI ledgers will automatically populate here as transactions are registered.
             </p>
 
