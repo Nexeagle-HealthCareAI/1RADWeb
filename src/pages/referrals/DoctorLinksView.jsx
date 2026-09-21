@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DoctorLinkSendSheet from './DoctorLinkSendSheet';
 import { sortArrow } from './sortArrow';
 
@@ -25,10 +25,26 @@ export default function DoctorLinksView({
   emailDoctors,
   openLinkSend,
   copyDoctorLink,
+  revokeDoctorLinks,
   linkSend,
   setLinkSend,
   submitLinkSend,
 }) {
+  // Revoke-links confirmation: { doctor, busy, err } | null
+  const [revoke, setRevoke] = useState(null);
+  const confirmRevoke = async () => {
+    if (!revoke || revoke.busy) return;
+    setRevoke(r => ({ ...r, busy: true, err: '' }));
+    try {
+      await revokeDoctorLinks(revoke.doctor.referrerId);
+      setRevoke(null);
+    } catch (e) {
+      const d = e?.response?.data;
+      setRevoke(r => ({ ...r, busy: false, err: (!e?.response ? 'No connection to the server — nothing was changed.' : (d?.message || d?.error || 'Could not revoke the links.')) }));
+    }
+  };
+  const revokeBtnTitle = 'Revoke links — every link already sent to this doctor stops working';
+
   const q = referralLinksSearch.trim().toLowerCase();
   const baseList = q ? doctorList.filter(d => (d.name || '').toLowerCase().includes(q)) : doctorList;
   const list = [...baseList].sort((a, b) => {
@@ -145,6 +161,9 @@ export default function DoctorLinksView({
                         ? <button onClick={() => emailDoctors([d.referrerId])} disabled={linksBusy} style={tSend('#0f52ba', '#eff6ff', '#bfdbfe', linksBusy)}>📧 Email</button>
                         : <button onClick={() => openLinkSend(d, 'email')} style={tGhost('#0f52ba')}>+ Add email</button>}
                       <button onClick={() => copyDoctorLink(d.referrerId)} title="Copy link to send personally" style={{ ...iconBtn, width: '36px', padding: '7px 0', fontSize: '13px' }}>🔗</button>
+                      {revokeDoctorLinks && (
+                        <button onClick={() => setRevoke({ doctor: d, busy: false, err: '' })} title={revokeBtnTitle} style={{ ...iconBtn, width: '36px', padding: '7px 0', fontSize: '13px', color: '#be123c', borderColor: '#fecdd3' }}>⛔</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -191,10 +210,31 @@ export default function DoctorLinksView({
                     ? <button onClick={() => emailDoctors([d.referrerId])} disabled={linksBusy} style={actBtn('#0f52ba', '#eff6ff', '#bfdbfe', linksBusy)}>📧 Email</button>
                     : <button onClick={() => openLinkSend(d, 'email')} style={actGhost('#0f52ba')}>+ Add email</button>}
                   <button onClick={() => copyDoctorLink(d.referrerId)} title="Copy link to send personally" style={iconBtn}>🔗</button>
+                  {revokeDoctorLinks && (
+                    <button onClick={() => setRevoke({ doctor: d, busy: false, err: '' })} title={revokeBtnTitle} style={{ ...iconBtn, color: '#be123c', borderColor: '#fecdd3' }}>⛔</button>
+                  )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {revoke && (
+        <div onClick={revoke.busy ? undefined : () => setRevoke(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '400px', background: 'white', borderRadius: '22px', padding: '28px 26px', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.45)' }}>
+            <div style={{ fontSize: '40px', lineHeight: 1, textAlign: 'center' }}>⛔</div>
+            <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a', marginTop: '10px', textAlign: 'center' }}>Revoke {revoke.doctor.name}'s links?</div>
+            <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', marginTop: '8px', lineHeight: 1.55, textAlign: 'center' }}>
+              Every portal link already sent or copied for this doctor stops working <b>immediately</b> — including any that were forwarded or are on a lost phone. They will need a fresh link from you afterwards.
+            </div>
+            {revoke.err && <div style={{ marginTop: '14px', fontSize: '11.5px', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '9px 12px' }}>{revoke.err}</div>}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button onClick={() => setRevoke(null)} disabled={revoke.busy} style={{ flex: 1, padding: '13px', borderRadius: '13px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '12.5px', fontWeight: 900, cursor: revoke.busy ? 'not-allowed' : 'pointer' }}>Cancel</button>
+              <button onClick={confirmRevoke} disabled={revoke.busy} style={{ flex: 1, padding: '13px', borderRadius: '13px', border: 'none', background: revoke.busy ? '#fda4af' : 'linear-gradient(135deg,#e11d48,#be123c)', color: 'white', fontSize: '12.5px', fontWeight: 950, cursor: revoke.busy ? 'not-allowed' : 'pointer' }}>{revoke.busy ? 'Revoking…' : 'Revoke links'}</button>
+            </div>
+          </div>
         </div>
       )}
 

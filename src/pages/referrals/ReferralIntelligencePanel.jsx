@@ -26,6 +26,7 @@ export default function ReferralIntelligencePanel({
   bulkSend,
   caseLedgerList,
   copyDoctorLink,
+  revokeDoctorLinks,
   doctorList,
   emailDoctors,
   expandedReferrer,
@@ -404,6 +405,7 @@ export default function ReferralIntelligencePanel({
                 emailDoctors={emailDoctors}
                 openLinkSend={openLinkSend}
                 copyDoctorLink={copyDoctorLink}
+                revokeDoctorLinks={revokeDoctorLinks}
                 linkSend={linkSend}
                 setLinkSend={setLinkSend}
                 submitLinkSend={submitLinkSend}

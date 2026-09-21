@@ -205,6 +205,13 @@ export default function ReferralsPage() {
     const { data } = await apiClient.get(`/referrers/${referrerId}/share-link`);
     return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
   };
+  // Pull back every portal link ever issued for this doctor (a forwarded message, a
+  // lost phone, a doctor who left). Old links stop working immediately; links copied or
+  // sent afterwards work. Throws on failure so the confirm dialog can show the reason.
+  const revokeDoctorLinks = async (referrerId) => {
+    await apiClient.post(`/referrers/${referrerId}/revoke-links`);
+    notifyToast('Old links stopped working. Send the doctor a fresh link.', 'success');
+  };
   const copyDoctorLink = async (referrerId) => {
     try { 
       const link = await buildDoctorLink(referrerId);
@@ -1915,6 +1922,7 @@ export default function ReferralsPage() {
         bulkSend={bulkSend}
         caseLedgerList={caseLedgerList}
         copyDoctorLink={copyDoctorLink}
+        revokeDoctorLinks={revokeDoctorLinks}
         doctorList={doctorList}
         emailDoctors={emailDoctors}
         expandedReferrer={expandedReferrer}
