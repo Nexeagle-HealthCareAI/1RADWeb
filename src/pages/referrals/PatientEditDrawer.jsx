@@ -1,4 +1,5 @@
 import React from 'react';
+import PatientSourceSelect from '../../components/PatientSourceSelect';
 
 /**
  * PatientEditDrawer — edit a patient's demographic/address/source-of-info
@@ -150,21 +151,7 @@ export default function PatientEditDrawer({
 
           <div className="form-group">
             <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>SOURCE OF INFORMATION</label>
-            <input
-              type="text"
-              placeholder="Discovery source..."
-              style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '10px', outline: 'none', fontWeight: 600, color: '#1e293b' }}
-              value={editingPatient?.sourceOfInfo || ''}
-              onChange={e => setEditingPatient({ ...editingPatient, sourceOfInfo: e.target.value })}
-            />
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
-              {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
-                <button key={opt} type="button" onClick={() => setEditingPatient({ ...editingPatient, sourceOfInfo: opt })}
-                  style={{ padding: '4px 10px', fontSize: '9px', fontWeight: 700, borderRadius: '20px', background: editingPatient?.sourceOfInfo === opt ? '#0f52ba' : '#f8fafc', color: editingPatient?.sourceOfInfo === opt ? 'white' : '#475569', border: `1px solid ${editingPatient?.sourceOfInfo === opt ? '#0f52ba' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s ease' }}>
-                  {opt}
-                </button>
-              ))}
-            </div>
+            <PatientSourceSelect value={editingPatient?.sourceOfInfo || ''} onChange={v => setEditingPatient({ ...editingPatient, sourceOfInfo: v })} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>

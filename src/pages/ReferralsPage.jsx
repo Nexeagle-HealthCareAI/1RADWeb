@@ -1648,6 +1648,34 @@ export default function ReferralsPage() {
   // primary. It used to be rebuilt in the browser from whatever the page-level date range had loaded -
   // so choosing Month / Year (or another week) showed only that range's visits, and the Day view put
   // every visit in "Morning" because visits carried no time.
+  // "How They Heard": patients by the channel recorded at registration (/referrers/acquisition-sources),
+  // for the same date range the rest of the page uses.
+  const [channelData, setChannelData] = useState({ data: null, loading: false, error: null });
+  const channelSeq = useRef(0);
+  useEffect(() => {
+    if (activeTab !== 'Referrals' || referralViewMode !== 'CHANNELS') return;
+    const seq = ++channelSeq.current;
+    setChannelData(prev => ({ ...prev, loading: true, error: null }));
+    const params = referralFilterMode === 'ALL'
+      ? {}
+      : { startDate: referralRange.start, endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end };
+    apiClient.get('/referrers/acquisition-sources', { params })
+      .then(res => {
+        if (seq !== channelSeq.current) return;
+        setChannelData({ data: res.data || null, loading: false, error: null });
+      })
+      .catch(err => {
+        if (seq !== channelSeq.current) return;
+        console.error('[PATIENT SOURCES] Live fetch failed', err);
+        setChannelData(prev => ({ ...prev, loading: false, error: 'Could not load this report - the figures below may be out of date.' }));
+      });
+  }, [activeTab, referralViewMode, referralRange, referralFilterMode]);
+  const channelRangeLabel = referralFilterMode === 'ALL'
+    ? 'all time'
+    : (referralFilterMode === 'SINGLE' || referralRange.start === referralRange.end
+        ? referralRange.start
+        : `${referralRange.start} to ${referralRange.end}`);
+
   const [matrixServer, setMatrixServer] = useState({ cols: [], rows: [], loading: false, error: null });
   const matrixSeq = useRef(0);
   useEffect(() => {
@@ -1949,6 +1977,8 @@ export default function ReferralsPage() {
         referralRange={referralRange}
         referralRosterSearch={referralRosterSearch}
         referralViewMode={referralViewMode}
+        channelData={channelData}
+        channelRangeLabel={channelRangeLabel}
         rosterSort={rosterSort}
         selectedLedgerRows={selectedLedgerRows}
         selectedLinks={selectedLinks}

@@ -1,5 +1,6 @@
 import React from 'react';
 import DoctorLinksView from './DoctorLinksView';
+import PatientSourcesView from './PatientSourcesView';
 import { getReferrerProfileCompletion, completionColor } from './referrerProfile';
 import { sortArrow } from './sortArrow';
 import { getISODate, getOverviewDates } from './dateRanges';
@@ -70,6 +71,8 @@ export default function ReferralIntelligencePanel({
   referralRange,
   referralRosterSearch,
   referralViewMode,
+  channelData,
+  channelRangeLabel,
   rosterSort,
   selectedLedgerRows,
   selectedLinks,
@@ -171,7 +174,7 @@ export default function ReferralIntelligencePanel({
               msOverflowStyle: 'none',
               gap: '4px'
             }}>
-              {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS', 'LINKS'].map(mode => (
+              {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS', 'LINKS', 'CHANNELS'].map(mode => (
                 <button 
                   key={mode} 
                   onClick={() => {
@@ -190,14 +193,15 @@ export default function ReferralIntelligencePanel({
                     flex: isMobile ? '0 0 auto' : 1
                   }}
                 >
-                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : mode === 'PATIENTS' ? 'Patient Section' : 'Doctor Links'}
+                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : mode === 'PATIENTS' ? 'Patient Section' : mode === 'CHANNELS' ? 'How They Heard' : 'Doctor Links'}
                 </button>
               ))}
             </div>
           </div>
           
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', alignItems: isMobile ? 'stretch' : 'center' }}>
-             {/* Unified Search Sub-node */}
+             {/* Unified Search Sub-node (the How They Heard report has nothing to search) */}
+             {referralViewMode !== 'CHANNELS' && (
              <div style={{ position: 'relative', width: isMobile ? '100%' : '240px' }}>
                 <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.3, fontSize: '12px' }}>🔍</span>
                 <input 
@@ -228,6 +232,7 @@ export default function ReferralIntelligencePanel({
                   }} 
                 />
              </div>
+             )}
 
               {/* Person-type filter (#2) — Doctor / Other / Self (Self only where it applies) */}
               {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG' || referralViewMode === 'ROSTER') && (
@@ -401,7 +406,15 @@ export default function ReferralIntelligencePanel({
                 and a row in the Case Ledger matrix grid. (#20) */}
 
             {/* Level 3: Dual-Mode Intelligence List */}
-            {referralViewMode === 'LINKS' ? (
+            {referralViewMode === 'CHANNELS' ? (
+              <PatientSourcesView
+                data={channelData?.data}
+                loading={!!channelData?.loading}
+                error={channelData?.error}
+                rangeLabel={channelRangeLabel}
+                isMobile={isMobile}
+              />
+            ) : referralViewMode === 'LINKS' ? (
               <DoctorLinksView
                 isMobile={isMobile}
                 doctorList={doctorList}
