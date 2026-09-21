@@ -44,6 +44,12 @@ const getYesterdayString = () => {
   return d.toLocaleDateString('en-CA');
 };
 const YESTERDAY = getYesterdayString();
+// Pure YYYY-MM-DD arithmetic (no clock), used to window the paid-invoice lookup.
+const shiftIsoDate = (isoDate, days) => {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
 
 // --- CONSTANTS ---
 
@@ -217,22 +223,16 @@ export default function AppointmentBoard() {
   // day), and paged with a cursor so nothing is truncated. The invoice date
   // filter is on invoice CreatedAt, and a visit can be pre-paid when it is
   // booked, so look back 30 days before the first visible day.
-  const istDaysAgo = (days) => new Date(Date.now() - days * 24 * 3600 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const shiftIstDate = (isoDate, days) => {
-    const d = new Date(`${isoDate}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
   const paidWindowFirstDay = activeTab === 'TODAY'
     ? filters.date
     : activeTab === 'FUTURE'
-      ? istDaysAgo(0)
+      ? TODAY
       : (archiveFilterMode === 'RANGE'
         ? pastDateRange.start
         : archiveFilterMode === 'YESTERDAY'
           ? YESTERDAY
-          : istDaysAgo(60));
-  const paidWindowStart = shiftIstDate(paidWindowFirstDay || istDaysAgo(0), -30);
+          : shiftIsoDate(TODAY, -60));
+  const paidWindowStart = shiftIsoDate(paidWindowFirstDay || TODAY, -30);
   const fetchPaidApptIds = useCallback(async () => {
     try {
       const ids = new Set();
@@ -1245,6 +1245,156 @@ export default function AppointmentBoard() {
          setIsAddPatientOpen(false);
       }
     }
+  };
+
+  // Step 1 -> Step 2 of the booking flow: validates the patient/referrer,
+  // registers a new patient (or syncs an existing one) and advances. Shared by
+  // the desktop drawer and the mobile flow so both end up with a real patientId
+  // before handleBookAppointment runs.
+  const handleProceedToDetails = async () => {
+    if (isNewPatientIncomplete) {
+      setShowBookingValidation(true);
+      return;
+    }
+    if (isReferrerMissing) {
+      showNotif('warning', 'REFERRED BY REQUIRED', 'Please enter who referred this patient. Use the “Self / walk-in” button if there is no referrer.');
+      return;
+    }
+    if (isSupportedDoctorMissing) {
+      showNotif('warning', 'DOCTOR NAME REQUIRED', 'Please enter the supporting doctor for this referral before continuing.');
+      return;
+    }
+
+    // Referral source: a brand-new (free-typed) name with an
+    // optional mobile that, if present, must be 10 digits. Create
+    // it so the booking links to a real referrerId. Best-effort —
+    // if the create fails we still proceed with the free-text name.
+    if (!isReferrerContactValid) {
+      showNotif('error', 'INVALID REFERRER MOBILE', 'Referral source mobile must be exactly 10 digits, or left blank.');
+      return;
+    }
+    let resolvedReferrerId = newPatient.referrerId;
+    if (!resolvedReferrerId && newPatient.referredBy.trim() && isOnline) {
+      try {
+        const refRes = await apiClient.post('/referrers', {
+          name: newPatient.referredBy.trim(),
+          contact: newPatient.referrerContact || '',
+          address: newPatient.referrerAddress || '',
+        });
+        resolvedReferrerId = refRes.data?.referrerId || refRes.data?.id || null;
+        if (resolvedReferrerId) {
+          setNewPatient(prev => ({ ...prev, referrerId: resolvedReferrerId }));
+          fetchReferrers('');
+        }
+      } catch (err) {
+        console.warn('[REFERRER] Inline create failed; proceeding with free-text name.', err?.message || err);
+      }
+    }
+
+    // Case A: NEW PATIENT (Registration).
+    // Offline-first — if the device is offline
+    // OR the request fails with no response
+    // (network drop / DNS hiccup), generate a
+    // temp ID, queue PATIENT_CREATE in the
+    // outbox, and let the booking flow
+    // continue. The SyncEngine drains the
+    // outbox on reconnect and rewrites the
+    // tempId on the linked APPOINTMENT_CREATE.
+    if (!newBooking.patientId && newPatient.name.trim()) {
+      const patientPayload = {
+        fullName: newPatient.name,
+        mobile: newPatient.mobile,
+        age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
+        gender: newPatient.gender,
+        village: newPatient.village,
+        block: newPatient.block,
+        district: newPatient.district,
+        address: newPatient.address,
+        sourceOfInfo: newPatient.sourceOfInfo,
+        referrerId: resolvedReferrerId,
+      };
+
+      // One stable key for this registration — shared by
+      // the online attempt and the outbox fallback so a
+      // lost-response retry can't create the patient twice.
+      const patientIdemKey = crypto.randomUUID();
+      if (!isOnline) {
+        const tempId = `temp-${Date.now()}`;
+        await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId }, patientIdemKey);
+        setNewBooking(prev => ({ ...prev, patientId: tempId }));
+        showNotif('info', 'QUEUED FOR SYNC', 'Patient profile saved locally. Will register on the server when connection is restored.');
+      } else {
+        try {
+          const response = await apiClient.post('/patients', patientPayload, { headers: { 'Idempotency-Key': patientIdemKey } });
+          const patientId = response.data.patientId;
+          if (!patientId) throw new Error("API returned invalid patient identity");
+          setNewBooking(prev => ({...prev, patientId}));
+          fetchPatients('');
+        } catch (error) {
+          console.error('Failed to auto-register patient:', error);
+          // Network-level failure → queue to
+          // outbox and continue. Only block
+          // when the server actually responded
+          // with a validation error.
+          if (!error.response) {
+            const tempId = `temp-${Date.now()}`;
+            await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId }, patientIdemKey);
+            setNewBooking(prev => ({ ...prev, patientId: tempId }));
+            showNotif('info', 'QUEUED FOR SYNC', 'Network unavailable. Patient profile saved locally and will sync when reconnected.');
+          } else {
+            const serverMsg = error.response?.data?.error
+              || error.response?.data?.message
+              || 'Patient registration could not be completed.';
+            showNotif('error', 'REGISTRATION FAILED', serverMsg);
+            return;
+          }
+        }
+      }
+    }
+    // Case B: EXISTING PATIENT (Demographic Sync).
+    // Best-effort — skip silently when offline,
+    // queue a PATIENT_UPDATE only if the user
+    // actually changed something. The booking
+    // continues regardless (a server-side
+    // demographic update is not critical for
+    // proceeding with the visit).
+    else if (newBooking.patientId && !String(newBooking.patientId).startsWith('temp-')) {
+      const updatePayload = {
+        patientId: newBooking.patientId,
+        fullName: newPatient.name,
+        mobile: newPatient.mobile,
+        age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
+        gender: newPatient.gender,
+        village: newPatient.village,
+        block: newPatient.block,
+        district: newPatient.district,
+        address: newPatient.address,
+        sourceOfInfo: newPatient.sourceOfInfo,
+        referrerId: resolvedReferrerId,
+      };
+      if (!isOnline) {
+        try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
+      } else {
+        try {
+          await apiClient.put(`/patients/${newBooking.patientId}`, updatePayload);
+        } catch (error) {
+          console.error('Failed to sync existing patient demographics:', error);
+          if (!error.response) {
+            try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
+          }
+        }
+      }
+    }
+
+    // Advance to Clinical Configuration. Default the Lead
+    // Specialist to the first available doctor so step 2
+    // opens with a selection already made.
+    setNewBooking(prev => ({
+      ...prev,
+      doctor: prev.doctor || (doctors && doctors.length > 0 ? doctors[0] : '')
+    }));
+    setBookingStep(2);
+    setShowBookingValidation(false);
   };
 
   const handleBookAppointment = async () => {
@@ -3665,15 +3815,15 @@ export default function AppointmentBoard() {
                   <div className="android-form-group">
                     <label className="android-label">ASSIGN SPECIALIST ON DUTY</label>
                     <div className="android-quick-tray">
-                      {doctors.map(d => {
-                        const isSel = newBooking.doctor?.name === d.name;
+                      {doctors.map((d, idx) => {
+                        const isSel = newBooking.doctor === d;
                         return (
                           <button
-                            key={d.id || d.name}
+                            key={`${d}_${idx}`}
                             type="button"
                             className={`android-quick-chip ${isSel ? 'selected' : ''}`}
                             onClick={() => setNewBooking({ ...newBooking, doctor: d })}
-                          >👨‍⚕️ {d.name}</button>
+                          >👨‍⚕️ {d}</button>
                         );
                       })}
                     </div>
@@ -3727,13 +3877,7 @@ export default function AppointmentBoard() {
               <button
                 type="button"
                 className="android-btn-primary"
-                onClick={() => {
-                  if (!newPatient.name.trim() || !newPatient.age.trim()) {
-                    setShowBookingValidation(true);
-                    return;
-                  }
-                  setBookingStep(2);
-                }}
+                onClick={handleProceedToDetails}
               >NEXT: STUDY DETAILS ➔</button>
             </>
           ) : (
@@ -3746,13 +3890,7 @@ export default function AppointmentBoard() {
               <button
                 type="button"
                 className="android-btn-primary success"
-                onClick={() => {
-                  if (!newBooking.service.trim() || !newBooking.amount.toString().trim()) {
-                    alert('Please select or enter a study procedure and amount.');
-                    return;
-                  }
-                  handleBookAppointment();
-                }}
+                onClick={handleBookAppointment}
               >🚀 CONFIRM • ₹{newBooking.amount || '0'}</button>
             </>
           )}
@@ -4470,151 +4608,7 @@ export default function AppointmentBoard() {
                             cursor: isPatientStepIncomplete ? 'not-allowed' : 'pointer',
                             opacity: isPatientStepIncomplete ? 0.8 : 1,
                           }}
-                          onClick={async () => {
-                            if (isNewPatientIncomplete) {
-                              setShowBookingValidation(true);
-                              return;
-                            }
-                            if (isReferrerMissing) {
-                              showNotif('warning', 'REFERRED BY REQUIRED', 'Please enter who referred this patient. Use the “Self / walk-in” button if there is no referrer.');
-                              return;
-                            }
-                            if (isSupportedDoctorMissing) {
-                              showNotif('warning', 'DOCTOR NAME REQUIRED', 'Please enter the supporting doctor for this referral before continuing.');
-                              return;
-                            }
-
-                            // Referral source: a brand-new (free-typed) name with an
-                            // optional mobile that, if present, must be 10 digits. Create
-                            // it so the booking links to a real referrerId. Best-effort —
-                            // if the create fails we still proceed with the free-text name.
-                            if (!isReferrerContactValid) {
-                              showNotif('error', 'INVALID REFERRER MOBILE', 'Referral source mobile must be exactly 10 digits, or left blank.');
-                              return;
-                            }
-                            let resolvedReferrerId = newPatient.referrerId;
-                            if (!resolvedReferrerId && newPatient.referredBy.trim() && isOnline) {
-                              try {
-                                const refRes = await apiClient.post('/referrers', {
-                                  name: newPatient.referredBy.trim(),
-                                  contact: newPatient.referrerContact || '',
-                                  address: newPatient.referrerAddress || '',
-                                });
-                                resolvedReferrerId = refRes.data?.referrerId || refRes.data?.id || null;
-                                if (resolvedReferrerId) {
-                                  setNewPatient(prev => ({ ...prev, referrerId: resolvedReferrerId }));
-                                  fetchReferrers('');
-                                }
-                              } catch (err) {
-                                console.warn('[REFERRER] Inline create failed; proceeding with free-text name.', err?.message || err);
-                              }
-                            }
-
-                            // Case A: NEW PATIENT (Registration).
-                            // Offline-first — if the device is offline
-                            // OR the request fails with no response
-                            // (network drop / DNS hiccup), generate a
-                            // temp ID, queue PATIENT_CREATE in the
-                            // outbox, and let the booking flow
-                            // continue. The SyncEngine drains the
-                            // outbox on reconnect and rewrites the
-                            // tempId on the linked APPOINTMENT_CREATE.
-                            if (!newBooking.patientId && newPatient.name.trim()) {
-                              const patientPayload = {
-                                fullName: newPatient.name,
-                                mobile: newPatient.mobile,
-                                age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
-                                gender: newPatient.gender,
-                                village: newPatient.village,
-                                block: newPatient.block,
-                                district: newPatient.district,
-                                address: newPatient.address,
-                                sourceOfInfo: newPatient.sourceOfInfo,
-                                referrerId: resolvedReferrerId,
-                              };
-
-                              // One stable key for this registration — shared by
-                              // the online attempt and the outbox fallback so a
-                              // lost-response retry can't create the patient twice.
-                              const patientIdemKey = crypto.randomUUID();
-                              if (!isOnline) {
-                                const tempId = `temp-${Date.now()}`;
-                                await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId }, patientIdemKey);
-                                setNewBooking(prev => ({ ...prev, patientId: tempId }));
-                                showNotif('info', 'QUEUED FOR SYNC', 'Patient profile saved locally. Will register on the server when connection is restored.');
-                              } else {
-                                try {
-                                  const response = await apiClient.post('/patients', patientPayload, { headers: { 'Idempotency-Key': patientIdemKey } });
-                                  const patientId = response.data.patientId;
-                                  if (!patientId) throw new Error("API returned invalid patient identity");
-                                  setNewBooking(prev => ({...prev, patientId}));
-                                  fetchPatients('');
-                                } catch (error) {
-                                  console.error('Failed to auto-register patient:', error);
-                                  // Network-level failure → queue to
-                                  // outbox and continue. Only block
-                                  // when the server actually responded
-                                  // with a validation error.
-                                  if (!error.response) {
-                                    const tempId = `temp-${Date.now()}`;
-                                    await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId }, patientIdemKey);
-                                    setNewBooking(prev => ({ ...prev, patientId: tempId }));
-                                    showNotif('info', 'QUEUED FOR SYNC', 'Network unavailable. Patient profile saved locally and will sync when reconnected.');
-                                  } else {
-                                    const serverMsg = error.response?.data?.error
-                                      || error.response?.data?.message
-                                      || 'Patient registration could not be completed.';
-                                    showNotif('error', 'REGISTRATION FAILED', serverMsg);
-                                    return;
-                                  }
-                                }
-                              }
-                            }
-                            // Case B: EXISTING PATIENT (Demographic Sync).
-                            // Best-effort — skip silently when offline,
-                            // queue a PATIENT_UPDATE only if the user
-                            // actually changed something. The booking
-                            // continues regardless (a server-side
-                            // demographic update is not critical for
-                            // proceeding with the visit).
-                            else if (newBooking.patientId && !String(newBooking.patientId).startsWith('temp-')) {
-                              const updatePayload = {
-                                patientId: newBooking.patientId,
-                                fullName: newPatient.name,
-                                mobile: newPatient.mobile,
-                                age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
-                                gender: newPatient.gender,
-                                village: newPatient.village,
-                                block: newPatient.block,
-                                district: newPatient.district,
-                                address: newPatient.address,
-                                sourceOfInfo: newPatient.sourceOfInfo,
-                                referrerId: resolvedReferrerId,
-                              };
-                              if (!isOnline) {
-                                try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
-                              } else {
-                                try {
-                                  await apiClient.put(`/patients/${newBooking.patientId}`, updatePayload);
-                                } catch (error) {
-                                  console.error('Failed to sync existing patient demographics:', error);
-                                  if (!error.response) {
-                                    try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
-                                  }
-                                }
-                              }
-                            }
-
-                            // Advance to Clinical Configuration. Default the Lead
-                            // Specialist to the first available doctor so step 2
-                            // opens with a selection already made.
-                            setNewBooking(prev => ({
-                              ...prev,
-                              doctor: prev.doctor || (doctors && doctors.length > 0 ? doctors[0] : '')
-                            }));
-                            setBookingStep(2);
-                            setShowBookingValidation(false);
-                          }}
+                          onClick={handleProceedToDetails}
                         >
                           PROCEED {'\u2192'} APPOINTMENT DETAILS
                         </button>
