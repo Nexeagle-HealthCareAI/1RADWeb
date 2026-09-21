@@ -113,7 +113,9 @@ export default function ReferralIntelligencePanel({
   sortedRoster,
   submitLinkSend,
   temporalMatrixData,
-  temporalPatients,
+  totalAttendedVisits,
+  loadMoreSourceVisits,
+  retrySourceVisits,
   toggleAllLedger,
   toggleLedgerSelection,
   toggleLinkSel,
@@ -130,7 +132,8 @@ export default function ReferralIntelligencePanel({
     const visitServices = (p) => (Array.isArray(p.serviceLines) && p.serviceLines.length > 0
       ? p.serviceLines.map(l => l.serviceName).filter(Boolean).join(' + ')
       : (p.service || ''));
-    const totalPatientsCount = temporalPatients.length;
+    // A server total across every source (the summary carries no visit rows to count).
+    const totalPatientsCount = totalAttendedVisits || 0;
     const totalMissions = referralAggregated.reduce((acc, curr) => acc + curr.patients.length, 0);
     const totalPayout = referralAggregated.reduce((acc, curr) => acc + (curr.totalCommission || 0), 0);
     const paidPayout = referralAggregated.reduce((acc, curr) => acc + (curr.paidCommission || 0), 0);
@@ -879,7 +882,7 @@ export default function ReferralIntelligencePanel({
                              <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: isSelected ? 'white' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: '1px solid #f1f5f9' }}>👤</div>
                              <div>
                                 <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
-                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>{referralSort?.key && referralSort.key !== 'name' ? `RANK #${i + 1} • ` : ''}{s.patients.length} {s.patients.length === 1 ? 'VISIT' : 'VISITS'}{(s.noShows || s.bookedPending) ? ` • ${s.noShows ? `${s.noShows} NO-SHOW` : ''}${s.noShows && s.bookedPending ? ' • ' : ''}${s.bookedPending ? `${s.bookedPending} BOOKED` : ''}` : ''}</div>
+                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>{referralSort?.key && referralSort.key !== 'name' ? `RANK #${i + 1} • ` : ''}{s.totalPatients} {s.totalPatients === 1 ? 'VISIT' : 'VISITS'}{(s.noShows || s.bookedPending) ? ` • ${s.noShows ? `${s.noShows} NO-SHOW` : ''}${s.noShows && s.bookedPending ? ' • ' : ''}${s.bookedPending ? `${s.bookedPending} BOOKED` : ''}` : ''}</div>
                                  <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
                                     <div style={{ fontSize: '8px', fontWeight: 950, color: '#059669' }}>₹{(s.paidCommission || 0).toLocaleString()} PAID</div>
                                     <div style={{ fontSize: '8px', fontWeight: 950, color: '#dc2626' }}>₹{(s.unpaidCommission || 0).toLocaleString()} PENDING</div>
@@ -948,7 +951,7 @@ export default function ReferralIntelligencePanel({
                     (() => {
                       const selected = referralAggregated.find(r => r.referrerId === expandedReferrer);
                       if (!selected) return null;
-                      const percentage = totalPatientsCount > 0 ? (selected.patients.length / totalPatientsCount) * 100 : 0;
+                      const percentage = totalPatientsCount > 0 ? (selected.totalPatients / totalPatientsCount) * 100 : 0;
 
 return (
                         <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
@@ -958,7 +961,7 @@ return (
                                 <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '15px' }}>
                                     <div style={{ padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#2563eb' }}>
-                                       {selected.patients.length} {selected.patients.length === 1 ? 'Visit' : 'Visits'}
+                                       {selected.totalPatients} {selected.totalPatients === 1 ? 'Visit' : 'Visits'}
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#ecfdf5', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#059669' }}>
                                        ₹{(selected.totalRevenue || 0).toLocaleString()} Billed
@@ -1041,7 +1044,7 @@ return (
                                  // the patient NAME within the selected date range - two different people called RAM KUMAR
                                  // counted as one, and anyone seen once in the range counted as "new" even if they had
                                  // been coming for years.) An older API falls back to distinct patient ids.
-                                 const totalScans = selected.patients.length;
+                                 const totalScans = selected.totalPatients;
                                  const uniqueCount = selected.uniquePatients ?? new Set((selected.patients || []).map(p => p.patientId)).size;
                                  const newCount = selected.newPatients ?? uniqueCount;
                                  const repeatCount = selected.returningVisits ?? Math.max(0, totalScans - newCount);
@@ -1225,6 +1228,26 @@ return (
                                 </div>
                             )}
                              </div>
+                             {(selected.visitsError || selected.visitsLoading || selected.patients.length < selected.totalPatients) && (
+                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', padding: '14px 4px 0' }}>
+                                 <div style={{ fontSize: '11px', fontWeight: 700, color: selected.visitsError ? '#b91c1c' : '#64748b' }}>
+                                   {selected.visitsError
+                                     ? selected.visitsError
+                                     : (selected.visitsLoading && selected.patients.length === 0)
+                                       ? 'Loading visits…'
+                                       : `Showing ${selected.patients.length} of ${selected.totalPatients} visits`}
+                                 </div>
+                                 {selected.visitsError ? (
+                                   <button type="button" onClick={() => retrySourceVisits(selected.sourceKey)}
+                                     style={{ padding: '7px 14px', borderRadius: '10px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>Retry</button>
+                                 ) : (selected.patients.length < selected.totalPatients && !(selected.visitsLoading && selected.patients.length === 0)) && (
+                                   <button type="button" disabled={selected.visitsLoading} onClick={() => loadMoreSourceVisits(selected.sourceKey)}
+                                     style={{ padding: '7px 14px', borderRadius: '10px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '10px', fontWeight: 950, cursor: selected.visitsLoading ? 'wait' : 'pointer', opacity: selected.visitsLoading ? 0.6 : 1 }}>
+                                     {selected.visitsLoading ? 'Loading…' : 'Load more'}
+                                   </button>
+                                 )}
+                               </div>
+                             )}
                           </div>
                         </div>
                       );
@@ -1519,7 +1542,7 @@ return (
               </div>
             )}
 
-            {referralViewMode !== 'LINKS' && (referralViewMode === 'LOG' ? (temporalMatrixData?.rows.length === 0) : (temporalPatients.length === 0)) && (
+            {referralViewMode !== 'LINKS' && (referralViewMode === 'LOG' ? (temporalMatrixData?.rows.length === 0) : (totalPatientsCount === 0)) && (
               <div style={{ padding: '150px 20px', textAlign: 'center', background: 'white', borderRadius: '40px', border: '1px dashed #cbd5e1' }}>
                 <div style={{ fontSize: '60px', marginBottom: '25px' }}>📡</div>
                 <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO REFERRAL DATA FOUND</div>

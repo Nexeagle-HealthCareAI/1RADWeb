@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
+import useSourceVisits from '../hooks/useSourceVisits';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
@@ -135,6 +136,16 @@ export default function ReferralsPage() {
   const [expandedReferrer, setExpandedReferrer] = useState(null);
   const [personnel, setPersonnel] = useState([]);
   const [referralIntelligence, setReferralIntelligence] = useState([]);
+
+  // Source Analytics loads a SUMMARY (one row per source, every total, no visit rows) and fetches a
+  // source's visits only when it is opened, a page at a time (useSourceVisits). The old single call
+  // returned every visit of every source for the whole range, which got slower with every month of
+  // history. Rows are cached per source AND date range.
+  const rangeParams = useMemo(() => (referralFilterMode === 'ALL'
+    ? {}
+    : { startDate: referralRange.start, endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end }),
+  [referralRange, referralFilterMode]);
+  const { sourceVisits, loadSourceVisits, peek: peekVisits, rangeKey } = useSourceVisits(rangeParams);
   const [allReferrers, setAllReferrers] = useState([]);
   const [referralLoading, setReferralLoading] = useState(false);
   // Live-data health for the intelligence/roster fetch: last error (null when the
@@ -496,7 +507,12 @@ export default function ReferralsPage() {
     : (p.service || ''));
 
   const handleExportLedger = (type) => {
-    const selectedData = referralIntelligence.flatMap(r => r.patients).filter(p => selectedLedgerRows.includes(p.appointmentId || p.patientId));
+    // Rows come from whatever the screen has loaded (a summary carries none; opened sources hold theirs).
+    const loadedRows = new Map();
+    [...referralIntelligence.flatMap(r => r.patients || []),
+     ...Object.values(sourceVisits).filter(v => v.rangeKey === rangeKey).flatMap(v => v.rows)]
+      .forEach(p => loadedRows.set(p.appointmentId || p.patientId, p));
+    const selectedData = [...loadedRows.values()].filter(p => selectedLedgerRows.includes(p.appointmentId || p.patientId));
     if (selectedData.length === 0) return;
 
     if (type === 'EXCEL') {
@@ -857,8 +873,12 @@ export default function ReferralsPage() {
             startDate: startDate || referralRange.start,
             endDate: endDate || (referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end)
           };
+      // Summary first; an API that predates it (404) answers the full endpoint, whose rows the
+      // screen then simply uses as already loaded.
+      const loadIntel = () => apiClient.get('/referrers/intelligence/summary', { params })
+        .catch(err => (err?.response?.status === 404 ? apiClient.get('/referrers/intelligence', { params }) : Promise.reject(err)));
       const [res, allRes] = await Promise.all([
-        apiClient.get('/referrers/intelligence', { params }),
+        loadIntel(),
         apiClient.get('/referrers'),
       ]);
       if (seq !== intelSeq.current) return;
@@ -1362,29 +1382,11 @@ export default function ReferralsPage() {
   const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
 
   // Referral Intelligence Logic (Moved to top-level to satisfy Rules of Hooks)
-  const temporalPatients = useMemo(() => {
-    // Flatten all patients from grouped intelligence data
-    const allPatients = referralIntelligence.flatMap(ref => 
-      ref.patients.map(p => ({
-        ...p,
-        referredBy: p.referrerName || ref.name,
-        sourceContact: ref.contact,
-        sourceAddress: ref.address,
-        registered: p.registrationDate // Alias for consistency
-      }))
-    );
-
-    if (referralViewMode === 'LOG' && referralLogSearch) {
-      const searchLow = referralLogSearch.toLowerCase();
-      return allPatients.filter(p => {
-        const sourceMatch = (p.referredBy || '').toLowerCase().includes(searchLow);
-        const patientMatch = (p.name || '').toLowerCase().includes(searchLow);
-        return sourceMatch || patientMatch;
-      });
-    }
-
-    return allPatients;
-  }, [referralIntelligence, referralLogSearch, referralViewMode]);
+  // Every attended visit in range, across all sources (a server total - the summary has no rows).
+  const totalAttendedVisits = useMemo(
+    () => (referralIntelligence || []).reduce((n, r) => n + (r.totalPatients || 0), 0),
+    [referralIntelligence]
+  );
 
   const caseLedgerList = useMemo(() => {
     const safeAll = allReferrers || [];
@@ -1532,7 +1534,12 @@ export default function ReferralsPage() {
       // server provided it - so a single patient referred for X-Ray + CT + USG contributes 3 counts
       // (one per modality) rather than 1 attributed to the primary scalar. Falls back to the scalar
       // modality when the server is older or the entry has no service lines.
-      const modalities = ref.patients.reduce((acc, p) => {
+      const key = ref.sourceKey || String(ref.referrerId);
+      const cached = sourceVisits[key];
+      const cachedForRange = cached && cached.rangeKey === rangeKey ? cached : null;
+      const inlineRows = Array.isArray(ref.patients) ? ref.patients : [];
+      const rows = inlineRows.length > 0 ? inlineRows : (cachedForRange ? cachedForRange.rows : []);
+      const derivedModalities = rows.reduce((acc, p) => {
         const lines = Array.isArray(p.serviceLines) ? p.serviceLines : null;
         if (lines && lines.length > 0) {
           for (const line of lines) {
@@ -1545,13 +1552,21 @@ export default function ReferralsPage() {
         }
         return acc;
       }, {});
+      // The server counts the modality mix over EVERY visit of the source; only an older API lacks it.
+      const modalities = ref.modalities || derivedModalities;
 
       return {
         referrerId: ref.referrerId,
+        sourceKey: key,
         name: ref.name,
         contact: ref.contact,
         address: ref.address,
-        patients: ref.patients,
+        patients: rows,
+        // The number of attended visits is a server total; `patients` is only what has been loaded so far.
+        totalPatients: ref.totalPatients ?? rows.length,
+        visitsInline: inlineRows.length > 0,
+        visitsLoading: !!(cachedForRange && cachedForRange.loading),
+        visitsError: cachedForRange ? cachedForRange.error : null,
         modalities,
         totalCommission: ref.totalCommission,
         paidCommission: ref.paidCommission,
@@ -1579,10 +1594,15 @@ export default function ReferralsPage() {
         if (!mappedIds.has(ref.referrerId)) {
           mapped.push({
             referrerId: ref.referrerId,
+            sourceKey: String(ref.referrerId),
             name: ref.name,
             contact: ref.contact,
             address: ref.address,
             patients: [],
+            totalPatients: 0,
+            visitsInline: false,
+            visitsLoading: false,
+            visitsError: null,
             modalities: {},
             totalCommission: 0,
             paidCommission: 0,
@@ -1621,7 +1641,7 @@ export default function ReferralsPage() {
     const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
     final.sort((a, b) => {
       let cmp;
-      if (referralSort.key === 'missions') cmp = a.patients.length - b.patients.length;
+      if (referralSort.key === 'missions') cmp = (a.totalPatients || 0) - (b.totalPatients || 0);
       else if (referralSort.key === 'yield') cmp = (Number(a.totalCommission) || 0) - (Number(b.totalCommission) || 0);
       else if (referralSort.key === 'pending') cmp = (Number(a.unpaidCommission) || 0) - (Number(b.unpaidCommission) || 0);
       else cmp = byName(a, b);
@@ -1633,7 +1653,7 @@ export default function ReferralsPage() {
 
     const searchLow = referralMatrixSearch.toLowerCase();
     return final.filter(ref => (ref.name || '').toLowerCase().includes(searchLow));
-  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter]);
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter, sourceVisits, rangeKey]);
 
   // Auto-select first referrer in Matrix mode
   useEffect(() => {
@@ -1642,6 +1662,16 @@ export default function ReferralsPage() {
       setExpandedReferrer(referralAggregated[0].referrerId);
     }
   }, [referralViewMode, referralAggregated, expandedReferrer]);
+
+  // Opening a source loads its visits (page 1); every summary refresh quietly re-reads what is on
+  // screen. A source whose rows arrived inline (older API) or that has no visits needs no call.
+  const expandedNode = referralAggregated.find(r => r.referrerId === expandedReferrer);
+  const expandedKey = expandedNode && !expandedNode.visitsInline && expandedNode.totalPatients > 0 ? expandedNode.sourceKey : null;
+  useEffect(() => {
+    if (activeTab !== 'Referrals' || referralViewMode !== 'MATRIX' || !expandedKey) return;
+    const cached = peekVisits(expandedKey);
+    loadSourceVisits(expandedKey, { silent: !!(cached && cached.rangeKey === rangeKey && cached.rows.length > 0) });
+  }, [activeTab, referralViewMode, expandedKey, referralUpdatedAt, rangeKey, loadSourceVisits, peekVisits]);
 
   // The Volume Matrix is computed by the SERVER (/referrers/matrix): IST day / hour buckets, the same
   // attribution and "the patient arrived" rule as Source Analytics, merged duplicates rolled into their
@@ -2019,7 +2049,9 @@ export default function ReferralsPage() {
         sortedRoster={sortedRoster}
         submitLinkSend={submitLinkSend}
         temporalMatrixData={temporalMatrixData}
-        temporalPatients={temporalPatients}
+        totalAttendedVisits={totalAttendedVisits}
+        loadMoreSourceVisits={(key) => loadSourceVisits(key, { more: true })}
+        retrySourceVisits={(key) => loadSourceVisits(key)}
         toggleAllLedger={toggleAllLedger}
         toggleLedgerSelection={toggleLedgerSelection}
         toggleLinkSel={toggleLinkSel}
