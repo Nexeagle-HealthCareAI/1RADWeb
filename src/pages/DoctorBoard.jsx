@@ -6,17 +6,14 @@ import { AuthContext } from '../auth/AuthContext';
 // board's own bundle.
 const ReportPreviewModal = lazy(() => import('../components/ReportPreviewModal'));
 import useOffline from '../hooks/useOffline';
-import { nativeStorage } from '../hooks/useElectron';
 import useTickClock from '../utils/useTickClock';
 import { isPatientArrived } from '../utils/arrival';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { formatPatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
-import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
-import { fingerprintRows } from '../utils/arrayFingerprint';
+import useLiveAppointments from '../hooks/useLiveAppointments';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
-import { syncNow } from '../sync/SyncEngine';
 import { notifyToast } from '../utils/toast';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
@@ -53,12 +50,13 @@ function getDefaultDoctorFilter(user) {
 
 export default function DoctorBoard() {
   const { activeCenter, currentUser } = useContext(AuthContext);
-  const { isOnline, addToOutbox } = useOffline();
+  const { isOnline } = useOffline();
   const navigate = useNavigate();
   // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
   useTickClock();
   const { isOverdue } = useOverdue();
-  const [cases, setCases] = useState([]);
+  // Preview-modal spinner only — the worklist's own loading state comes from
+  // the live hook below.
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('QUEUE'); // 'QUEUE' or 'HISTORY'
   
@@ -107,46 +105,24 @@ export default function DoctorBoard() {
 
 
 
-  // --- WORKLIST (offline-first) ---
-  // Read the reporting worklist from the local Dexie cache via a liveQuery.
-  // Renders instantly, works fully OFFLINE (the SyncEngine keeps the cache fresh
-  // and it survives reloads), and auto-updates on every delta — replacing the
-  // old direct fetch + 5s poll + nativeStorage snapshot fallback.
-  const casesFingerprintRef = useRef('');
-  useEffect(() => {
-    const sub = watchAppointments({ mode: 'all' }).subscribe({
-      next: (rows) => {
-        const allCases = (rows || [])
-          // Cancelled visits never appear on the reporting (doctor) board.
-          .filter(a => String(a.status || '').toUpperCase() !== 'CANCELLED')
-          .map(a => ({
-          ...a,
-          id: a.displayId,
-          priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
-          isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
-        }));
-        // Cheap id+version fingerprint instead of JSON.stringify-ing the
-        // whole worklist on every sync tick just to maybe skip a re-render.
-        const fp = fingerprintRows(allCases);
-        if (fp !== casesFingerprintRef.current) {
-          casesFingerprintRef.current = fp;
-          setCases(allCases);
-        }
-        setLoading(false);
-      },
-      error: (err) => {
-        console.warn('[DOCTOR] worklist liveQuery error', err);
-        setLoading(false);
-      },
-    });
-    return () => sub.unsubscribe();
-  }, [TODAY]);
+  // --- WORKLIST (live backend) ---
+  // The reporting worklist comes straight from the API (recent visits + any
+  // visit not yet finalized), kept fresh by polling. Nothing is cached on disk.
+  const { rows: liveRows, loading: listLoading, refresh: refreshCases, reload: reloadCases, patchRow } = useLiveAppointments({ mode: 'all' });
+  const cases = useMemo(() => liveRows
+    // Cancelled visits never appear on the reporting (doctor) board.
+    .filter(a => String(a.status || '').toUpperCase() !== 'CANCELLED')
+    .map(a => ({
+      ...a,
+      id: a.displayId,
+      priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
+      isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
+    })), [liveRows]);
 
-  // Manual refresh / post-action nudge — force an immediate sync; the liveQuery
-  // re-renders from the refreshed cache. Offline this is a no-op.
+  // Manual refresh / post-action nudge — pull what changed right now.
   const fetchCases = useCallback(async () => {
-    try { await syncNow(['appointments', 'reports']); } catch (err) { console.warn('[DOCTOR] manual sync failed', err?.message || err); }
-  }, []);
+    try { await refreshCases(); } catch (err) { console.warn('[DOCTOR] refresh failed', err?.message || err); }
+  }, [refreshCases]);
 
   // Warm the personnel snapshot; the doctor list renders from watchPersonnel
   // below, so staff changes appear on their own (refreshed each sync cycle).
@@ -205,13 +181,13 @@ export default function DoctorBoard() {
       return;
     }
 
-    // Optimistic cache patch so the worklist reflects it immediately / offline.
-    await patchCachedAppointment(id, (row) => ({ ...row, status: newStatus }));
-
     if (!isOnline) {
-      await addToOutbox('APPOINTMENT_STATUS', { id, status: newStatus });
+      notifyToast({ title: 'No connection', message: 'You are offline — status updates need a live connection.' }, 'error');
       return;
     }
+
+    // Instant in-memory feedback; reverted below if the server rejects it.
+    patchRow(id, (row) => ({ ...row, status: newStatus }));
     try {
       await apiClient.patch(`/appointments/${id}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
@@ -219,11 +195,11 @@ export default function DoctorBoard() {
       fetchCases();
     } catch (err) {
       console.error('[DOCTOR] Status update failed', err);
-      if (!err.response) {
-        await addToOutbox('APPOINTMENT_STATUS', { id, status: newStatus });
-      } else {
-        fetchCases(); // re-sync to revert the optimistic patch
-      }
+      notifyToast({
+        title: 'Status update failed',
+        message: !err.response ? 'No connection to the server — please try again.' : 'Could not update the study status. Please try again.',
+      }, 'error');
+      reloadCases(); // restore the canonical rows (undo the in-memory patch)
     }
   };
 
@@ -798,7 +774,7 @@ export default function DoctorBoard() {
                   </tr>
                 );
               })}
-              {filteredCases.length === 0 && !loading && (
+              {filteredCases.length === 0 && !loading && !listLoading && (
                 <tr>
                   <td colSpan="8" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '11px' }}>
                     No cases found

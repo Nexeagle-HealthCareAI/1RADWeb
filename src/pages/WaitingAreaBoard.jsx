@@ -1,39 +1,37 @@
-import { useState, useEffect } from 'react';
-import { watchAppointments } from '../db/repos/appointmentsRepo';
-import { syncNow } from '../sync/SyncEngine';
+import { useState, useEffect, useMemo } from 'react';
+import useLiveAppointments from '../hooks/useLiveAppointments';
+
+const ACTIVE_STATUSES = ['confirmed', 'in_progress', 'scanned', 'reporting'];
 
 export default function WaitingAreaBoard() {
-  const [missions, setMissions] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // The board now reads today's appointments straight from the local cache via
-  // liveQuery. The sync engine keeps that cache fresh in the background, so the
-  // queue updates on its own the moment a patient is confirmed, scanned, or
-  // moved to reporting — no 15-second polling loop, and it survives a brief
-  // network drop on the waiting-room display.
   useEffect(() => {
-    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    // Warm the cache immediately on mount; the global engine refreshes it after.
-    // Scoped — this is a read-only queue display, only appointments matter.
-    syncNow(['appointments']).catch(() => {});
-
-    const ACTIVE = ['confirmed', 'in_progress', 'scanned', 'reporting'];
-    const sub = watchAppointments({ mode: 'today', dateIso: todayIso }).subscribe({
-      next: (rows) => {
-        const activeMissions = (rows || [])
-          .filter(m => ACTIVE.includes((m.status || '').toLowerCase()))
-          // Waiting-room ordering is by appointment time, ascending (next up first).
-          .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
-        setMissions(activeMissions);
-        setLoading(false);
-      },
-      error: (err) => { console.warn('[WaitingArea] liveQuery error', err); setLoading(false); },
-    });
-
     const clock = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => { sub.unsubscribe(); clearInterval(clock); };
+    return () => clearInterval(clock);
   }, []);
+
+  // Today's queue comes straight from the live backend (no local cache) and
+  // refreshes every 15s. Derived from the ticking clock so the window rolls
+  // over to the new day at midnight on a display that's never reloaded.
+  const todayIso = currentTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const { rows, loading, error, lastUpdatedAt } = useLiveAppointments({
+    mode: 'today',
+    dateIso: todayIso,
+    pollMs: 15_000,
+  });
+
+  const missions = useMemo(() => rows
+    .filter(m => ACTIVE_STATUSES.includes((m.status || '').toLowerCase()))
+    // Waiting-room ordering is by appointment time, ascending (next up first).
+    .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()),
+  [rows]);
+
+  // If the connection drops the screen must never go blank or show an error to
+  // patients in the waiting room — it keeps showing the last successfully
+  // loaded queue (React memory only) with a small "last updated" note, and
+  // clears it by itself as soon as a poll succeeds again.
+  const staleMinutes = error && lastUpdatedAt ? Math.max(1, Math.round((currentTime.getTime() - lastUpdatedAt) / 60000)) : 0;
 
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
@@ -66,6 +64,11 @@ export default function WaitingAreaBoard() {
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '32px', fontWeight: 950 }}>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
           <div style={{ fontSize: '14px', opacity: 0.6, fontWeight: 800 }}>{currentTime.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</div>
+          {staleMinutes > 0 && (
+            <div style={{ fontSize: '12px', opacity: 0.45, fontWeight: 800, marginTop: '4px' }}>
+              LAST UPDATED {staleMinutes} MIN AGO
+            </div>
+          )}
         </div>
       </div>
 
