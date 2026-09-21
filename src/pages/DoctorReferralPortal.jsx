@@ -78,6 +78,10 @@ export default function DoctorReferralPortal() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // An EXPIRED (not revoked) link may ask for a fresh one. The server sends it to the
+  // WhatsApp number / email the centre already has - the browser never supplies an address.
+  const [canRenew, setCanRenew] = useState(false);
+  const [renewal, setRenewal] = useState({ status: 'idle', message: '' }); // idle | sending | sent | failed
   const [intro, setIntro] = useState(true);
   const [range, setRange] = useState('TODAY'); // TODAY | WEEK | MONTH | ALL | CUSTOM — defaults to today's referrals
   const [cStart, setCStart] = useState('');
@@ -104,7 +108,10 @@ export default function DoctorReferralPortal() {
         if (!payload) { setError('This link is invalid or has expired.'); return; }
         setData(payload);
       } catch (e) {
-        if (active) setError(e?.response?.data?.error || 'This link is invalid or has expired.');
+        if (active) {
+          setError(e?.response?.data?.error || 'This link is invalid or has expired.');
+          setCanRenew(!!e?.response?.data?.canRenew);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -233,13 +240,38 @@ export default function DoctorReferralPortal() {
   if (loading) {
     return <Shell><div style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>Loading your dashboard…</div></Shell>;
   }
+  const requestNewLink = async () => {
+    if (renewal.status === 'sending') return;
+    setRenewal({ status: 'sending', message: '' });
+    try {
+      const res = await apiClient.post(`/public/referral/${id}/renew`, null, { params: token ? { token } : undefined });
+      const where = res?.data?.channel === 'email' ? 'email' : 'WhatsApp';
+      setRenewal({ status: 'sent', message: `A fresh link is on its way to your ${where}${res?.data?.maskedTo ? ` (${res.data.maskedTo})` : ''}. It can take a minute to arrive.` });
+    } catch (e) {
+      const d = e?.response?.data;
+      setRenewal({ status: 'failed', message: (!e?.response ? 'No connection - please try again.' : (d?.message || d?.error || 'We could not send a new link. Please ask the diagnostic centre.')) });
+    }
+  };
+
   if (error || !data) {
     return (
       <Shell>
         <div style={{ padding: '70px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: '44px', marginBottom: '10px' }}>🔒</div>
-          <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>Link unavailable</div>
-          <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px' }}>{error || 'This link is invalid or has expired. Please ask the centre for a fresh link.'}</div>
+          <div style={{ fontSize: '44px', marginBottom: '10px' }}>{canRenew ? '⏳' : '🔒'}</div>
+          <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>{canRenew ? 'Your link has expired' : 'Link unavailable'}</div>
+          <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>{error || 'This link is invalid or has expired. Please ask the centre for a fresh link.'}</div>
+          {canRenew && renewal.status !== 'sent' && (
+            <button onClick={requestNewLink} disabled={renewal.status === 'sending'}
+              style={{ marginTop: '20px', padding: '13px 26px', borderRadius: '12px', border: 'none', background: renewal.status === 'sending' ? '#93c5fd' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '13.5px', fontWeight: 900, cursor: renewal.status === 'sending' ? 'not-allowed' : 'pointer' }}>
+              {renewal.status === 'sending' ? 'Sending…' : 'Send me a new link'}
+            </button>
+          )}
+          {renewal.status === 'sent' && (
+            <div style={{ marginTop: '20px', display: 'inline-block', maxWidth: '420px', fontSize: '13px', fontWeight: 800, color: '#166534', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', padding: '12px 16px', lineHeight: 1.5 }}>✓ {renewal.message}</div>
+          )}
+          {renewal.status === 'failed' && (
+            <div style={{ marginTop: '16px', display: 'inline-block', maxWidth: '420px', fontSize: '12.5px', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', padding: '10px 14px', lineHeight: 1.5 }}>{renewal.message}</div>
+          )}
         </div>
       </Shell>
     );

@@ -195,6 +195,18 @@ export default function ReferralsPage() {
   const [referralLinksSearch, setReferralLinksSearch] = useState('');
   const [linkSend, setLinkSend] = useState(null); // { doctor, channel, email, contact, saving, err }
   const [selectedLinks, setSelectedLinks] = useState(() => new Set()); // referrerIds checked in Doctor Links
+  // referrerId -> { lastSentAt, lastSentChannel, lastSentExpiresAt, autoRenew, revokedAt } for the Doctor Links tab
+  const [linkStatus, setLinkStatus] = useState({});
+  const loadLinkStatus = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/referrers/link-status');
+      const map = {};
+      (Array.isArray(data) ? data : []).forEach(r => { map[r.referrerId] = r; });
+      setLinkStatus(map);
+    } catch (err) {
+      console.warn('[DOCTOR LINKS] link status unavailable', err);   // informational only - the tab still works without it
+    }
+  }, []);
   const [bulkSend, setBulkSend] = useState(null); // null | { status:'sending'|'done', channel, sent, skipped, failed }
   const doctorList = useMemo(
     () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
@@ -211,6 +223,7 @@ export default function ReferralsPage() {
   const revokeDoctorLinks = async (referrerId) => {
     await apiClient.post(`/referrers/${referrerId}/revoke-links`);
     notifyToast('Old links stopped working. Send the doctor a fresh link.', 'success');
+    loadLinkStatus();
   };
   const copyDoctorLink = async (referrerId) => {
     try { 
@@ -270,7 +283,7 @@ export default function ReferralsPage() {
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send on WhatsApp.', 'error');
       return null;
-    } finally { setLinksBusy(false); }
+    } finally { setLinksBusy(false); loadLinkStatus(); }
   };
   const emailDoctors = async (ids) => {
     if (!ids.length) { notifyToast('No doctors to email.', 'error'); return null; }
@@ -282,7 +295,7 @@ export default function ReferralsPage() {
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send emails.', 'error');
       return null;
-    } finally { setLinksBusy(false); }
+    } finally { setLinksBusy(false); loadLinkStatus(); }
   };
 
   // ── Doctor-link multi-select + bulk send ──────────────────────────────────
@@ -1104,6 +1117,11 @@ export default function ReferralsPage() {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [activeTab, fetchReferralIntelligence]);
 
+  // Doctor Links tab: show when each doctor's link was sent / expires / renews.
+  useEffect(() => {
+    if (activeTab === 'Referrals' && referralViewMode === 'LINKS') loadLinkStatus();
+  }, [activeTab, referralViewMode, loadLinkStatus]);
+
   // Patient Master List
   useEffect(() => {
     if (activeTab === 'Referrals' && referralViewMode === 'PATIENTS') {
@@ -1923,6 +1941,7 @@ export default function ReferralsPage() {
         caseLedgerList={caseLedgerList}
         copyDoctorLink={copyDoctorLink}
         revokeDoctorLinks={revokeDoctorLinks}
+        linkStatus={linkStatus}
         doctorList={doctorList}
         emailDoctors={emailDoctors}
         expandedReferrer={expandedReferrer}
