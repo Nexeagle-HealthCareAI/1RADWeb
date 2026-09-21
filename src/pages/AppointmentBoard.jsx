@@ -4,7 +4,6 @@ import { QRCodeCanvas } from 'qrcode.react';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
 import useOffline from '../hooks/useOffline';
-import { nativeStorage } from '../hooks/useElectron';
 import { getThermalConfig } from '../utils/thermalPrinter';
 import { printThermalToken } from '../utils/thermalPrint';
 import { isPatientArrived } from '../utils/arrival';
@@ -22,7 +21,7 @@ import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { formatToken } from '../utils/tokenFormat';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
-import { watchAppointments, insertCachedAppointment, applyServerDeltas } from '../db/repos/appointmentsRepo';
+import useLiveAppointments from '../hooks/useLiveAppointments';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
 import { fetchApprovalMap, approvalForAppointment, approvalBadge } from '../utils/approvalLookup';
 import { withDoctorPrefix } from '../utils/referrerFormat';
@@ -119,7 +118,8 @@ export default function AppointmentBoard() {
   const handleMobileSync = async () => {
     setMobileSyncing(true);
     try {
-      await syncNow(['appointments', 'patients']);
+      // Appointments are read live; only patients still sync via the engine.
+      await Promise.all([refreshAppointments(), syncNow(['patients'])]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -162,11 +162,9 @@ export default function AppointmentBoard() {
     end: YESTERDAY 
   });
   const [archiveFilterMode, setArchiveFilterMode] = useState('YESTERDAY'); // 'ALL', 'YESTERDAY', or 'RANGE'
-  const [appointments, setAppointments] = useState([]);
-  const [appointmentsNextCursor, setAppointmentsNextCursor] = useState(null);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
-  // ALL cached appointments (not the active-tab slice) — drives the historical
+  // Recent appointments (not the active-tab slice) — drives the historical
   // "most used services per modality" quick-picks in the booking modal.
+  // Fetched live, once per centre.
   const [statsAppointments, setStatsAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -214,17 +212,53 @@ export default function AppointmentBoard() {
   // and after any action likely to have changed an invoice's paid status (see
   // fetchPaidApptIds() call sites below).
   const [paidApptIds, setPaidApptIds] = useState(() => new Set());
+  // Scoped to the window the board is showing (an unpaginated invoice call is
+  // capped server-side at 200 rows, which would silently drop ticks on a busy
+  // day), and paged with a cursor so nothing is truncated. The invoice date
+  // filter is on invoice CreatedAt, and a visit can be pre-paid when it is
+  // booked, so look back 30 days before the first visible day.
+  const istDaysAgo = (days) => new Date(Date.now() - days * 24 * 3600 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const shiftIstDate = (isoDate, days) => {
+    const d = new Date(`${isoDate}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const paidWindowFirstDay = activeTab === 'TODAY'
+    ? filters.date
+    : activeTab === 'FUTURE'
+      ? istDaysAgo(0)
+      : (archiveFilterMode === 'RANGE'
+        ? pastDateRange.start
+        : archiveFilterMode === 'YESTERDAY'
+          ? YESTERDAY
+          : istDaysAgo(60));
+  const paidWindowStart = shiftIstDate(paidWindowFirstDay || istDaysAgo(0), -30);
   const fetchPaidApptIds = useCallback(async () => {
     try {
-      const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
-      const res = await apiClient.get('/finance/invoices', { params: { status: 'PAID', startDate: cutoff } });
-      const rows = Array.isArray(res?.data) ? res.data : [];
-      setPaidApptIds(new Set(rows.filter(i => i.appointmentId).map(i => i.appointmentId)));
+      const ids = new Set();
+      let cursor = null;
+      for (let page = 0; page < 20; page++) {
+        const res = await apiClient.get('/finance/invoices', {
+          params: { status: 'PAID', startDate: paidWindowStart, pageSize: 500, ...(cursor ? { cursor } : {}) },
+          suppressErrorToast: true,
+        });
+        const items = Array.isArray(res?.data) ? res.data : (res?.data?.items || []);
+        for (const i of items) if (i.appointmentId) ids.add(i.appointmentId);
+        cursor = Array.isArray(res?.data) ? null : (res?.data?.nextCursor || null);
+        if (!cursor) break;
+      }
+      setPaidApptIds(ids);
     } catch (err) {
       console.warn('[AppointmentBoard] paid-invoice fetch failed', err);
     }
-  }, []);
-  useEffect(() => { fetchPaidApptIds(); }, [fetchPaidApptIds]);
+  }, [paidWindowStart]);
+  // Load on mount / window change, then keep it fresh (a payment collected in
+  // Billing shows up here within ~30s) — paused while the tab is hidden.
+  useEffect(() => {
+    fetchPaidApptIds();
+    const id = setInterval(() => { if (!document.hidden) fetchPaidApptIds(); }, 30_000);
+    return () => clearInterval(id);
+  }, [fetchPaidApptIds]);
   // Multi-service edit state. The drawer's draft inputs (service /
   // modality / amount / referralCutValue) on editingAppointment model
   // the "in-progress" line; editServices is the list of lines already
@@ -601,122 +635,6 @@ export default function AppointmentBoard() {
     }
   }, [bookingStep, doctors]);
 
-  // --- API SYNC ---
-  const fetchAppointments = useCallback(async (isLoadMore = false) => {
-    if (!isLoadMore) {
-      setLoading(true);
-    } else {
-      setIsFetchingMore(true);
-    }
-
-    const params = {
-      search: searchQuery,
-      status: filters.status,
-    };
-
-    if (filters.modality && filters.modality !== 'ALL') params.modality = filters.modality;
-    if (filters.doctor && filters.doctor !== 'ALL') params.doctor = filters.doctor;
-
-    if (activeTab === 'TODAY') {
-      params.date = getTodayString();
-    } else if (activeTab === 'FUTURE') {
-      params.isArchive = true;
-      params.startDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-    } else {
-      params.isArchive = true;
-      params.pageSize = 25;
-      if (isLoadMore && appointmentsNextCursor) {
-        params.cursor = appointmentsNextCursor;
-      }
-      if (archiveFilterMode === 'YESTERDAY') {
-        params.startDate = YESTERDAY;
-        params.endDate = YESTERDAY;
-      } else if (archiveFilterMode === 'RANGE') {
-        params.startDate = pastDateRange.start;
-        params.endDate = pastDateRange.end;
-      }
-    }
-
-    const cacheKey = `1rad_cache_appointments_${activeTab}_${activeCenterId}`;
-
-    try {
-      const response = await apiClient.get('/appointments', { params });
-      const rawData = response.data.items || response.data;
-      const nextCursor = response.data.nextCursor || null;
-
-      let mappedData = rawData.map(a => {
-        const appDate = a.date || (a.dateTime ? a.dateTime.split('T')[0] : null);
-        const isFuture = appDate && appDate > getTodayString();
-        const currentStatus = a.status ? a.status.toLowerCase() : 'scheduled';
-        return {
-          ...a,
-          id: a.displayId,
-          appointmentId: a.appointmentId,
-          ptid: a.patientIdentifier,
-          status: isFuture ? 'future' : (currentStatus === 'future' ? 'scheduled' : currentStatus)
-        };
-      });
-
-      // Sort ASCENDING for correct sequential Token Number calculation
-      const chronologicalData = mappedData.sort((a, b) => {
-        const timeA = new Date(a.dateTime || 0).getTime();
-        const timeB = new Date(b.dateTime || 0).getTime();
-        return timeA - timeB;
-      });
-      
-      const itemsWithTokens = chronologicalData.map(item => ({
-        ...item,
-        tokenNo: item.dailyTokenNumber ?? null
-      }));
-      
-      const PRIORITY_RANK = { STAT: 0, URGENT: 1, ROUTINE: 2 };
-      const finalSortedData = itemsWithTokens.sort((a, b) => {
-        const pa = PRIORITY_RANK[a.priority] ?? 2;
-        const pb = PRIORITY_RANK[b.priority] ?? 2;
-        if (pa !== pb) return pa - pb;
-
-        const tokenA = a.tokenNo || 0;
-        const tokenB = b.tokenNo || 0;
-        if (tokenA !== tokenB) return tokenB - tokenA;
-
-        const timeA = new Date(a.dateTime || 0).getTime();
-        const timeB = new Date(b.dateTime || 0).getTime();
-        return timeB - timeA;
-      });
-
-      if (isLoadMore) {
-        setAppointments(prev => {
-          const merged = [...prev, ...finalSortedData];
-          // deduplicate just in case
-          const seen = new Set();
-          return merged.filter(app => {
-            if (seen.has(app.appointmentId)) return false;
-            seen.add(app.appointmentId);
-            return true;
-          });
-        });
-      } else {
-        setAppointments(finalSortedData);
-        if (activeTab === 'TODAY' || activeTab === 'FUTURE') {
-          await nativeStorage.set(cacheKey, finalSortedData);
-        }
-      }
-
-      setAppointmentsNextCursor(nextCursor);
-    } catch (error) {
-      console.error('Failed to fetch appointments:', error);
-      if (!isLoadMore) {
-        const cached = await nativeStorage.get(cacheKey);
-        if (cached) {
-          setAppointments(cached);
-        }
-      }
-    } finally {
-      setLoading(false);
-      setIsFetchingMore(false);
-    }
-  }, [searchQuery, filters, activeTab, pastDateRange, archiveFilterMode, appointmentsNextCursor, activeCenterId]);
-
   // Patient search now goes through the offline-first cache. The actual
   // network pull is the SyncEngine's job; this function only exists to
   // trigger an immediate delta-pull (e.g. right after creating a new
@@ -841,108 +759,78 @@ export default function AppointmentBoard() {
     }
   }, []);
 
-  // Drives post-mutation refresh. Every tab now reads from the local
-  // Dexie cache via liveQuery (TODAY, FUTURE, and PAST all served by the
-  // same cached table — the sync engine pulls every delta without a date
-  // filter, so all three windows are present locally). A successful
-  // mutation just nudges the SyncEngine to pull the delta; the UI
-  // re-renders when the new row lands in local storage.
-  //
-  // Scoped to appointments + patients: every call site here is a status
-  // change, a booking, an edit, or a referrer reassignment on THIS board —
-  // none of them touch invoices/expenses/referral commissions/personnel/
-  // price registry, so there's no reason to wait on those 5 other entities
-  // (previously pulled in full on every single action here).
-  const refreshAppointments = useCallback(() => {
-    syncNow(['appointments', 'patients']);
-  }, []);
+  // Live worklist. Every tab reads straight from the backend (no local cache):
+  // TODAY / FUTURE / PAST are different windows over the same appointments
+  // endpoint, kept fresh by polling. A mutation just calls refreshAppointments()
+  // to pull whatever changed right away.
+  const liveArgs = useMemo(() => {
+    if (activeTab === 'TODAY') {
+      return { mode: 'today', dateIso: filters.date, status: filters.status };
+    }
+    if (activeTab === 'FUTURE') {
+      return { mode: 'future', status: filters.status };
+    }
+    // PAST (the archive tab)
+    let range = {};
+    if (archiveFilterMode === 'YESTERDAY') {
+      range = { startIso: YESTERDAY, endIso: YESTERDAY };
+    } else if (archiveFilterMode === 'RANGE') {
+      range = { startIso: pastDateRange.start, endIso: pastDateRange.end };
+    }
+    return { mode: 'past', ...range, status: filters.status };
+  }, [activeTab, filters.date, filters.status, archiveFilterMode, pastDateRange.start, pastDateRange.end]);
 
-  // TODAY tab: subscribe to the offline cache via liveQuery. The SyncEngine
-  // writes deltas in the background (booted in AuthContext), this just
-  // re-renders every time the local rows change. PAST / FUTURE tabs keep
-  // the old server-fetch + 30s poll path because they're not cached locally
-  // in B1.
+  const {
+    rows: liveRows,
+    loading: listLoading,
+    loadingMore: listLoadingMore,
+    refresh: refreshAppointments,
+    reload: reloadAppointments,
+    patchRow,
+    mergeRows,
+  } = useLiveAppointments(liveArgs);
+
+  // Adapt API rows to the shape the rest of this component expects: alias
+  // displayId → id, patientIdentifier → ptid, and apply the "future booking"
+  // status normalisation.
+  const appointments = useMemo(() => {
+    const today = getTodayString();
+    return liveRows.map((a) => {
+      const appDate = a.dateTime ? a.dateTime.split('T')[0] : null;
+      const isFuture = appDate && appDate > today;
+      const current = a.status ? a.status.toLowerCase() : 'scheduled';
+      return {
+        ...a,
+        id: a.displayId,
+        appointmentId: a.appointmentId,
+        ptid: a.patientIdentifier,
+        tokenNo: a.tokenNo ?? a.dailyTokenNumber ?? null,
+        status: isFuture ? 'future' : (current === 'future' ? 'scheduled' : current),
+      };
+    });
+  }, [liveRows]);
+
   useEffect(() => {
     fetchServiceRegistry();
+  }, [fetchServiceRegistry, activeCenterId]);
 
-    // Build the liveQuery argument shape for whichever tab is active.
-    // The sync engine pulls every appointment delta the user has access
-    // to (no date filter), so PAST and FUTURE are served from the same
-    // cached table that TODAY uses — the mode just controls the slice.
-    let watchArgs;
-    if (activeTab === 'TODAY') {
-      watchArgs = { mode: 'today', dateIso: filters.date, status: filters.status };
-    } else if (activeTab === 'FUTURE') {
-      watchArgs = { mode: 'future', status: filters.status };
-    } else { // PAST (the legacy archive tab)
-      let range = {};
-      if (archiveFilterMode === 'YESTERDAY') {
-        range = { startIso: YESTERDAY, endIso: YESTERDAY };
-      } else if (archiveFilterMode === 'RANGE') {
-        range = { startIso: pastDateRange.start, endIso: pastDateRange.end };
-      }
-      watchArgs = { mode: 'past', ...range, status: filters.status };
-    }
-
-    setLoading(true);
-    let firstEmission = true;
-    const today = getTodayString();
-    const sub = watchAppointments(watchArgs).subscribe({
-      next: (rows) => {
-        // Adapt repo rows to the shape the rest of this component already
-        // expects: alias displayId → id, patientIdentifier → ptid, and apply
-        // the "future booking" status normalisation the old fetch path did
-        // post-response.
-        const adapted = rows.map((a) => {
-          const appDate = a.dateTime ? a.dateTime.split('T')[0] : null;
-          const isFuture = appDate && appDate > today;
-          const current = a.status ? a.status.toLowerCase() : 'scheduled';
-          return {
-            ...a,
-            id: a.displayId,
-            appointmentId: a.appointmentId,
-            ptid: a.patientIdentifier,
-            // The worklist renders app.tokenNo; cached rows may carry it as
-            // dailyTokenNumber — normalise so the arrival token always shows.
-            tokenNo: a.tokenNo ?? a.dailyTokenNumber ?? null,
-            status: isFuture ? 'future' : (current === 'future' ? 'scheduled' : current),
-          };
-        });
-        setAppointments(adapted);
-        if (firstEmission) { firstEmission = false; setLoading(false); }
-      },
-      error: (err) => {
-        console.warn('[AppointmentBoard] liveQuery error', err);
-        setLoading(false);
-      },
-    });
-
-    // Kick an immediate pull so the local cache reflects the freshest server
-    // state right after mount or a tab/date/status switch. The engine's own
-    // 30s interval covers the steady-state case. Online-only; harmless when
-    // offline (sync engine just no-ops). Scoped — this board only reads
-    // appointments/patients, not the other 7 entities.
-    syncNow(['appointments', 'patients']);
-
-    return () => sub.unsubscribe();
-  }, [
-    fetchServiceRegistry, activeCenterId,
-    activeTab,
-    filters.date, filters.status,
-    archiveFilterMode, pastDateRange.start, pastDateRange.end,
-  ]);
-
-  // Historical usage feed — EVERY cached appointment (the sync engine pulls all
-  // of them, no date filter), independent of the active tab/date. Feeds the
-  // "most used services per modality" quick-picks so they reflect real history
-  // for this hospital, not just the day on screen. Re-keyed on centre so it
-  // refreshes when the user switches facilities.
+  // Historical usage feed for the "most used services per modality"
+  // quick-picks — a recent sample of this hospital's bookings (last ~6 months,
+  // newest first, one page) rather than every appointment ever. Live, fetched
+  // once per centre; row-level Services now ride along on list rows.
   useEffect(() => {
-    const sub = watchAppointments({ mode: 'allHistory', status: 'ALL' }).subscribe({
-      next: (rows) => setStatsAppointments(rows || []),
-      error: (err) => console.warn('[AppointmentBoard] stats liveQuery error', err),
-    });
-    return () => sub.unsubscribe();
+    let alive = true;
+    (async () => {
+      try {
+        const since = new Date(Date.now() - 180 * 24 * 3600 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const res = await apiClient.get('/appointments', { params: { startDate: since, pageSize: 1000 }, suppressErrorToast: true });
+        const items = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+        if (alive) setStatsAppointments(items);
+      } catch (err) {
+        console.warn('[AppointmentBoard] usage stats fetch failed', err?.message || err);
+      }
+    })();
+    return () => { alive = false; };
   }, [activeCenterId]);
 
   // Patient drawer search — subscribes to the local cache. Below 3 chars we
@@ -1226,26 +1114,23 @@ export default function AppointmentBoard() {
     }
     else newStatus = actionOrStatus.toLowerCase(); // Direct status update
 
-    // Cache original status to enable rollback if the API request is rejected by the server
-    const originalStatus = app.status;
-
-    // Optimistic UI Update
-    setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: newStatus } : a));
-
     if (!isOnline) {
-      await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
+      showNotif('error', 'NO CONNECTION', 'You are offline — status changes need a live connection. Please reconnect and try again.');
       return;
     }
+
+    // Instant in-memory feedback (the next refresh below is authoritative).
+    patchRow(app.appointmentId, (a) => ({ ...a, status: newStatus }));
 
     try {
       const response = await apiClient.patch(`/appointments/${app.appointmentId}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
       });
-      
+
       const result = response.data;
       if (result && result.notAllowed) {
-        // Rollback the optimistic UI state since it was not allowed by the business rule
-        setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: originalStatus } : a));
+        // Rollback the in-memory status since it was not allowed by the business rule
+        reloadAppointments();
 
         if (result.requiresApproval) {
           // Scenario 04 — a PAID appointment isn't a dead end: capture a reason
@@ -1264,9 +1149,7 @@ export default function AppointmentBoard() {
         // sync to land. The sync below then reconciles the canonical row.
         const tok = result?.dailyTokenNumber;
         if (tok != null) {
-          setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id)
-            ? { ...a, status: newStatus, tokenNo: tok, dailyTokenNumber: tok }
-            : a));
+          patchRow(app.appointmentId, (a) => ({ ...a, status: newStatus, dailyTokenNumber: tok }));
         }
         // Arrived → celebrate with a success popup showing the token, patient and
         // services so the front desk gets clear, immediate confirmation.
@@ -1286,9 +1169,9 @@ export default function AppointmentBoard() {
       }
     } catch (error) {
       console.error('Failed to update status:', error);
-      
-      // Rollback the optimistic UI state immediately to restore dashboard consistency
-      setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: originalStatus } : a));
+
+      // Restore the canonical rows (undoes the in-memory status patch)
+      reloadAppointments();
 
       if (error.response) {
         const serverMessage = error.response.data?.error || error.response.data?.message || error.response.data;
@@ -1298,7 +1181,11 @@ export default function AppointmentBoard() {
           message: serverMessage || "Could not update status."
         });
       } else {
-        await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
+        setErrorModal({
+          isOpen: true,
+          title: "No Connection",
+          message: "Could not reach the server, so the status was not changed. Please check your connection and try again."
+        });
       }
     }
   };
@@ -1365,6 +1252,14 @@ export default function AppointmentBoard() {
     if (!newBooking.patientId) {
       showNotif('error', 'PATIENT REQUIRED', 'No patient has been selected. Please select or add a patient in Phase 1 before proceeding.');
       setBookingStep(1);
+      return;
+    }
+    // A patient created while the connection was down is still a client-side
+    // placeholder id ("temp-…") until its queued registration reaches the
+    // server. Appointments are created live now, so booking against that id
+    // would fail — stop with a clear reason instead.
+    if (String(newBooking.patientId).startsWith('temp-')) {
+      showNotif('warning', 'PATIENT NOT SYNCED YET', 'This patient was registered while offline and has not reached the server yet. Wait a moment for it to sync (or re-select the patient) and try again.');
       return;
     }
 
@@ -1502,64 +1397,28 @@ export default function AppointmentBoard() {
     };
 
 
-    // One stable key for this booking: sent on the online attempt AND reused
-    // by the outbox fallback, so a "created server-side but response lost →
-    // re-queued" retry is deduped by the backend instead of double-booking.
-    const idemKey = crypto.randomUUID();
-
+    // Appointments are created live — there is no offline queue.
     if (!isOnline) {
-      await addToOutbox('APPOINTMENT_CREATE', payload, idemKey);
-      showNotif('info', 'QUEUED FOR SYNC', 'Appointment has been saved and will sync automatically when your connection is restored.');
-      setIsBookingOpen(false);
-      resetBooking();
+      showNotif('error', 'NO CONNECTION', 'You are offline — booking an appointment needs a live connection. Please reconnect and try again.');
       return;
     }
+
+    // One stable key for this booking so a "created server-side but the
+    // response was lost" retry is deduped by the backend instead of double-booking.
+    const idemKey = crypto.randomUUID();
 
     try {
       const res = await apiClient.post('/appointments', payload, { headers: { 'Idempotency-Key': idemKey } });
 
-      // Show the new appointment INSTANTLY by writing it to the local cache
-      // rather than waiting for the next sync pull to bring it back. The pull
-      // kicked by refreshAppointments() below reconciles the canonical row
-      // (token, displayId, …) keyed by the same appointmentId.
+      // Pull the CANONICAL row (real displayId, token, server-formatted
+      // dateTime, service lines) straight into the board so the new
+      // appointment shows the moment it's created, without waiting for the
+      // next poll.
       const newId = res?.data?.appointmentId;
       if (newId) {
-        try {
-          await insertCachedAppointment({
-            appointmentId: newId,
-            patientId: newBooking.patientId,
-            patientName: newPatient.name,
-            patientAge: newPatient.age,
-            patientGender: newPatient.gender,
-            mobile: newPatient.mobile,
-            village: newPatient.village,
-            block: newPatient.block,
-            district: newPatient.district,
-            address: newPatient.address,
-            sourceOfInfo: newPatient.sourceOfInfo,
-            notes: newBooking.notes,
-            service: primary.serviceName,
-            modality: primary.modality,
-            services: serviceLines,
-            dateTime: localDateTimeStr,
-            doctor: newBooking.doctor,
-            status: 'BOOKED',
-            priority: newBooking.priority || 'ROUTINE',
-            referredBy: payload.referredBy,
-            referredContact: payload.referredContact,
-            dailyTokenNumber: null,
-          });
-        } catch { /* non-blocking — the pull will still bring it */ }
-
-        // Pull the CANONICAL row (real displayId, token, server-formatted
-        // dateTime) straight into the cache so the board shows the actual
-        // appointment immediately — without waiting on the 30s background poll,
-        // whose pull is skipped when one is already running (pullCycle guards on
-        // `pulling`). Uses the same mapping the sync engine uses, so it's a true
-        // upsert over the optimistic stub above.
         apiClient.get(`/appointments/${newId}`)
-          .then(full => { if (full?.data?.appointmentId) return applyServerDeltas([full.data]); })
-          .catch(() => { /* optimistic stub + the next sync still cover it */ });
+          .then(full => { if (full?.data?.appointmentId) mergeRows([full.data]); })
+          .catch(() => { /* the refresh below still brings it */ });
       }
 
       celebrate();
@@ -1570,9 +1429,7 @@ export default function AppointmentBoard() {
 
       console.error('Failed to book appointment:', error);
       if (!error.response) {
-        await addToOutbox('APPOINTMENT_CREATE', payload, idemKey);
-        setIsBookingOpen(false);
-        resetBooking();
+        showNotif('error', 'BOOKING FAILED', 'Could not reach the server, so the appointment was not created. Please check your connection and try again.');
       } else {
         // Surface the backend's reason — notably the duplicate-appointment
         // guard (409), which tells the front desk when/where the existing
@@ -1650,7 +1507,7 @@ export default function AppointmentBoard() {
         return;
       }
       app = { ...appIn, ...full.data };
-      applyServerDeltas([full.data]).catch(() => {});
+      mergeRows([full.data]);
     } catch {
       showNotif('error', 'COULD NOT LOAD', 'Could not load the latest appointment data. Please check your connection and try again.');
       return;
@@ -1969,20 +1826,15 @@ export default function AppointmentBoard() {
         return; // not applied — pending approval
       }
 
-      // Pull the CANONICAL row (reconciled services + amounts) into the cache so
-      // the board reflects the add/remove immediately. The edit path has no
-      // optimistic service patch, so without this the board keeps showing the
-      // PREVIOUS services/billing until the 30s background poll (whose pull is
-      // skipped when one is already running — pullCycle guards on `pulling`).
+      // Pull the CANONICAL row (reconciled services + amounts) into the board so
+      // it reflects the add/remove immediately instead of showing the PREVIOUS
+      // services/billing until the next poll.
       const editedApptId = editingAppointment.appointmentId;
-      // Wait for both refreshes before reporting success. Previously these
-      // background requests raced the user navigating to Revenue, which could
-      // expose the pre-edit cached invoice until the next sync cycle. Invoices
-      // are no longer offline-cached, so the paid-tick set is simply refetched
-      // live instead of writing a fresh invoice snapshot into Dexie.
+      // Wait for both refreshes before reporting success, so navigating to
+      // Revenue right after can't expose pre-edit data.
       await Promise.all([
         apiClient.get(`/appointments/${editedApptId}`)
-          .then(full => full?.data?.appointmentId ? applyServerDeltas([full.data]) : undefined)
+          .then(full => full?.data?.appointmentId ? mergeRows([full.data]) : undefined)
           .catch(() => undefined),
         fetchPaidApptIds(),
       ]);
@@ -2534,18 +2386,12 @@ export default function AppointmentBoard() {
   //  PAGINATION RENDERER
   // ============================================================
   const renderPagination = () => {
-    if (activeTab === 'PAST') {
-      if (!appointmentsNextCursor) return null;
+    // A wide window (the PAST archive) loads in the background page by page —
+    // say so instead of silently showing a partial list.
+    if (listLoadingMore) {
       return (
-        <div style={{ textAlign: 'center', margin: '20px 0', width: '100%' }}>
-          <button 
-            className="filter-reset-btn"
-            style={{ padding: '8px 24px', cursor: 'pointer', opacity: isFetchingMore ? 0.7 : 1 }}
-            onClick={() => fetchAppointments(true)}
-            disabled={isFetchingMore}
-          >
-            {isFetchingMore ? 'Loading...' : 'Load More'}
-          </button>
+        <div style={{ textAlign: 'center', margin: '12px 0', width: '100%', fontSize: '11px', fontWeight: 700, color: '#94a3b8' }}>
+          Loading more appointments…
         </div>
       );
     }
@@ -3253,7 +3099,7 @@ export default function AppointmentBoard() {
             </div>
           </div>
           <span className={`android-sync-badge ${isOnline ? 'online' : 'offline'}`}>
-            {isOnline ? '🟢 INSTANT SYNC' : '⚡ OFFLINE READY'}
+            {isOnline ? '🟢 LIVE' : '📴 OFFLINE'}
           </span>
         </div>
 
@@ -3900,12 +3746,12 @@ export default function AppointmentBoard() {
               <button
                 type="button"
                 className="android-btn-primary success"
-                onClick={(e) => {
+                onClick={() => {
                   if (!newBooking.service.trim() || !newBooking.amount.toString().trim()) {
                     alert('Please select or enter a study procedure and amount.');
                     return;
                   }
-                  saveBooking(e);
+                  handleBookAppointment();
                 }}
               >🚀 CONFIRM • ₹{newBooking.amount || '0'}</button>
             </>
@@ -5860,7 +5706,7 @@ export default function AppointmentBoard() {
             </div>
           </div>
           <span className={`android-sync-badge ${isOnline ? 'online' : 'offline'}`}>
-            {isOnline ? '🟢 INSTANT SYNC' : '⚡ OFFLINE READY'}
+            {isOnline ? '🟢 LIVE' : '📴 OFFLINE'}
           </span>
         </div>
 
@@ -7926,7 +7772,7 @@ export default function AppointmentBoard() {
             </div>
           </div>
           <span className={`android-sync-badge ${isOnline ? 'online' : 'offline'}`}>
-            {isOnline ? '🟢 LIVE TOKEN' : '⚡ OFFLINE PASS'}
+            {isOnline ? '🟢 LIVE TOKEN' : '📴 OFFLINE'}
           </span>
         </div>
 
@@ -8940,7 +8786,7 @@ export default function AppointmentBoard() {
 
         {/* Appointments List - Responsive Display */}
         <div className="appointments-list-container" style={{ overflowX: 'auto', paddingBottom: '20px' }}>
-          {loading ? (
+          {(loading || listLoading) ? (
             <div className="empty-state">
               <div className="empty-state-title">LOADING RECORDS...</div>
             </div>

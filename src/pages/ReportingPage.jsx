@@ -26,7 +26,6 @@ import ReportingEditorPanel from '../components/Reporting/ReportingEditorPanel';
 import { NotificationModal, DraftRecoveryModal, WordSyncModal } from '../components/Reporting/ReportingModals';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId } from '../db/repos/reportsRepo';
-import { getAppointmentById } from '../db/repos/appointmentsRepo';
 import { logEvent } from '../sync/syncTelemetry';
 import { getServiceLines } from '../utils/appointmentServices';
 
@@ -521,18 +520,6 @@ const ReportingPage = () => {
           await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
         }
       }
-      if (!appointmentData) {
-        try {
-          const cached = await getAppointmentById(appId);
-          if (cached) {
-            appointmentData = cached;
-            console.info('[REPORTING] Loaded appointment from offline cache.');
-          }
-        } catch (cacheErr) {
-          console.warn('[REPORTING] Offline appointment cache read failed', cacheErr);
-        }
-      }
-
       if (!appointmentData) {
         setError("PATIENT_CONTEXT_NOT_FOUND: The requested appointment record could not be retrieved.");
         setLoading(false);

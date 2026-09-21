@@ -26,10 +26,6 @@
 
 import apiClient from '../api/apiClient';
 import {
-  applyServerDeltas as applyAppointmentDeltas,
-  highWatermarkIso  as appointmentsHighWatermarkIso,
-} from '../db/repos/appointmentsRepo';
-import {
   applyServerDeltas as applyPatientDeltas,
   highWatermarkIso  as patientsHighWatermarkIso,
 } from '../db/repos/patientsRepo';
@@ -149,29 +145,8 @@ async function getSkewMs() {
   return Number.isFinite(row?.value) ? row.value : 0;
 }
 
-// --- Appointments delta pull -------------------------------------------------
-
-async function pullAppointments() {
-  // Use the in-DB high-water mark, NOT the local clock. This survives any
-  // amount of clock skew because both sides are speaking in the server's
-  // time domain (server stamped UpdatedAt, client just remembers it).
-  const since = await appointmentsHighWatermarkIso();
-  const params = {};
-  if (since) params.updatedAfter = since;
-  // Sync engine always asks for tombstones so it can apply DELETE semantics
-  // to the local cache.
-  params.includeDeleted = true;
-
-  const res = await apiClient.get('/appointments', { params });
-  const rows = Array.isArray(res?.data) ? res.data : [];
-  const stats = await withQuotaRetry('appointments', () => applyAppointmentDeltas(rows));
-  if (stats == null) return { applied: 0, deleted: 0 };
-
-  if (stats.applied || stats.deleted) {
-    console.info(`[SYNC] Appointments: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
-  }
-  return stats;
-}
+// Appointments are no longer pulled into an offline cache — every board reads
+// them live through useLiveAppointments (src/hooks/useLiveAppointments.js).
 
 // --- Patients delta pull -----------------------------------------------------
 
@@ -240,11 +215,30 @@ async function pullServiceCharges() {
 function resolveRoute(item) {
   const p = item.payload;
   switch (item.type) {
-    // Invoice/Expense/Payment/Discount/Credit/Payout mutations no longer go
-    // through the outbox — Billing/Finance/Referral action hooks call the
-    // live API directly and surface a failure immediately instead of
-    // queueing it (see useInvoiceActions.js, useExpenseActions.js,
-    // usePayoutActions.js).
+    // ── DRAIN-ONLY legacy routes ─────────────────────────────────────────
+    // Nothing enqueues these types any more: Billing/Finance/Referral
+    // (useInvoiceActions / useExpenseActions / usePayoutActions) and the
+    // appointment boards now call the live API directly and surface a failure
+    // immediately instead of queueing it. They stay routable ONLY so a change
+    // that was already queued on a device before this update still reaches
+    // the server on its next drain, instead of turning into a poisoned
+    // "Unknown outbox type" item — a payment or booking silently lost.
+    case 'INVOICE':              return { method: 'POST',   url: '/finance/invoices' };
+    case 'EXPENSE':              return { method: 'POST',   url: '/finance/expense' };
+    case 'EXPENSE_UPDATE':       return { method: 'PUT',    url: `/finance/expenses/${p.id}` };
+    case 'EXPENSE_STATUS_UPDATE':return { method: 'PUT',    url: `/finance/expenses/${p.id}/status`,
+                                          body: { status: p.status } };
+    case 'PAYMENT':              return { method: 'POST',   url: '/finance/payments' };
+    case 'DISCOUNT':             return { method: 'POST',   url: `/finance/invoices/${p.invoiceId}/discount` };
+    case 'CREDIT':               return { method: 'POST',   url: '/finance/credit/apply' };
+    case 'PAYOUT':               return { method: 'POST',   url: '/referrers/commissions' };
+    case 'PAYOUT_BATCH':         return { method: 'POST',   url: '/referrers/commissions/batch' };
+    case 'PAYOUT_UPDATE':        return { method: 'PUT',    url: `/referrers/commissions/${p.commissionId}` };
+    case 'PAYOUT_STATUS_UPDATE': return { method: 'PATCH',  url: `/referrers/commissions/${p.id}/status`,
+                                          body: { status: p.status } };
+    case 'EXPENSE_DELETE':       return { method: 'DELETE', url: `/finance/expenses/${p.id}` };
+    case 'INVOICE_DELETE':       return { method: 'DELETE', url: `/finance/invoices/${p.id}` };
+    // ── Live routes ──────────────────────────────────────────────────────
     case 'REPORT':               return { method: 'POST',   url: '/reporting/save' };
     case 'REPORT_FINALIZE':      return { method: 'POST',   url: '/reporting/report/finalize' };
     case 'REPORT_ADDENDUM':      return { method: 'POST',   url: '/reporting/report/addendum' };
@@ -342,20 +336,9 @@ async function pushCycle() {
         try { await clearReportLocalDirty(item.payload.appointmentId); } catch (_) {}
       }
 
-      // An appointment booked OFFLINE never got the online booking path's
-      // full by-id fetch (AppointmentBoard.jsx returns before that runs when
-      // !isOnline) — so once this create finally pushes, the only thing that
-      // would otherwise populate its local row is the next worklist pull,
-      // which is the lean AppointmentSummaryDto. Fetch the full record now
-      // so Notes / Village / Block / District / Address / SourceOfInfo /
-      // referrer specialty & degree / SupportedByDoctor are cached from the
-      // start, same as an online booking gets.
-      if (item.type === 'APPOINTMENT_CREATE' && response?.data?.appointmentId) {
-        try {
-          const full = await apiClient.get(`/appointments/${response.data.appointmentId}`);
-          if (full?.data?.appointmentId) await applyAppointmentDeltas([full.data]);
-        } catch (_) { /* the next worklist pull still covers it, just with the lean shape until then */ }
-      }
+      // (A drained legacy APPOINTMENT_CREATE needs no follow-up: appointments
+      // aren't cached locally any more — the boards pick the new row up on
+      // their next live poll.)
 
       await outboxRemove(item.id);
       stats.sent++;
@@ -401,7 +384,6 @@ async function pushCycle() {
 // Entity key → puller, in priority order. Used both as "pull everything"
 // (default) and as the lookup table for a scoped subset (see runAllPulls).
 const ENTITY_PULLS = [
-  ['appointments',         'Appointments',         pullAppointments],
   ['patients',             'Patients',             pullPatients],
   ['reports',              'Reports',              pullReports],
   ['personnel',            'Personnel',            pullPersonnel],
@@ -455,8 +437,7 @@ async function runAllPulls(scope = null) {
 // are no longer part of this — Billing/Finance/Referral reads the live API
 // directly instead of an offline-cached, eviction-windowed copy.
 async function runProgressivePulls() {
-  // Appointments and patients are always pulled fully (they're small + needed for worklist).
-  await pullAppointments();
+  // Patients are pulled fully (small + needed for booking search).
   await pullPatients();
   await pullReports();
   try { await pullPersonnel(); }      catch (err) { console.warn('[SYNC] Personnel refresh failed', err?.message || err); }
@@ -507,7 +488,6 @@ async function pushAndPullCycle() {
     // Only re-pull when the push actually shipped something. Otherwise the
     // 30s pull tick is already keeping things fresh; no need to double up.
     if (stats.sent > 0) {
-      await pullAppointments();
       await pullPatients();
       await pullReports();
       await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
@@ -623,7 +603,6 @@ export async function getSyncDebugInfo() {
     pulling,
     skewMs: await getSkewMs(),
     lastPullAt: (await tables.meta().get('lastSuccessfulPullAt'))?.value || null,
-    appointmentsHighWater: await appointmentsHighWatermarkIso(),
     patientsHighWater:     await patientsHighWatermarkIso(),
     reportsHighWater:      await reportsHighWatermarkIso(),
   };
