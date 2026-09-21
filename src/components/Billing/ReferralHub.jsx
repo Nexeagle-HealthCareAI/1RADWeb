@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
-import { payCommissions } from '../../api/billing/payoutApi';
+import { payCommissions, fetchCommissions } from '../../api/billing/payoutApi';
 
 const getIstDateStr = (iso) => {
   if (!iso) return null;
@@ -53,7 +53,9 @@ const groupCutsByPartner = (cuts) => {
     g.count += 1;
     const amt = Number(cut?.amount) || 0;
     g.total += amt;
-    if (amt >= 0) g.earned += amt; else g.deficit += -amt;
+    // Only an OPEN deficit counts: a clawback already recovered from a payout is stored
+    // as a PAID negative row and must not keep showing as owed.
+    if (amt >= 0) g.earned += amt; else if (cut?.status !== 'PAID') g.deficit += -amt;
     const absorbedMatch = String(cut?.remarks || '').match(/Excess\s*₹?\s*([\d.]+)\s*absorbed by centre/i);
     if (absorbedMatch) g.centreAbsorbed += Number(absorbedMatch[1]) || 0;
     if (cut?.status === 'PAID') {
@@ -396,13 +398,32 @@ const ReferralHub = ({
       showReferrerDropdown: false,
     }));
     setPayeeFormErrors({});
+    const partnerId = activePartnerId;
     setBulkConfirmModal({
       isOpen: true,
       count: eligible.length,
       total,
       eligibleIds: eligible.map(c => c.id),
-      partnerName: activePartner.name
+      partnerName: activePartner.name,
+      partnerId,
+      // An outstanding deficit (clawback from a cancelled / re-assigned paid visit) can
+      // be recovered out of this payout. Read it LIVE and all-time — the rows on screen
+      // are scoped to the selected date range and would miss an older clawback.
+      deficit: 0,
+      deficitLoading: true,
+      netDeficits: true,
     });
+    fetchCommissions({ referrerId: partnerId })
+      .then(rows => {
+        const deficit = (Array.isArray(rows) ? rows : [])
+          .filter(c => String(c.status || '').toUpperCase() !== 'PAID' && !isCancelledCut(c) && (Number(c.amount) || 0) < 0)
+          .reduce((sum, c) => sum + Math.abs(Number(c.amount) || 0), 0);
+        setBulkConfirmModal(prev => (prev.isOpen && prev.partnerId === partnerId) ? { ...prev, deficit, deficitLoading: false } : prev);
+      })
+      .catch(() => {
+        // Netting is an optional convenience — if the balance can't be read, pay normally.
+        setBulkConfirmModal(prev => (prev.isOpen && prev.partnerId === partnerId) ? { ...prev, deficit: 0, deficitLoading: false, netDeficits: false } : prev);
+      });
   };
 
   const handleBulkMarkPaid = async () => {
@@ -428,11 +449,15 @@ const ReferralHub = ({
         payeeContact: payeeForm.payeeContact.trim(),
         payeeEmail: payeeForm.payeeEmail.trim(),
         payeeAddress: payeeForm.payeeAddress.trim(),
+        netDeficits: !!bulkConfirmModal.netDeficits && (bulkConfirmModal.deficit || 0) > 0,
       });
       const paidCount = result?.paid?.length || 0;
       const skipped = (result?.skipped || []).filter(x => !/already paid/i.test(x.reason || ''));
       if (paidCount > 0) {
-        notifyToast(`Recorded payout of ₹${Number(result.totalPaid || 0).toLocaleString()} across ${paidCount} commission${paidCount === 1 ? '' : 's'}.`, 'success');
+        const recovered = Number(result.deficitRecovered || 0);
+        notifyToast(recovered > 0
+          ? `Payout recorded: ₹${Number(result.totalPaid || 0).toLocaleString()} settled, ₹${recovered.toLocaleString()} deficit recovered — hand over ₹${Number(result.netPaid || 0).toLocaleString()}.`
+          : `Recorded payout of ₹${Number(result.totalPaid || 0).toLocaleString()} across ${paidCount} commission${paidCount === 1 ? '' : 's'}.`, 'success');
       }
       if (skipped.length > 0) {
         notifyToast(`${skipped.length} not paid: ${[...new Set(skipped.map(x => x.reason))].join(' ')}`, 'warning');
@@ -1719,6 +1744,42 @@ const ReferralHub = ({
                   ⚠ {drawerSelectedIds.size - bulkConfirmModal.count} of your selection are already PAID or legacy entries and will be skipped.
                 </div>
               )}
+
+              {/* Outstanding deficit — recover it out of this payout */}
+              {bulkConfirmModal.deficitLoading && (
+                <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 800 }}>Checking for an outstanding deficit…</div>
+              )}
+              {!bulkConfirmModal.deficitLoading && (bulkConfirmModal.deficit || 0) > 0 && (() => {
+                const deficit = bulkConfirmModal.deficit;
+                const gross = bulkConfirmModal.total;
+                const recovered = bulkConfirmModal.netDeficits ? Math.min(deficit, gross) : 0;
+                const net = gross - recovered;
+                const row = (label, value, strong, color) => (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: strong ? '13px' : '11.5px', fontWeight: strong ? 950 : 800, color: color || '#334155' }}>
+                    <span>{label}</span><span>{value}</span>
+                  </div>
+                );
+                return (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#92400e', lineHeight: 1.45 }}>
+                      {bulkConfirmModal.partnerName} owes the centre <b>₹{deficit.toLocaleString()}</b> from cancelled or re-assigned visits that were already paid.
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', fontWeight: 900, color: '#78350f', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!bulkConfirmModal.netDeficits}
+                        onChange={e => setBulkConfirmModal(prev => ({ ...prev, netDeficits: e.target.checked }))} />
+                      Recover it from this payout
+                    </label>
+                    <div style={{ borderTop: '1px dashed #fcd34d', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {row('Payout (gross)', `₹${gross.toLocaleString()}`)}
+                      {recovered > 0 && row('Deficit recovered', `− ₹${recovered.toLocaleString()}`, false, '#b45309')}
+                      {row('Net to hand over', `₹${net.toLocaleString()}`, true, '#166534')}
+                      {recovered > 0 && deficit > recovered && (
+                        <div style={{ fontSize: '10px', color: '#92400e', fontWeight: 700 }}>₹{(deficit - recovered).toLocaleString()} of the deficit stays outstanding for the next payout.</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Paid By */}
               <div>

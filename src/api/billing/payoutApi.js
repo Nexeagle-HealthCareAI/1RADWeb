@@ -63,6 +63,18 @@ export const payCommissions = async (payload) => {
 };
 
 /**
+ * The centre absorbs a partner's outstanding clawback deficit. The server settles
+ * the open negative rows and books the compensating write-off itself (amount is
+ * computed from live rows; a repeat call is refused — nothing is left open).
+ * @param {string} referrerId
+ * @returns {Promise<{writtenOff: number, rowsSettled: number}>}
+ */
+export const writeOffDeficit = async (referrerId) => {
+  const res = await apiClient.post(`/referrers/${referrerId}/write-off-deficit`);
+  return res.data;
+};
+
+/**
  * Update a single commission.
  * @param {string} id
  * @param {object} payload

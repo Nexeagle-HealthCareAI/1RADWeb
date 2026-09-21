@@ -9,7 +9,7 @@
 
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // retained for /approvals
-import { batchSaveCommissions, updateCommissionStatus, fetchCommissions } from '../../api/billing/payoutApi';
+import { batchSaveCommissions, updateCommissionStatus, fetchCommissions, writeOffDeficit } from '../../api/billing/payoutApi';
 import { notifyFinanceChanged } from '../useFinanceRevision';
 
 // The API answers a rejected business rule (e.g. "the patient has not paid yet",
@@ -43,19 +43,13 @@ export const usePayoutActions = ({
   setIsSavingPayout,
 }) => {
 
-  // ── Write off a referrer's carried deficit ──────────────────────────────────
-  // The deficit is the referrer's TRUE all-time net, read live from the server. It
-  // must NOT be derived from the rows the page happens to have loaded: those are
-  // scoped to the selected date range, so a date filter (or any range that omits
-  // the clawback's month) would write off the wrong amount — or report "no
-  // deficit" when there is one.
-  const liveNetFor = async (referrerId) => {
-    const rows = await fetchCommissions({ referrerId });
-    return (Array.isArray(rows) ? rows : [])
-      .filter(c => String(c.status || '').toLowerCase() !== 'cancelled')
-      .reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-  };
-
+  // ── Write off a referrer's outstanding deficit ────────────────────────────────
+  // The deficit is the referrer's OPEN clawback/reversal rows (negative, not yet paid
+  // or cancelled), read live and all-time — never derived from the rows the page
+  // happens to have loaded, which are scoped to the selected date range. The server
+  // computes the real amount when it books the write-off; this read only powers the
+  // confirmation text. (Deficits can also be recovered from a payout — see the
+  // "Recover it from this payout" option when paying a partner.)
   const handleWriteOffDeficit = useCallback(async (partner) => {
     const referrerId = partner?.cuts?.find(c => c.referrerId)?.referrerId;
     if (!referrerId) {
@@ -67,47 +61,36 @@ export const usePayoutActions = ({
       return;
     }
 
-    let net;
+    let deficit = 0;
     try {
-      net = await liveNetFor(referrerId);
+      const rows = await fetchCommissions({ referrerId });
+      deficit = (Array.isArray(rows) ? rows : [])
+        .filter(c => String(c.status || '').toUpperCase() !== 'PAID' && String(c.status || '').toLowerCase() !== 'cancelled' && (Number(c.amount) || 0) < 0)
+        .reduce((sum, c) => sum + Math.abs(Number(c.amount) || 0), 0);
     } catch (err) {
       notify({ type: 'error', message: serverMessage(err, 'Could not read this referrer’s current balance.') });
       return;
     }
-    const deficit = net < 0 ? Math.abs(net) : 0;
     if (deficit <= 0) {
-      notify({ type: 'warning', message: 'No recoverable deficit to write off for this referrer (their all-time balance is not negative).' });
+      notify({ type: 'warning', message: 'No outstanding deficit to write off for this referrer.' });
       return;
     }
 
     confirmModal({
       title: `Write off ₹${deficit.toLocaleString()} deficit?`,
-      message: `${partner.name || 'This referrer'} currently owes ₹${deficit.toLocaleString()}. Writing it off means the centre absorbs the loss and the referrer's balance returns to zero. This cannot be undone.`,
+      message: `${partner.name || 'This referrer'} owes ₹${deficit.toLocaleString()} from cancelled or re-assigned visits that were already paid. Writing it off means the centre absorbs the loss instead of recovering it from their future payouts. This cannot be undone.`,
       confirmText: 'Write off',
       danger: true,
       onConfirm: async () => {
         try {
-          // Re-read at confirm time: the balance may have moved since the dialog
-          // opened (a payout, a new clawback) and the amount written off must be
-          // exactly what is owed NOW.
-          const nowNet = await liveNetFor(referrerId);
-          const amount = nowNet < 0 ? Math.abs(nowNet) : 0;
-          if (amount <= 0) {
-            notify({ type: 'info', message: 'This deficit has already been cleared.' });
-            refreshAllFinancialData();
-            return;
-          }
-          await batchSaveCommissions({
-            referrerId,
-            remarks: `DEFICIT WRITE-OFF (₹${amount}) — centre absorbed`,
-            lines: [{ modality: 'WRITE-OFF', amount, status: 'PAID' }],
-          }, crypto.randomUUID());   // idempotency key — a double-click books it once
-          notify({ type: 'success', title: 'Written off', message: `₹${amount.toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
+          const result = await writeOffDeficit(referrerId);
+          notify({ type: 'success', title: 'Written off', message: `₹${Number(result?.writtenOff || 0).toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
           notifyFinanceChanged();
           refreshAllFinancialData();
         } catch (err) {
           console.error('[FINANCE] Deficit write-off failed', err);
           notify({ type: 'error', message: serverMessage(err, 'Could not write off the deficit.') });
+          refreshAllFinancialData();
         }
       },
     });
