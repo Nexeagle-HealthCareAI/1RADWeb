@@ -50,6 +50,19 @@ export const batchSaveCommissions = async (payload, idempotencyKey = null) => {
 };
 
 /**
+ * Settle several commissions in ONE server transaction with one set of
+ * disbursement details. Idempotent — already-paid rows come back in `skipped`
+ * instead of failing the request — and the server re-checks that the patient has
+ * paid, returning any row it declined (with the reason) in `skipped`.
+ * @param {{commissionIds: string[], paidBy: string, payeeName: string, payeeContact?: string, payeeEmail?: string, payeeAddress?: string}} payload
+ * @returns {Promise<{paid: string[], skipped: {commissionId: string, reason: string}[], totalPaid: number}>}
+ */
+export const payCommissions = async (payload) => {
+  const res = await apiClient.post('/referrers/commissions/pay', payload);
+  return res.data;
+};
+
+/**
  * Update a single commission.
  * @param {string} id
  * @param {object} payload

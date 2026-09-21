@@ -59,6 +59,9 @@ export default function ReferralIntelligencePanel({
   referralFilterMode,
   referralLinksSearch,
   referralLoading,
+  referralError,
+  referralUpdatedAt,
+  onRetryReferrals,
   referralLogSearch,
   referralMatrixSearch,
   referralPatientsSearch,
@@ -355,6 +358,20 @@ export default function ReferralIntelligencePanel({
              </div>
           </div>
         </div>
+
+        {referralError && (
+          <div role="alert" style={{ margin: '0 0 14px', padding: '10px 14px', borderRadius: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <span>⚠ {referralError}</span>
+            {onRetryReferrals && (
+              <button type="button" onClick={onRetryReferrals} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fca5a5', background: 'white', color: '#991b1b', fontWeight: 900, fontSize: '11px', cursor: 'pointer' }}>RETRY</button>
+            )}
+          </div>
+        )}
+        {!referralError && referralUpdatedAt && !referralLoading && (
+          <div style={{ margin: '0 0 8px', fontSize: '10px', fontWeight: 800, color: '#94a3b8', textAlign: 'right' }}>
+            Live · updated {new Date(referralUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
 
         {referralLoading ? (
             <div style={{ padding: '120px', textAlign: 'center' }}>
@@ -1067,7 +1084,7 @@ return (
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
-                                             <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
+                                             <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : p.commissionStatus === 'None' ? '#94a3b8' : '#dc2626' }}>{p.commissionStatus === 'None' ? 'NO COMMISSION' : (p.commissionStatus || 'Unpaid').toUpperCase()}</div>
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              {(() => {
@@ -1121,7 +1138,7 @@ return (
                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
                                              <div>
                                                 <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
-                                                <div style={{ fontSize: '9px', fontWeight: 900, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
+                                                <div style={{ fontSize: '9px', fontWeight: 900, color: p.commissionStatus === 'Paid' ? '#059669' : p.commissionStatus === 'None' ? '#94a3b8' : '#dc2626' }}>{p.commissionStatus === 'None' ? 'NO COMMISSION' : (p.commissionStatus || 'Unpaid').toUpperCase()}</div>
                                              </div>
                                              {(() => {
                                                 const cfg = getStatusConfig(p.status);

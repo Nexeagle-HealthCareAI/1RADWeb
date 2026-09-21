@@ -1,11 +1,10 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
-import { watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import useFinanceRevision from '../hooks/useFinanceRevision';
 import { buildPatientAge } from '../utils/patientAge';
@@ -137,6 +136,11 @@ export default function ReferralsPage() {
   const [referralIntelligence, setReferralIntelligence] = useState([]);
   const [allReferrers, setAllReferrers] = useState([]);
   const [referralLoading, setReferralLoading] = useState(false);
+  // Live-data health for the intelligence/roster fetch: last error (null when the
+  // latest load succeeded) and when the figures on screen were last confirmed.
+  const [referralError, setReferralError] = useState(null);
+  const [referralUpdatedAt, setReferralUpdatedAt] = useState(null);
+  const intelSeq = useRef(0);
   const [personnelLoading, setPersonnelLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [referralSort, setReferralSort] = useState({ key: 'missions', direction: 'desc' });
@@ -703,14 +707,11 @@ export default function ReferralsPage() {
     }
   }, []);
 
-  // Reactive reference data — staff list and price registry render from the
-  // local cache (refreshed every sync cycle), so changes here or on another
-  // device appear on their own with no manual refresh.
+  // Staff list renders from the local personnel cache (refreshed every sync
+  // cycle). (The price-registry subscription that used to sit beside it fed a
+  // state setter that was never declared — every emit threw a ReferenceError —
+  // and nothing on this page reads prices, so it is gone.)
   useEffect(() => {
-    const subPrices = watchServiceCharges().subscribe({
-      next: (rows) => setServicePrices(Array.isArray(rows) ? rows : []),
-      error: (err) => console.warn('[ReferralsPage] service-charges liveQuery error', err),
-    });
     const subPersonnel = watchPersonnel().subscribe({
       next: (rows) => setPersonnel((rows || []).map(p => ({
         id: p.userId,
@@ -727,7 +728,7 @@ export default function ReferralsPage() {
       }))),
       error: (err) => console.warn('[ReferralsPage] personnel liveQuery error', err),
     });
-    return () => { subPrices.unsubscribe(); subPersonnel.unsubscribe(); };
+    return () => { subPersonnel.unsubscribe(); };
   }, []);
 
   const fetchPatientMasterList = useCallback(async () => {
@@ -854,31 +855,41 @@ export default function ReferralsPage() {
     }
   }, [centers]);
 
-  const fetchReferralIntelligence = useCallback(async (startDate = null, endDate = null, allTime = false) => {
+  // Live only: the money on this page must reflect the server right now. There is
+  // deliberately NO cached fallback — the old one keyed the cache by the (usually
+  // null) arguments rather than the range on screen, so a failed request quietly
+  // showed some earlier range's numbers as if they were current. On failure the
+  // last successfully loaded data (this session, this range) stays visible with an
+  // error banner instead. `silent` = background refresh (no loader flash).
+  const fetchReferralIntelligence = useCallback(async (startDate = null, endDate = null, allTime = false, { silent = false } = {}) => {
+    // Responses can arrive out of order when the range is changed quickly — only
+    // the newest request is allowed to write state.
+    const seq = ++intelSeq.current;
     try {
-      setReferralLoading(true);
+      if (!silent) setReferralLoading(true);
       const params = (allTime || referralFilterMode === 'ALL')
         ? { allTime: true }
         : {
             startDate: startDate || referralRange.start,
             endDate: endDate || (referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end)
           };
-      const res = await apiClient.get('/referrers/intelligence', { params });
+      const [res, allRes] = await Promise.all([
+        apiClient.get('/referrers/intelligence', { params }),
+        apiClient.get('/referrers'),
+      ]);
+      if (seq !== intelSeq.current) return;
       setReferralIntelligence(res.data);
-      await nativeStorage.set(`1rad_cache_referral_intel_${startDate || 'default'}_${endDate || 'default'}`, res.data);
-
-      const allRes = await apiClient.get('/referrers');
       setAllReferrers(allRes.data || []);
-      await nativeStorage.set('1rad_cache_all_referrers', allRes.data || []);
+      setReferralError(null);
+      setReferralUpdatedAt(Date.now());
     } catch (err) {
-      console.error('[REFERRAL INTEL] Fetch failed, trying cache', err);
-      const cached = await nativeStorage.get(`1rad_cache_referral_intel_${startDate || 'default'}_${endDate || 'default'}`);
-      if (cached) setReferralIntelligence(cached);
-
-      const cachedAll = await nativeStorage.get('1rad_cache_all_referrers');
-      if (cachedAll) setAllReferrers(cachedAll);
+      if (seq !== intelSeq.current) return;
+      console.error('[REFERRAL INTEL] Live fetch failed', err);
+      setReferralError(!err?.response
+        ? 'Cannot reach the server — the figures below may be out of date.'
+        : 'Could not load live referral data — the figures below may be out of date.');
     } finally {
-      setReferralLoading(false);
+      if (seq === intelSeq.current) setReferralLoading(false);
     }
   }, [referralRange, referralFilterMode]);
 
@@ -1074,6 +1085,18 @@ export default function ReferralsPage() {
     // financeRev: refresh when a commission/invoice change syncs in.
   }, [activeTab, financeRev, fetchReferralIntelligence]);
 
+  // Keep the Referrals figures live: refresh quietly every 90s while this tab is
+  // showing, and immediately when the browser tab comes back to the foreground
+  // (a payout / patient payment recorded on another screen or device shows up
+  // without a manual reload).
+  useEffect(() => {
+    if (activeTab !== 'Referrals') return undefined;
+    const tick = () => { if (!document.hidden) fetchReferralIntelligence(null, null, false, { silent: true }); };
+    const id = setInterval(tick, 90_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [activeTab, fetchReferralIntelligence]);
+
   // Patient Master List
   useEffect(() => {
     if (activeTab === 'Referrals' && referralViewMode === 'PATIENTS') {
@@ -1113,8 +1136,9 @@ export default function ReferralsPage() {
       setShowChainSelector(false);
       const result = await switchCenter(id);
       if (result?.success) {
-        // Clear local data to force re-sync
-        setOutlookData(null);
+        // Clear local data to force re-sync (and drop any response still in flight
+        // for the previous centre so it cannot repopulate the page).
+        intelSeq.current += 1;
         setReferralIntelligence([]);
         setPersonnel([]);
         
@@ -1924,6 +1948,9 @@ export default function ReferralsPage() {
         referralFilterMode={referralFilterMode}
         referralLinksSearch={referralLinksSearch}
         referralLoading={referralLoading}
+        referralError={referralError}
+        referralUpdatedAt={referralUpdatedAt}
+        onRetryReferrals={() => fetchReferralIntelligence()}
         referralLogSearch={referralLogSearch}
         referralMatrixSearch={referralMatrixSearch}
         referralPatientsSearch={referralPatientsSearch}

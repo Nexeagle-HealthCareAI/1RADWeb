@@ -338,23 +338,19 @@ export default function BillingPage() {
     }
   }, [getFinanceDateRange]);
 
-  // searchTerm itself stays instant (it also drives invoice filtering
-  // elsewhere on this page) — only the referrer re-fetch it triggers,
-  // which hits the API on every keystroke otherwise, is debounced.
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
+  // The FULL partner list — deliberately not filtered by the page's search box.
+  // It used to be: typing a patient name in the billing search shrank this list
+  // to referrers matching that name (so the payee prefill and the partner filter
+  // lost everyone else), AND, because fetchReferrers sat in refreshAllFinancialData's
+  // dependency list, every search-box debounce re-fetched ALL finance data.
   const fetchReferrers = useCallback(async () => {
     try {
-      const res = await apiClient.get('/referrers', { params: { search: debouncedSearchTerm } });
+      const res = await apiClient.get('/referrers');
       setReferrers(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error('[FINANCE] Referrer fetch failed', err);
     }
-  }, [debouncedSearchTerm]);
+  }, []);
 
   // NOTE: the legacy implementation hit /referrers/ledger which returns
   // date-grouped detail. This flat per-row shape is what the rest of the
@@ -449,6 +445,21 @@ export default function BillingPage() {
       loadApprovalMap(),
     ]);
   }, [fetchInvoices, fetchExpenses, fetchReferrers, fetchCommissions, fetchRegistry, fetchAppointments, fetchPersonnel, fetchOutstandingCredits, loadApprovalMap]);
+
+  // Incentives tab: keep eligibility live. A payout becomes payable the moment the
+  // patient pays (on the Revenue tab, another screen, or another device), so while
+  // this tab is showing, quietly refresh commissions + invoices + pending approvals
+  // every 60s and whenever the browser tab returns to the foreground.
+  useEffect(() => {
+    if (billingViewMode !== 'REFERRAL_CUTS') return undefined;
+    const tick = () => {
+      if (document.hidden) return;
+      void Promise.allSettled([fetchCommissions(), fetchInvoices(), loadApprovalMap()]);
+    };
+    const id = setInterval(tick, 60_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [billingViewMode, fetchCommissions, fetchInvoices, loadApprovalMap]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -666,7 +677,6 @@ export default function BillingPage() {
     filteredInvoices,
     futureAppointments,
     liveStats,
-    combinedReferralCuts,
     recordedPayouts,
     filteredOutflow,
     outflowStats,
@@ -696,7 +706,7 @@ export default function BillingPage() {
     handleToggleCommissionStatus,
   } = usePayoutActions({
     isOnline, notify, confirmModal,
-    refreshAllFinancialData, combinedReferralCuts,
+    refreshAllFinancialData,
     editPayout, setIsPayoutDrawerOpen, setIsSavingPayout,
   });
 

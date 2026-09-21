@@ -2965,8 +2965,12 @@ export default function AdminBoard() {
                         const commissionByModality = {};
                         referralAggregated.forEach(ref => {
                            (ref.patients || []).forEach(p => {
-                              if (p.commissionStatus?.toLowerCase() === 'unpaid') {
-                                 commissionByModality[p.modality] = (commissionByModality[p.modality] || 0) + (p.commissionAmount || 0);
+                              // The unpaid PART of the visit — a visit with one paid and one
+                              // unpaid service line is flagged "Unpaid" as a whole, and summing
+                              // its full commissionAmount overstated what is actually owed.
+                              const owed = Number(p.unpaidAmount ?? (p.commissionStatus?.toLowerCase() === 'unpaid' ? p.commissionAmount : 0)) || 0;
+                              if (owed !== 0) {
+                                 commissionByModality[p.modality] = (commissionByModality[p.modality] || 0) + owed;
                               }
                            });
                         });
@@ -4202,7 +4206,7 @@ return (
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
-                                             <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
+                                             <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : p.commissionStatus === 'None' ? '#94a3b8' : '#dc2626' }}>{p.commissionStatus === 'None' ? 'NO COMMISSION' : (p.commissionStatus || 'Unpaid').toUpperCase()}</div>
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              {(() => {
