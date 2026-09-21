@@ -3,7 +3,7 @@ import DoctorLinksView from './DoctorLinksView';
 import { getReferrerProfileCompletion, completionColor } from './referrerProfile';
 import { sortArrow } from './sortArrow';
 import { getISODate, getOverviewDates } from './dateRanges';
-import { parsePatientAge } from '../../utils/patientAge';
+import { parsePatientAge, formatPatientAge } from '../../utils/patientAge';
 
 /**
  * ReferralIntelligencePanel — the core "Referral Intelligence" feature: a
@@ -74,6 +74,11 @@ export default function ReferralIntelligencePanel({
   selectedLedgerRows,
   selectedLinks,
   selfSummary,
+  unlinkedSources,
+  unattributedSummary,
+  referralSort,
+  matrixLoading,
+  matrixError,
   sendSelectedLinks,
   setBulkSend,
   setDeleteAfterMerge,
@@ -114,6 +119,14 @@ export default function ReferralIntelligencePanel({
   toggleRosterSort,
   whatsappDoctors,
 }) {
+    // A visit can carry several service lines; the scalar modality/service on the row is only the first
+    // one, so a CT + MRI visit used to look like a CT-only visit.
+    const visitModalities = (p) => (Array.isArray(p.serviceLines) && p.serviceLines.length > 0
+      ? [...new Set(p.serviceLines.map(l => l.modality).filter(Boolean))].join(' + ')
+      : (p.modality || ''));
+    const visitServices = (p) => (Array.isArray(p.serviceLines) && p.serviceLines.length > 0
+      ? p.serviceLines.map(l => l.serviceName).filter(Boolean).join(' + ')
+      : (p.service || ''));
     const totalPatientsCount = temporalPatients.length;
     const totalMissions = referralAggregated.reduce((acc, curr) => acc + curr.patients.length, 0);
     const totalPayout = referralAggregated.reduce((acc, curr) => acc + (curr.totalCommission || 0), 0);
@@ -471,7 +484,7 @@ export default function ReferralIntelligencePanel({
                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{p.mobile}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{formatPatientAge(p.age)} / {(p.gender || 'U').toUpperCase()}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{[p.address, p.village, p.district].filter(Boolean).join(', ') || '—'}</div>
@@ -531,7 +544,7 @@ export default function ReferralIntelligencePanel({
                             </div>
                             <div>
                                <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(p.fullName || 'Unknown').toUpperCase()}</div>
-                               <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
+                               <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{formatPatientAge(p.age)} / {(p.gender || 'U').toUpperCase()}</div>
                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>{p.mobile}</div>
                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginTop: '4px' }}>📍 {[p.address, p.village, p.district].filter(Boolean).join(', ') || 'No address'}</div>
                                <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '4px' }}>Source: {p.sourceOfInfo || 'Unknown'}</div>
@@ -831,16 +844,16 @@ export default function ReferralIntelligencePanel({
                 )}
               </div>
             ) : referralViewMode === 'MATRIX' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
                 {/* Master Pane: Intelligence Roster */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '5px' }}>Referral List</div>
                   {referralAggregated.map((s, i) => {
-                    const isSelected = expandedReferrer === s.name;
+                    const isSelected = expandedReferrer === s.referrerId;
                     return (
                       <div 
-                        key={s.name} 
-                        onClick={() => setExpandedReferrer(s.name)}
+                        key={s.referrerId || s.name} 
+                        onClick={() => setExpandedReferrer(s.referrerId)}
                         style={{ 
                           background: isSelected ? '#f0f3fd' : 'white', 
                           padding: '20px 25px', borderRadius: '18px', border: isSelected ? '1px solid #0f52ba' : '1px solid #e2e8f0', 
@@ -853,7 +866,7 @@ export default function ReferralIntelligencePanel({
                              <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: isSelected ? 'white' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: '1px solid #f1f5f9' }}>👤</div>
                              <div>
                                 <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
-                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>RANK #{i + 1} • {s.patients.length} SCANS</div>
+                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>{referralSort?.key && referralSort.key !== 'name' ? `RANK #${i + 1} • ` : ''}{s.patients.length} {s.patients.length === 1 ? 'VISIT' : 'VISITS'}{(s.noShows || s.bookedPending) ? ` • ${s.noShows ? `${s.noShows} NO-SHOW` : ''}${s.noShows && s.bookedPending ? ' • ' : ''}${s.bookedPending ? `${s.bookedPending} BOOKED` : ''}` : ''}</div>
                                  <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
                                     <div style={{ fontSize: '8px', fontWeight: 950, color: '#059669' }}>₹{(s.paidCommission || 0).toLocaleString()} PAID</div>
                                     <div style={{ fontSize: '8px', fontWeight: 950, color: '#dc2626' }}>₹{(s.unpaidCommission || 0).toLocaleString()} PENDING</div>
@@ -887,13 +900,40 @@ export default function ReferralIntelligencePanel({
                       </div>
                     </div>
                   )}
+                  {/* UNLINKED sources: a referrer NAME typed on visits with no partner record. They used to be
+                      folded into Self / Walk-in or dropped; listed here so their visits are counted and can be fixed. */}
+                  {personTypeFilter === 'ALL' && unlinkedSources && unlinkedSources.length > 0 && (
+                    <div style={{ background: '#fffbeb', padding: '16px 22px', borderRadius: '18px', border: '1px dashed #fcd34d' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#92400e' }}>UNLINKED SOURCES</div>
+                      <div style={{ fontSize: '9px', color: '#b45309', fontWeight: 800, marginTop: '2px', lineHeight: 1.45 }}>
+                        Referrer names typed on visits that have no partner record. Add them as partners so their visits and payouts can be tracked.
+                      </div>
+                      {unlinkedSources.map(u => (
+                        <div key={u.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginTop: '8px', fontSize: '11px', fontWeight: 850, color: '#78350f' }}>
+                          <span>{(u.name || '').toUpperCase()}</span>
+                          <span>{u.totalPatients} {u.totalPatients === 1 ? 'visit' : 'visits'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* UNATTRIBUTED: attended visits with no referrer recorded at all - missing data made visible. */}
+                  {personTypeFilter === 'ALL' && unattributedSummary && unattributedSummary.patientCount > 0 && (
+                    <div style={{ background: '#fef2f2', padding: '16px 22px', borderRadius: '18px', border: '1px dashed #fca5a5' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#991b1b' }}>NO SOURCE RECORDED</div>
+                      <div style={{ fontSize: '10px', color: '#b91c1c', fontWeight: 800, marginTop: '3px', lineHeight: 1.45 }}>
+                        {unattributedSummary.patientCount} attended {unattributedSummary.patientCount === 1 ? 'visit has' : 'visits have'} no referrer at all, so they cannot be credited to anyone.
+                        Fill in "Referred By" on those appointments.
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Detail Pane: Referral Briefing */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {expandedReferrer ? (
                     (() => {
-                      const selected = referralAggregated.find(r => r.name === expandedReferrer);
+                      const selected = referralAggregated.find(r => r.referrerId === expandedReferrer);
                       if (!selected) return null;
                       const percentage = totalPatientsCount > 0 ? (selected.patients.length / totalPatientsCount) * 100 : 0;
 
@@ -905,11 +945,19 @@ return (
                                 <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '15px' }}>
                                     <div style={{ padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#2563eb' }}>
-                                       {selected.patients.length} Studies
+                                       {selected.patients.length} {selected.patients.length === 1 ? 'Visit' : 'Visits'}
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#ecfdf5', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#059669' }}>
-                                       ₹{(selected.totalRevenue || 0).toLocaleString()} Revenue
+                                       ₹{(selected.totalRevenue || 0).toLocaleString()} Billed
                                     </div>
+                                    <div title="Cash actually received against these visits' invoices" style={{ padding: '6px 12px', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#0f766e' }}>
+                                       ₹{(selected.totalCollected || 0).toLocaleString()} Collected
+                                    </div>
+                                    {(selected.bookedPending > 0 || selected.noShows > 0) && (
+                                      <div title="Booked appointments that are not counted as visits: still ahead, or in the past and never arrived" style={{ padding: '6px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#64748b' }}>
+                                         {selected.bookedPending || 0} booked · {selected.noShows || 0} no-show
+                                      </div>
+                                    )}
                                     <div style={{ padding: '6px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#d97706' }}>
                                        ₹{(selected.totalDiscount || 0).toLocaleString()} DISCOUNT
                                     </div>
@@ -920,7 +968,7 @@ return (
                                        ₹{(selected.unpaidCommission || 0).toLocaleString()} Comm. Due
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#16a34a' }}>
-                                       ₹{(selected.netProfit || 0).toLocaleString()} NET PROFIT
+                                       ₹{(selected.netProfit || 0).toLocaleString()} BILLED − COMMISSION
                                     </div>
                                  </div>
                              </div>
@@ -942,11 +990,15 @@ return (
                            <div style={{ padding: '0 30px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', marginTop: '10px', marginBottom: '10px' }}>
                               {/* ROI Multiplier Card */}
                               {(() => {
-                                 const roiValue = selected.totalCommission > 0 ? (selected.totalRevenue / selected.totalCommission) : 999;
-                                 const isInfinite = roiValue === 999;
-                                 const roiLabel = isInfinite ? '∞ (Direct)' : `${roiValue.toFixed(1)}x`;
-                                 const statusColor = isInfinite || roiValue >= 8.0 ? '#10b981' : roiValue >= 4.0 ? '#3b82f6' : '#ea580c';
-                                 const statusText = isInfinite || roiValue >= 8.0 ? 'HIGH MARGIN PARTNER 🌟' : roiValue >= 4.0 ? 'SOLID PERFORMER 👍' : 'LOW MARGIN AWARENESS ⚠️';
+                                 // A source with NO commission (none configured, or its visits are not billed yet) has no meaningful
+                                 // return ratio. It used to be labelled "HIGH MARGIN PARTNER" - which is how a partner whose
+                                 // commission simply hadn't been generated looked like the best one.
+                                 const hasCommission = (Number(selected.totalCommission) || 0) > 0;
+                                 const roiValue = hasCommission ? (selected.totalRevenue / selected.totalCommission) : null;
+                                 const isInfinite = !hasCommission;
+                                 const roiLabel = isInfinite ? 'No commission' : `${roiValue.toFixed(1)}x`;
+                                 const statusColor = isInfinite ? '#94a3b8' : roiValue >= 8.0 ? '#10b981' : roiValue >= 4.0 ? '#3b82f6' : '#ea580c';
+                                 const statusText = isInfinite ? 'NOT ENOUGH DATA' : roiValue >= 8.0 ? 'HIGH MARGIN PARTNER 🌟' : roiValue >= 4.0 ? 'SOLID PERFORMER 👍' : 'LOW MARGIN AWARENESS ⚠️';
                                  
                                  return (
                                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '18px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -962,8 +1014,8 @@ return (
                                        </div>
                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 650, lineHeight: '1.4' }}>
                                           {isInfinite
-                                            ? 'This source generates revenue with no commission cost — a direct, zero-payout referral channel.'
-                                            : <>This source generates <strong style={{ color: '#1e293b' }}>₹{roiValue.toFixed(1)}</strong> in billed revenue for every ₹1 paid in commission.</>}
+                                            ? 'No commission has been generated for this source in this period (none is configured, or the visits are not billed yet), so a return ratio cannot be worked out.'
+                                            : <>This source generates <strong style={{ color: '#1e293b' }}>₹{roiValue.toFixed(1)}</strong> in billed revenue for every ₹1 of commission.</>}
                                        </div>
                                     </div>
                                  );
@@ -971,10 +1023,15 @@ return (
 
                               {/* Cohort Loyalty & Acquisition Card */}
                               {(() => {
-                                 const uniqueNames = new Set((selected.patients || []).map(p => (p.name || '').toLowerCase().trim()));
-                                 const uniqueCount = uniqueNames.size;
+                                 // Real facts from the server: a NEW patient is one whose first-ever attended visit at the
+                                 // centre is one of these visits; every other visit is a repeat. (This used to match on
+                                 // the patient NAME within the selected date range - two different people called RAM KUMAR
+                                 // counted as one, and anyone seen once in the range counted as "new" even if they had
+                                 // been coming for years.) An older API falls back to distinct patient ids.
                                  const totalScans = selected.patients.length;
-                                 const repeatCount = Math.max(0, totalScans - uniqueCount);
+                                 const uniqueCount = selected.uniquePatients ?? new Set((selected.patients || []).map(p => p.patientId)).size;
+                                 const newCount = selected.newPatients ?? uniqueCount;
+                                 const repeatCount = selected.returningVisits ?? Math.max(0, totalScans - newCount);
                                  const repeatPercentage = totalScans > 0 ? (repeatCount / totalScans) * 100 : 0;
                                  
                                  return (
@@ -982,20 +1039,20 @@ return (
                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <span style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Patient Acquisition & Loyalty</span>
                                           <span style={{ fontSize: '8px', fontWeight: 950, color: '#3b82f6', background: 'white', padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                                             RETENTION: {repeatPercentage.toFixed(0)}%
+                                             REPEAT VISITS: {repeatPercentage.toFixed(0)}%
                                           </span>
                                        </div>
                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                                          <span style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b' }}>{uniqueCount} <span style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>/ {totalScans}</span></span>
-                                          <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>NEW PATIENTS</span>
+                                          <span style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b' }}>{newCount} <span style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>/ {uniqueCount}</span></span>
+                                          <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>NEW PATIENTS OF {uniqueCount} SEEN</span>
                                        </div>
                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontWeight: 900, color: '#64748b' }}>
                                              <span>Acquisition Stream</span>
-                                             <span>{uniqueCount} New • {repeatCount} Returning</span>
+                                             <span>{newCount} New • {repeatCount} Repeat visits</span>
                                           </div>
                                           <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                                             <div style={{ width: `${totalScans > 0 ? (uniqueCount / totalScans) * 100 : 0}%`, height: '100%', background: '#3b82f6' }}></div>
+                                             <div style={{ width: `${totalScans > 0 ? (newCount / totalScans) * 100 : 0}%`, height: '100%', background: '#3b82f6' }}></div>
                                              <div style={{ width: `${totalScans > 0 ? (repeatCount / totalScans) * 100 : 0}%`, height: '100%', background: '#10b981' }}></div>
                                           </div>
                                        </div>
@@ -1074,7 +1131,7 @@ return (
                                           <td style={{ padding: '15px 15px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
+                                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{formatPatientAge(p.age)} • {(p.gender || 'U').toUpperCase()}</div>
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.mobile}</div>
@@ -1082,8 +1139,8 @@ return (
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                                <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '2px 8px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
-                                                <span style={{ fontSize: '9px', color: '#475569', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontWeight: 850 }}>{p.service}</span>
+                                                <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '2px 8px', borderRadius: '4px', fontWeight: 950 }}>{visitModalities(p)}</span>
+                                                <span style={{ fontSize: '9px', color: '#475569', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontWeight: 850 }}>{visitServices(p)}</span>
                                              </div>
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
@@ -1096,7 +1153,7 @@ return (
                                                 return <span style={{ fontSize: '8px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
                                              })()}
                                           </td>
-                                          <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registrationDate}</td>
+                                          <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registrationDate}{p.visitAt ? <div style={{ fontSize: '9px', color: '#cbd5e1', fontWeight: 800, marginTop: '2px' }}>{p.visitAt.slice(11)}</div> : null}</td>
                                         </tr>
                                       );
                                     })}
@@ -1132,12 +1189,12 @@ return (
                                           </div>
                                           <div>
                                              <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                                             <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
+                                             <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{formatPatientAge(p.age)} • {(p.gender || 'U').toUpperCase()}</div>
                                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>{p.mobile}</div>
                                           </div>
                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                              <span style={{ fontSize: '10px', color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 950 }}>{p.modality}</span>
-                                              <span style={{ fontSize: '10px', color: '#475569', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '6px', fontWeight: 850 }}>{p.service}</span>
+                                              <span style={{ fontSize: '10px', color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 950 }}>{visitModalities(p)}</span>
+                                              <span style={{ fontSize: '10px', color: '#475569', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '6px', fontWeight: 850 }}>{visitServices(p)}</span>
                                           </div>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
                                              <div>
@@ -1177,7 +1234,7 @@ return (
                        <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: '20px', flexDirection: isMobile ? 'column' : 'row' }}>
                          <div>
                            <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', margin: 0 }}>Referral Volume Matrix</h3>
-                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Study counts by referral source over time</p>
+                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Attended visits by referral source over time (IST)</p>
                          </div>
                          <button 
                            onClick={handleExportMatrix}
@@ -1259,6 +1316,12 @@ return (
                        </div>
                     </div>
 
+                    {matrixError && (
+                      <div role="alert" style={{ margin: '0 0 14px', padding: '10px 14px', borderRadius: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px', fontWeight: 800 }}>⚠ {matrixError}</div>
+                    )}
+                    {matrixLoading && (
+                      <div style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>Loading the matrix…</div>
+                    )}
                     {temporalMatrixData?.rows.length > 0 ? (
                        <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1275,10 +1338,12 @@ return (
                            </thead>
                            <tbody>
                              {temporalMatrixData?.rows.map((row) => (
-                               <tr key={row.name} style={{ borderBottom: '1px solid #f8fafc' }}>
+                               <tr key={`${row.kind || 'PARTNER'}:${row.referrerId || row.name}`} style={{ borderBottom: '1px solid #f8fafc' }}>
                                  <td style={{ padding: '15px 20px', position: 'sticky', left: 0, background: 'white', zIndex: 5, borderRight: '1px solid #f1f5f9' }}>
                                    <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(row.name || 'ANONYMOUS').toUpperCase()}</div>
-                                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{row.contact || 'No Contact Info'}</div>
+                                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{row.contact || (row.kind === 'PARTNER' ? 'No Contact Info' : '')}</div>
+                                   {row.kind === 'UNLINKED' && <div style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', marginTop: '2px' }}>NOT A PARTNER YET</div>}
+                                   {row.kind === 'UNATTRIBUTED' && <div style={{ fontSize: '9px', fontWeight: 900, color: '#b91c1c', marginTop: '2px' }}>FIX THE APPOINTMENTS</div>}
                                  </td>
                                  {temporalMatrixData?.cols.map(c => {
                                    const count = row.counts[c] || 0;
@@ -1406,10 +1471,12 @@ return (
                       </thead>
                       <tbody>
                         {temporalMatrixData?.rows.map((row) => (
-                          <tr key={row.name} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s', ':hover': { background: '#f8fafc' } }}>
+                          <tr key={`${row.kind || 'PARTNER'}:${row.referrerId || row.name}`} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s', ':hover': { background: '#f8fafc' } }}>
                             <td style={{ padding: '15px 20px', position: 'sticky', left: 0, background: 'white', zIndex: 5, borderRight: '1px solid #f1f5f9' }}>
                               <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(row.name || 'ANONYMOUS').toUpperCase()}</div>
-                              <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{row.contact || 'No Contact Info'}</div>
+                              <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{row.contact || (row.kind === 'PARTNER' ? 'No Contact Info' : '')}</div>
+                                   {row.kind === 'UNLINKED' && <div style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', marginTop: '2px' }}>NOT A PARTNER YET</div>}
+                                   {row.kind === 'UNATTRIBUTED' && <div style={{ fontSize: '9px', fontWeight: 900, color: '#b91c1c', marginTop: '2px' }}>FIX THE APPOINTMENTS</div>}
                             </td>
                             {temporalMatrixData?.cols.map(c => {
                               const count = row.counts[c] || 0;

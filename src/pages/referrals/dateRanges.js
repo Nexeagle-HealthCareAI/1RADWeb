@@ -2,10 +2,13 @@
 // overview windows). Pulled out of ReferralsPage.jsx so both the page and
 // ReferralIntelligencePanel use the exact same implementation.
 
+// The calendar date `offset` days ago in the device's LOCAL time (IST for the centres). This used
+// to format the UTC date, so between 00:00 and 05:30 IST "today" was yesterday - the default
+// ranges, TODAY and the matrix reference date were all a day behind for the first 5.5 hours.
 export const getISODate = (offset = 0) => {
   const d = new Date();
   d.setDate(d.getDate() - offset);
-  return d.toISOString().split('T')[0];
+  return fmtLocalISO(d);
 };
 
 // Local-timezone-safe ISO date formatter. Using new Date().toISOString()

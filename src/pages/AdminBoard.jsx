@@ -8,6 +8,7 @@ import { nativeStorage } from '../hooks/useElectron';
 import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import useFinanceRevision from '../hooks/useFinanceRevision';
+import { formatPatientAge } from '../utils/patientAge';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
@@ -21,9 +22,12 @@ import { notifyToast } from '../utils/toast';
 
 // --- HELPERS ---
 const getISODate = (offset = 0) => {
+  // Local (device) calendar date - NOT toISOString(), which is the UTC date and put "today" a
+  // day behind for the first 5.5 hours of every IST day.
   const d = new Date();
   d.setDate(d.getDate() - offset);
-  return d.toISOString().split('T')[0];
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000);
+  return local.toISOString().split('T')[0];
 };
 
 const TODAY = getISODate(0);
@@ -706,20 +710,18 @@ export default function AdminBoard() {
             startDate: startDate || referralRange.start,
             endDate: endDate || (referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end)
           };
-      const res = await apiClient.get('/referrers/intelligence', { params });
+      const [res, allRes] = await Promise.all([
+        apiClient.get('/referrers/intelligence', { params }),
+        apiClient.get('/referrers'),
+      ]);
       setReferralIntelligence(res.data);
-      await nativeStorage.set(`1rad_cache_referral_intel_${startDate || 'default'}_${endDate || 'default'}`, res.data);
-
-      const allRes = await apiClient.get('/referrers');
       setAllReferrers(allRes.data || []);
-      await nativeStorage.set('1rad_cache_all_referrers', allRes.data || []);
     } catch (err) {
-      console.error('[REFERRAL INTEL] Fetch failed, trying cache', err);
-      const cached = await nativeStorage.get(`1rad_cache_referral_intel_${startDate || 'default'}_${endDate || 'default'}`);
-      if (cached) setReferralIntelligence(cached);
-
-      const cachedAll = await nativeStorage.get('1rad_cache_all_referrers');
-      if (cachedAll) setAllReferrers(cachedAll);
+      // Live only. The old fallback re-read a cache keyed by the (usually null) arguments rather than
+      // the range on screen, so a failed request quietly showed some EARLIER range's numbers as current.
+      // The last successfully loaded data stays on screen and the failure is said out loud.
+      console.error('[REFERRAL INTEL] Live fetch failed', err);
+      notifyToast(!err?.response ? 'Cannot reach the server — the referral figures shown may be out of date.' : 'Could not load live referral data — the figures shown may be out of date.', 'error');
     } finally {
       setReferralLoading(false);
     }
@@ -1614,7 +1616,7 @@ export default function AdminBoard() {
                     <td style={{ fontWeight: 800, color: '#0f52ba' }}>{p.id}</td>
                     <td style={{ fontWeight: 700 }}>{p.name.toUpperCase()}</td>
                     <td style={{ fontSize: '12px', opacity: 0.8 }}>+91 {p.mobile}</td>
-                    <td><span className="file-badge" style={{ padding: '4px 8px' }}>{p.age}y / {p.gender}</span></td>
+                    <td><span className="file-badge" style={{ padding: '4px 8px' }}>{formatPatientAge(p.age)} / {p.gender}</span></td>
                     <td>{p.district.toUpperCase()}</td>
                     <td>{p.referredBy}</td>
                     <td><span style={{ fontSize: '11px', color: '#888' }}>{p.registered}</span></td>
@@ -3841,7 +3843,7 @@ export default function AdminBoard() {
                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{p.mobile}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{formatPatientAge(p.age)} / {(p.gender || 'U').toUpperCase()}</div>
                           </td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                             <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
@@ -4192,7 +4194,7 @@ return (
                                           <td style={{ padding: '15px 15px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
+                                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{formatPatientAge(p.age)} • {(p.gender || 'U').toUpperCase()}</div>
                                           </td>
                                           <td style={{ padding: '15px 25px' }}>
                                              <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.mobile}</div>
