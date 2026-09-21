@@ -214,7 +214,12 @@ export default function DoctorReferralPortal() {
         .map(p => String(p.patientId || p.patient || '').trim().toLowerCase())
         .filter(Boolean)
     ).size;
-    return { count: filtered.length, patients, eligible, paid, unpaid, discount };
+    // Outstanding, split by whether it can be paid yet: the patient has paid
+    // (something) → payable now; otherwise it is waiting on the patient.
+    const owing = filtered.filter(p => (Number(p.unpaid) || 0) > 0);
+    const payable = owing.filter(p => p.paymentStatus === 'PAID' || p.paymentStatus === 'PARTIAL').reduce((s, p) => s + (Number(p.unpaid) || 0), 0);
+    const awaiting = owing.filter(p => !(p.paymentStatus === 'PAID' || p.paymentStatus === 'PARTIAL')).reduce((s, p) => s + (Number(p.unpaid) || 0), 0);
+    return { count: filtered.length, patients, eligible, paid, unpaid, discount, payable, awaiting };
   }, [filtered]);
 
   const todayCount = useMemo(() => presentPatients.filter(p => p.date === today).length, [presentPatients, today]);
@@ -276,7 +281,8 @@ export default function DoctorReferralPortal() {
         <Stat label="Eligible incentive" value={inr(stats.eligible)} tone="slate" icon="💼" />
         <Stat label="Discount given" value={inr(stats.discount)} tone="rose" icon="🏷️" />
         <Stat label="Received" value={inr(stats.paid)} tone="green" icon="✅" />
-        <Stat label="Outstanding" value={inr(stats.unpaid)} tone="amber" icon="⏳" />
+        <Stat label="Outstanding" value={inr(stats.unpaid)} tone="amber" icon="⏳"
+          sub={stats.unpaid > 0 ? `${inr(stats.payable)} payable now · ${inr(stats.awaiting)} awaiting patient` : undefined} />
       </div>
 
       {/* Performance + pipeline KPI panels removed per centre request — the four
@@ -575,11 +581,13 @@ function ProfileButton({ id, token, data, setData }) {
     }
   };
 
-  const field = (label, key, ph, type = 'text') => (
+  const field = (label, key, ph, type = 'text', readOnly = false) => (
     <div className="nxpf-field">
-      <label>{label}</label>
+      <label>{label}{readOnly ? ' (set by the centre)' : ''}</label>
       <input className="nxpf-input" type={type} value={form[key]} placeholder={ph}
-        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
+        readOnly={readOnly} title={readOnly ? 'Your name is managed by the diagnostic centre. Ask them to correct it.' : undefined}
+        style={readOnly ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' } : undefined}
+        onChange={e => { if (!readOnly) setForm(f => ({ ...f, [key]: e.target.value })); }} />
     </div>
   );
 
@@ -639,7 +647,7 @@ function ProfileButton({ id, token, data, setData }) {
                     <div className="nxpf-missing">Still to add: {completion.missing.join(' · ')}</div>
                   )}
                   <div className="nxpf-section">Identity &amp; contact</div>
-                  {field('Full name', 'name', 'Dr. Your Name')}
+                  {field('Full name', 'name', 'Dr. Your Name', 'text', true)}
                   <div className="nxpf-row">
                     {field('Mobile', 'contact', '10-digit mobile', 'tel')}
                     {field('Email', 'email', 'name@example.com', 'email')}
@@ -737,7 +745,7 @@ function Pipeline({ pipeline }) {
   );
 }
 
-function Stat({ label, value, tone, icon }) {
+function Stat({ label, value, tone, icon, sub }) {
   const T = {
     blue: { g1: '#eff6ff', g2: '#dbeafe', bd: '#bfdbfe', icbg: '#dbeafe', lb: '#1e40af', vl: '#1e3a8a' },
     green: { g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0', icbg: '#dcfce7', lb: '#166534', vl: '#14532d' },
@@ -751,6 +759,7 @@ function Stat({ label, value, tone, icon }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: '9px', fontWeight: 950, color: T.lb, letterSpacing: '0.4px', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
         <div style={{ fontSize: '17px', fontWeight: 950, color: T.vl, letterSpacing: '-0.4px', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{value}</div>
+        {sub && <div style={{ fontSize: '9px', fontWeight: 800, color: T.lb, opacity: 0.85, marginTop: '2px', whiteSpace: 'nowrap' }}>{sub}</div>}
       </div>
     </div>
   );

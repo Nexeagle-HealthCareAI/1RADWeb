@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
-import { fetchCommissions } from '../../api/billing/payoutApi';
+import { payCommissions, fetchCommissions } from '../../api/billing/payoutApi';
 
 const getIstDateStr = (iso) => {
   if (!iso) return null;
@@ -26,12 +26,17 @@ const eligibilityLabel = (cut) => {
   return (cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL') ? 'Eligible' : 'Non-eligible';
 };
 
+// A cancelled commission is not part of any payout figure. Appointment-lifecycle
+// cancellations zero the amount, but one cancelled by hand keeps its original
+// amount — counting it would inflate Unpaid / Total for that partner.
+const isCancelledCut = (cut) => String(cut?.status || '').toLowerCase() === 'cancelled';
+
 // Group cuts by payee/partner with aggregates. Shared by the Earned and Upcoming
 // views. Sorted: outstanding DESC, then total DESC; "DIRECT" pinned to the bottom.
 const groupCutsByPartner = (cuts) => {
   const groups = new Map();
   (cuts || []).forEach(cut => {
-    if (isSelfReferrer(cut?.name)) return;
+    if (isSelfReferrer(cut?.name) || isCancelledCut(cut)) return;
     const isAgent = cut?.referrerIsDoctor === false;
     const key = cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__');
     const displayName = (cut?.name || 'DIRECT').toUpperCase();
@@ -48,7 +53,9 @@ const groupCutsByPartner = (cuts) => {
     g.count += 1;
     const amt = Number(cut?.amount) || 0;
     g.total += amt;
-    if (amt >= 0) g.earned += amt; else g.deficit += -amt;
+    // Only an OPEN deficit counts: a clawback already recovered from a payout is stored
+    // as a PAID negative row and must not keep showing as owed.
+    if (amt >= 0) g.earned += amt; else if (cut?.status !== 'PAID') g.deficit += -amt;
     const absorbedMatch = String(cut?.remarks || '').match(/Excess\s*₹?\s*([\d.]+)\s*absorbed by centre/i);
     if (absorbedMatch) g.centreAbsorbed += Number(absorbedMatch[1]) || 0;
     if (cut?.status === 'PAID') {
@@ -77,7 +84,6 @@ const groupCutsByPartner = (cuts) => {
 
 const ReferralHub = ({
   isMobile,
-  isOnline,
   filteredReferralCuts,
   paginatedReferralCuts,
   timeFilter,
@@ -187,57 +193,13 @@ const ReferralHub = ({
   // already earned. Use the filtered list directly.
   const presentCuts = useMemo(() => filteredReferralCuts || [], [filteredReferralCuts]);
 
-  // Prefer a fresh, complete fetch straight from the server for the KPI
-  // headline strip below. presentCuts (above) is built from the local
-  // offline cache, which the sync engine only ever keeps a rolling recent
-  // window of (see evictOlderThan in SyncEngine.js) — for any date range
-  // reaching outside that window these 4 totals silently undercounted, even
-  // though every individual figure was computed correctly, because whole
-  // commission rows were simply missing locally. FUTURE has no server-side
-  // rows yet (those are the client-only "upcoming" estimate built from
-  // not-yet-billed appointments), so it keeps the local computation.
-  const [serverCuts, setServerCuts] = useState(null);
-  useEffect(() => {
-    if (timeFilter === 'FUTURE') { setServerCuts(null); return undefined; }
-    const today = getIstDateStr(new Date().toISOString());
-    let finalStart = null, finalEnd = null;
-    if (timeFilter === 'TODAY') {
-      finalStart = today; finalEnd = today;
-    } else if (timeFilter === 'PAST') {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      finalEnd = getIstDateStr(yesterday.toISOString());
-    } else if (timeFilter === 'CUSTOM') {
-      finalStart = startDate; finalEnd = endDate;
-    }
-    let alive = true;
-    fetchCommissions({ startDate: finalStart, endDate: finalEnd })
-      .then(rows => { if (alive) setServerCuts(Array.isArray(rows) ? rows : null); })
-      .catch(() => { if (alive) setServerCuts(null); });
-    return () => { alive = false; };
-  }, [timeFilter, startDate, endDate]);
-
-  // Same modality/referrer/search filters presentCuts (via useBillingData)
-  // applies — the server call above already scoped by date, so only these
-  // remain. Server rows carry Modality/ReferrerId directly, simpler than the
-  // local cut shape's STRATEGIC-type/description-based modality matching.
-  const serverCutsFiltered = useMemo(() => {
-    if (!serverCuts) return null;
-    const q = referralSearch.trim().toLowerCase();
-    return serverCuts.filter(c => {
-      if (modalityFilter !== 'ALL' && c.modality !== modalityFilter) return false;
-      if (!referrerFilter.includes('ALL') && !referrerFilter.includes(c.referrerId)) return false;
-      if (q) {
-        const hay = [c.patientName, c.referrerName, c.referenceNumber, c.modality, c.serviceName]
-          .filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [serverCuts, modalityFilter, referrerFilter, referralSearch]);
-
+  // KPIs are computed from the SAME live commission set that feeds the partner
+  // cards and the drawer (BillingPage fetches /referrers/commissions for the
+  // selected range straight from the server — there is no local cache any more),
+  // so the headline strip can never disagree with the rows below it, and it
+  // refreshes whenever the page reloads its finance data (e.g. after a payout).
   const referralStats = useMemo(() => {
-    const cuts = (isOnline && serverCutsFiltered) ? serverCutsFiltered : (presentCuts || []);
+    const cuts = (presentCuts || []).filter(c => !isCancelledCut(c));
     // A commission is ELIGIBLE to pay out once the patient has paid anything
     // (full PAID or part PARTIAL); otherwise it's AWAITING the patient's payment
     // and not yet payable. Carried deficits (amount ≤ 0) aren't a payable.
@@ -257,7 +219,7 @@ const ReferralHub = ({
       }
     });
     return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
-  }, [presentCuts, serverCutsFiltered, isOnline]);
+  }, [presentCuts]);
 
   const [settlementFilter, setSettlementFilter] = useState(['ALL']);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -321,6 +283,7 @@ const ReferralHub = ({
     showReferrerDropdown: false,
   });
   const [payeeFormErrors, setPayeeFormErrors] = useState({});
+  const [isPaying, setIsPaying] = useState(false);
 
   // Clear selections on filter adjustments
   useEffect(() => {
@@ -428,20 +391,39 @@ const ReferralHub = ({
       ...prev,
       paidBy: '',
       payeeName: partnerRef?.name || activePartner.name || '',
-      payeeContact: partnerRef?.mobile || '',
+      payeeContact: partnerRef?.contact || partnerRef?.mobile || '',
       payeeEmail: partnerRef?.email || '',
       payeeAddress: partnerRef?.address || '',
       referrerSearchTerm: '',
       showReferrerDropdown: false,
     }));
     setPayeeFormErrors({});
+    const partnerId = activePartnerId;
     setBulkConfirmModal({
       isOpen: true,
       count: eligible.length,
       total,
       eligibleIds: eligible.map(c => c.id),
-      partnerName: activePartner.name
+      partnerName: activePartner.name,
+      partnerId,
+      // An outstanding deficit (clawback from a cancelled / re-assigned paid visit) can
+      // be recovered out of this payout. Read it LIVE and all-time — the rows on screen
+      // are scoped to the selected date range and would miss an older clawback.
+      deficit: 0,
+      deficitLoading: true,
+      netDeficits: true,
     });
+    fetchCommissions({ referrerId: partnerId })
+      .then(rows => {
+        const deficit = (Array.isArray(rows) ? rows : [])
+          .filter(c => String(c.status || '').toUpperCase() !== 'PAID' && !isCancelledCut(c) && (Number(c.amount) || 0) < 0)
+          .reduce((sum, c) => sum + Math.abs(Number(c.amount) || 0), 0);
+        setBulkConfirmModal(prev => (prev.isOpen && prev.partnerId === partnerId) ? { ...prev, deficit, deficitLoading: false } : prev);
+      })
+      .catch(() => {
+        // Netting is an optional convenience — if the balance can't be read, pay normally.
+        setBulkConfirmModal(prev => (prev.isOpen && prev.partnerId === partnerId) ? { ...prev, deficit: 0, deficitLoading: false, netDeficits: false } : prev);
+      });
   };
 
   const handleBulkMarkPaid = async () => {
@@ -451,27 +433,46 @@ const ReferralHub = ({
     if (!payeeForm.payeeName.trim()) errors.payeeName = 'Paid To (Name) is required';
     if (Object.keys(errors).length > 0) { setPayeeFormErrors(errors); return; }
 
-    // handleToggleCommissionStatus currently sends a plain string — we need to send
-    // the full payee payload. Call the API directly for each eligible commission.
-    const payload = {
-      status: 'PAID',
-      paidBy: payeeForm.paidBy.trim(),
-      payeeName: payeeForm.payeeName.trim(),
-      payeeContact: payeeForm.payeeContact.trim(),
-      payeeEmail: payeeForm.payeeEmail.trim(),
-      payeeAddress: payeeForm.payeeAddress.trim(),
-    };
+    // ONE request → ONE server transaction. The old code fired a PATCH per
+    // commission from here: a dropped connection or one rejected row left the payout
+    // half-recorded, and a retry then failed on the rows that had already gone through.
+    // The server is idempotent (already-paid rows come back as skipped) and re-checks
+    // that the patient has paid, so a stale screen cannot pay out early.
+    if (isPaying) return;
+    setIsPaying(true);
+    let failed = false;
     try {
-      await Promise.all(
-        bulkConfirmModal.eligibleIds.map(id =>
-          apiClient.patch(`/referrers/commissions/${id}/status`, payload)
-        )
-      );
-      // Refresh data via the parent-supplied toggle (which calls refreshAllFinancialData)
-      bulkConfirmModal.eligibleIds.forEach(id => handleToggleCommissionStatus(id, '__SKIP__'));
+      const result = await payCommissions({
+        commissionIds: bulkConfirmModal.eligibleIds,
+        paidBy: payeeForm.paidBy.trim(),
+        payeeName: payeeForm.payeeName.trim(),
+        payeeContact: payeeForm.payeeContact.trim(),
+        payeeEmail: payeeForm.payeeEmail.trim(),
+        payeeAddress: payeeForm.payeeAddress.trim(),
+        netDeficits: !!bulkConfirmModal.netDeficits && (bulkConfirmModal.deficit || 0) > 0,
+      });
+      const paidCount = result?.paid?.length || 0;
+      const skipped = (result?.skipped || []).filter(x => !/already paid/i.test(x.reason || ''));
+      if (paidCount > 0) {
+        const recovered = Number(result.deficitRecovered || 0);
+        notifyToast(recovered > 0
+          ? `Payout recorded: ₹${Number(result.totalPaid || 0).toLocaleString()} settled, ₹${recovered.toLocaleString()} deficit recovered — hand over ₹${Number(result.netPaid || 0).toLocaleString()}.`
+          : `Recorded payout of ₹${Number(result.totalPaid || 0).toLocaleString()} across ${paidCount} commission${paidCount === 1 ? '' : 's'}.`, 'success');
+      }
+      if (skipped.length > 0) {
+        notifyToast(`${skipped.length} not paid: ${[...new Set(skipped.map(x => x.reason))].join(' ')}`, 'warning');
+      }
     } catch (e) {
-      notifyToast('Some commissions could not be updated. Please retry.', 'error');
+      failed = true;
+      const msg = e?.response?.data?.error || e?.response?.data?.message;
+      notifyToast(!e?.response ? 'No connection to the server — nothing was recorded. Please try again.' : (msg || 'The payout could not be recorded. Nothing was changed.'), 'error');
+    } finally {
+      setIsPaying(false);
     }
+    // A failed request recorded nothing — keep the form open so it can be retried.
+    if (failed) return;
+    // Reload the commission list from the server whether it fully or partly succeeded.
+    handleToggleCommissionStatus(null, '__SKIP__');
     setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' });
     setDrawerSelectedIds(new Set());
   };
@@ -1744,6 +1745,42 @@ const ReferralHub = ({
                 </div>
               )}
 
+              {/* Outstanding deficit — recover it out of this payout */}
+              {bulkConfirmModal.deficitLoading && (
+                <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 800 }}>Checking for an outstanding deficit…</div>
+              )}
+              {!bulkConfirmModal.deficitLoading && (bulkConfirmModal.deficit || 0) > 0 && (() => {
+                const deficit = bulkConfirmModal.deficit;
+                const gross = bulkConfirmModal.total;
+                const recovered = bulkConfirmModal.netDeficits ? Math.min(deficit, gross) : 0;
+                const net = gross - recovered;
+                const row = (label, value, strong, color) => (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: strong ? '13px' : '11.5px', fontWeight: strong ? 950 : 800, color: color || '#334155' }}>
+                    <span>{label}</span><span>{value}</span>
+                  </div>
+                );
+                return (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#92400e', lineHeight: 1.45 }}>
+                      {bulkConfirmModal.partnerName} owes the centre <b>₹{deficit.toLocaleString()}</b> from cancelled or re-assigned visits that were already paid.
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', fontWeight: 900, color: '#78350f', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!bulkConfirmModal.netDeficits}
+                        onChange={e => setBulkConfirmModal(prev => ({ ...prev, netDeficits: e.target.checked }))} />
+                      Recover it from this payout
+                    </label>
+                    <div style={{ borderTop: '1px dashed #fcd34d', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {row('Payout (gross)', `₹${gross.toLocaleString()}`)}
+                      {recovered > 0 && row('Deficit recovered', `− ₹${recovered.toLocaleString()}`, false, '#b45309')}
+                      {row('Net to hand over', `₹${net.toLocaleString()}`, true, '#166534')}
+                      {recovered > 0 && deficit > recovered && (
+                        <div style={{ fontSize: '10px', color: '#92400e', fontWeight: 700 }}>₹{(deficit - recovered).toLocaleString()} of the deficit stays outstanding for the next payout.</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Paid By */}
               <div>
                 <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1.5px', marginBottom: '6px' }}>
@@ -1796,7 +1833,7 @@ const ReferralHub = ({
                             setPayeeForm(p => ({
                               ...p,
                               payeeName: r.name || '',
-                              payeeContact: r.mobile || '',
+                              payeeContact: r.contact || r.mobile || '',
                               payeeEmail: r.email || '',
                               payeeAddress: r.address || '',
                               referrerSearchTerm: r.name || '',
@@ -1809,7 +1846,7 @@ const ReferralHub = ({
                           onMouseLeave={e => e.currentTarget.style.background = 'white'}
                         >
                           <span style={{ background: '#e0e7ff', color: '#4f46e5', padding: '2px 6px', borderRadius: '6px', fontSize: '9px', marginRight: '8px', fontWeight: 900 }}>REF</span>
-                          {r.name} {r.mobile ? `· ${r.mobile}` : ''}
+                          {r.name} {(r.contact || r.mobile) ? `· ${r.contact || r.mobile}` : ''}
                         </div>
                       ))}
                     </div>
@@ -1856,7 +1893,7 @@ const ReferralHub = ({
                 >CANCEL</button>
                 <button
                   onClick={handleBulkMarkPaid}
-                  disabled={bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()}
+                  disabled={isPaying || bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()}
                   style={{
                     flex: 2, padding: '14px 20px',
                     background: (bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()) ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
@@ -1866,7 +1903,7 @@ const ReferralHub = ({
                     boxShadow: (bulkConfirmModal.count === 0 || !payeeForm.paidBy.trim() || !payeeForm.payeeName.trim()) ? 'none' : '0 8px 18px -4px rgba(22, 163, 74, 0.35)',
                     transition: 'all 0.2s'
                   }}
-                >✓ AUTHORIZE DISBURSEMENT ({bulkConfirmModal.count} PAYOUT{bulkConfirmModal.count !== 1 ? 'S' : ''})</button>
+                >{isPaying ? 'RECORDING…' : `✓ AUTHORIZE DISBURSEMENT (${bulkConfirmModal.count} PAYOUT${bulkConfirmModal.count !== 1 ? 'S' : ''})`}</button>
               </div>
             </div>
           </div>

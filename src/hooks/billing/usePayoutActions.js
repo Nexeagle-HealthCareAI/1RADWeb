@@ -9,8 +9,19 @@
 
 import { useCallback } from 'react';
 import apiClient from '../../api/apiClient'; // retained for /approvals
-import { batchSaveCommissions, updateCommissionStatus } from '../../api/billing/payoutApi';
+import { batchSaveCommissions, updateCommissionStatus, fetchCommissions, writeOffDeficit } from '../../api/billing/payoutApi';
 import { notifyFinanceChanged } from '../useFinanceRevision';
+
+// The API answers a rejected business rule (e.g. "the patient has not paid yet",
+// "a paid commission is immutable") with a 4xx carrying a user-safe message —
+// show THAT instead of a generic failure. A response-less error is a network
+// problem and keeps the "check your connection" wording.
+const serverMessage = (err, fallback) => {
+  if (!err?.response) return 'No connection to the server — please check your network and try again.';
+  const d = err.response.data;
+  const msg = (typeof d === 'string' ? d : (d?.message || d?.error)) || '';
+  return err.response.status < 500 && msg ? msg : fallback;
+};
 
 /**
  * @param {object}   opts
@@ -18,7 +29,6 @@ import { notifyFinanceChanged } from '../useFinanceRevision';
  * @param {function} opts.notify
  * @param {function} opts.confirmModal
  * @param {function} opts.refreshAllFinancialData
- * @param {Array}    opts.combinedReferralCuts
  * @param {object}   opts.editPayout
  * @param {function} opts.setIsPayoutDrawerOpen
  * @param {function} opts.setIsSavingPayout
@@ -28,56 +38,63 @@ export const usePayoutActions = ({
   notify,
   confirmModal,
   refreshAllFinancialData,
-  combinedReferralCuts,
   editPayout,
   setIsPayoutDrawerOpen,
   setIsSavingPayout,
 }) => {
 
-  // ── Write off a referrer's carried deficit ──────────────────────────────────
-  const handleWriteOffDeficit = useCallback((partner) => {
+  // ── Write off a referrer's outstanding deficit ────────────────────────────────
+  // The deficit is the referrer's OPEN clawback/reversal rows (negative, not yet paid
+  // or cancelled), read live and all-time — never derived from the rows the page
+  // happens to have loaded, which are scoped to the selected date range. The server
+  // computes the real amount when it books the write-off; this read only powers the
+  // confirmation text. (Deficits can also be recovered from a payout — see the
+  // "Recover it from this payout" option when paying a partner.)
+  const handleWriteOffDeficit = useCallback(async (partner) => {
     const referrerId = partner?.cuts?.find(c => c.referrerId)?.referrerId;
-    // Use the referrer's TRUE all-time net (not the filtered card total) — a
-    // date filter must never make us write off the wrong amount.
-    const net = (combinedReferralCuts || [])
-      .filter(c => c.referrerId === referrerId)
-      .reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    const deficit = net < 0 ? Math.abs(net) : 0;
+    if (!referrerId) {
+      notify({ type: 'warning', message: 'Could not identify the referrer for this write-off.' });
+      return;
+    }
+    if (!isOnline) {
+      notify({ type: 'error', title: 'No connection', message: 'You are offline — writing off a deficit needs a live connection.' });
+      return;
+    }
 
-    if (!referrerId || deficit <= 0) {
-      notify({ type: 'warning', message: 'No recoverable deficit to write off for this referrer (their all-time balance is not negative).' });
+    let deficit = 0;
+    try {
+      const rows = await fetchCommissions({ referrerId });
+      deficit = (Array.isArray(rows) ? rows : [])
+        .filter(c => String(c.status || '').toUpperCase() !== 'PAID' && String(c.status || '').toLowerCase() !== 'cancelled' && (Number(c.amount) || 0) < 0)
+        .reduce((sum, c) => sum + Math.abs(Number(c.amount) || 0), 0);
+    } catch (err) {
+      notify({ type: 'error', message: serverMessage(err, 'Could not read this referrer’s current balance.') });
+      return;
+    }
+    if (deficit <= 0) {
+      notify({ type: 'warning', message: 'No outstanding deficit to write off for this referrer.' });
       return;
     }
 
     confirmModal({
       title: `Write off ₹${deficit.toLocaleString()} deficit?`,
-      message: `${partner.name || 'This referrer'} currently owes ₹${deficit.toLocaleString()}. Writing it off means the centre absorbs the loss and the referrer's balance returns to zero. This cannot be undone.`,
+      message: `${partner.name || 'This referrer'} owes ₹${deficit.toLocaleString()} from cancelled or re-assigned visits that were already paid. Writing it off means the centre absorbs the loss instead of recovering it from their future payouts. This cannot be undone.`,
       confirmText: 'Write off',
       danger: true,
       onConfirm: async () => {
-        const payload = {
-          referrerId,
-          remarks: `DEFICIT WRITE-OFF (₹${deficit}) — centre absorbed`,
-          lines: [{ modality: 'WRITE-OFF', amount: deficit, status: 'PAID' }],
-        };
-
-        if (!isOnline) {
-          notify({ type: 'error', title: 'No connection', message: 'You are offline — writing off a deficit needs a live connection.' });
-          return;
-        }
-
         try {
-          await batchSaveCommissions(payload);
-          notify({ type: 'success', title: 'Written off', message: `₹${deficit.toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
+          const result = await writeOffDeficit(referrerId);
+          notify({ type: 'success', title: 'Written off', message: `₹${Number(result?.writtenOff || 0).toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
           notifyFinanceChanged();
           refreshAllFinancialData();
         } catch (err) {
           console.error('[FINANCE] Deficit write-off failed', err);
-          notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not write off the deficit.' });
+          notify({ type: 'error', message: serverMessage(err, 'Could not write off the deficit.') });
+          refreshAllFinancialData();
         }
       },
     });
-  }, [combinedReferralCuts, isOnline, notify, confirmModal, refreshAllFinancialData]);
+  }, [isOnline, notify, confirmModal, refreshAllFinancialData]);
 
   // ── Toggle commission PAID ↔ UNPAID ────────────────────────────────────────
   const handleToggleCommissionStatus = useCallback(async (id, currentStatus) => {
@@ -100,7 +117,7 @@ export const usePayoutActions = ({
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
-      notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not update commission status.' });
+      notify({ type: 'error', message: serverMessage(err, 'Could not update commission status.') });
     }
   }, [isOnline, notify, refreshAllFinancialData]);
 
@@ -235,7 +252,7 @@ export const usePayoutActions = ({
       refreshAllFinancialData();
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
-      notify({ type: 'error', message: !err.response ? 'No connection to the server — please check your network and try again.' : 'Could not save payout.' });
+      notify({ type: 'error', message: serverMessage(err, 'Could not save payout.') });
     } finally {
       setIsSavingPayout(false);
     }
