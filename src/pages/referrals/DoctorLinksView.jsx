@@ -26,6 +26,7 @@ export default function DoctorLinksView({
   openLinkSend,
   copyDoctorLink,
   revokeDoctorLinks,
+  linkStatus,
   linkSend,
   setLinkSend,
   submitLinkSend,
@@ -42,6 +43,21 @@ export default function DoctorLinksView({
       const d = e?.response?.data;
       setRevoke(r => ({ ...r, busy: false, err: (!e?.response ? 'No connection to the server — nothing was changed.' : (d?.message || d?.error || 'Could not revoke the links.')) }));
     }
+  };
+  // One line per doctor: when their link was last sent, how, and when it dies / renews.
+  // Absent = never sent from the app (a link copied by hand is not tracked).
+  const fmtDay = (iso) => { try { return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); } catch { return ''; } };
+  const linkNote = (d) => {
+    const st = linkStatus && linkStatus[d.referrerId];
+    if (!st) return { text: 'No link sent from here yet', color: '#94a3b8' };
+    const via = st.lastSentChannel === 'email' ? 'email' : 'WhatsApp';
+    if (!st.lastSentAt) return { text: st.revokedAt ? 'Links revoked' : 'No link sent from here yet', color: st.revokedAt ? '#be123c' : '#94a3b8' };
+    const exp = st.lastSentExpiresAt ? new Date(st.lastSentExpiresAt) : null;
+    if (!exp) return { text: 'Links revoked — send a fresh one', color: '#be123c' };
+    const days = Math.ceil((exp.getTime() - Date.now()) / 86400000);
+    if (days <= 0) return { text: `Link expired ${fmtDay(exp)} — send a fresh one`, color: '#be123c' };
+    const renew = st.autoRenew ? 'renews automatically' : 'will not auto-renew';
+    return { text: `Sent ${fmtDay(st.lastSentAt)} via ${via} · expires in ${days}d · ${renew}`, color: days <= 14 && !st.autoRenew ? '#b45309' : '#64748b' };
   };
   const revokeBtnTitle = 'Revoke links — every link already sent to this doctor stops working';
 
@@ -141,6 +157,7 @@ export default function DoctorLinksView({
                   <td style={{ padding: '12px 20px' }}>
                     <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{d.name}</div>
                     <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>{[d.specialty, d.degree].filter(Boolean).join(' · ') || 'Referring doctor'}</div>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: linkNote(d).color, marginTop: '3px' }}>{linkNote(d).text}</div>
                   </td>
                   <td style={{ padding: '12px 20px' }}>
                     {d.contact
@@ -201,6 +218,8 @@ export default function DoctorLinksView({
                       : <span style={{ fontSize: '11px', fontWeight: 800, color: '#e11d48' }}>Email not available</span>}
                   </div>
                 </div>
+
+                <div style={{ fontSize: '10.5px', fontWeight: 800, color: linkNote(d).color }}>{linkNote(d).text}</div>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {d.contact

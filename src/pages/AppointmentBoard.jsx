@@ -26,6 +26,7 @@ import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo
 import { fetchApprovalMap, approvalForAppointment, approvalBadge } from '../utils/approvalLookup';
 import { withDoctorPrefix } from '../utils/referrerFormat';
 import { celebrate } from '../utils/celebrate';
+import PatientSourceSelect from '../components/PatientSourceSelect';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { rankPatientDuplicates, rankReferrerDuplicates } from '../utils/duplicateMatch';
@@ -3473,26 +3474,9 @@ export default function AppointmentBoard() {
                 <div className="android-form-group" style={{ marginTop: '8px' }}>
                   <label className="android-label">
                     <span>SOURCE OF INFORMATION</span>
-                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Type or select below</span>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Choose one</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Newspaper, Friend, Camp..."
-                    className="android-input"
-                    style={{ marginBottom: '8px', background: '#f8fafc' }}
-                    value={newPatient.sourceOfInfo || ''}
-                    onChange={e => setNewPatient({ ...newPatient, sourceOfInfo: e.target.value })}
-                  />
-                  <div className="android-quick-tray">
-                    {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
-                      <button
-                        key={opt}
-                        type="button"
-                        className={`android-quick-chip ${newPatient.sourceOfInfo === opt ? 'selected' : ''}`}
-                        onClick={() => setNewPatient({ ...newPatient, sourceOfInfo: opt })}
-                      >{opt}</button>
-                    ))}
-                  </div>
+                  <PatientSourceSelect variant="android" value={newPatient.sourceOfInfo || ''} onChange={v => setNewPatient({ ...newPatient, sourceOfInfo: v })} />
                 </div>
               </div>
 
@@ -4170,21 +4154,7 @@ export default function AppointmentBoard() {
                         </div>
                         <div className="form-group" style={{ marginBottom: '4px' }}>
                           <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>SOURCE OF INFORMATION</label>
-                          <input 
-                            type="text" 
-                            placeholder="Discovery source..." 
-                            style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '10px', outline: 'none' }} 
-                            value={newPatient.sourceOfInfo || ''} 
-                            onChange={e => setNewPatient({...newPatient, sourceOfInfo: e.target.value})} 
-                          />
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
-                            {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
-                              <button key={opt} type="button" onClick={() => setNewPatient({...newPatient, sourceOfInfo: opt})}
-                                style={{ padding: '4px 10px', fontSize: '9px', fontWeight: 700, borderRadius: '20px', background: newPatient.sourceOfInfo === opt ? '#0f52ba' : '#f8fafc', color: newPatient.sourceOfInfo === opt ? 'white' : '#475569', border: `1px solid ${newPatient.sourceOfInfo === opt ? '#0f52ba' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s ease' }}>
-                                {opt}
-                              </button>
-                            ))}
-                          </div>
+                          <PatientSourceSelect variant="field" value={newPatient.sourceOfInfo || ''} onChange={v => setNewPatient({ ...newPatient, sourceOfInfo: v })} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
@@ -5811,26 +5781,9 @@ export default function AppointmentBoard() {
             <div className="android-form-group">
               <label className="android-label">
                 <span>SOURCE OF INFORMATION</span>
-                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Type or select below</span>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Choose one</span>
               </label>
-              <input
-                type="text"
-                placeholder="e.g. Newspaper, Friend, Camp..."
-                className="android-input"
-                style={{ marginBottom: '8px', background: '#f8fafc' }}
-                value={editingAppointment.sourceOfInfo || ''}
-                onChange={e => setEditingAppointment({ ...editingAppointment, sourceOfInfo: e.target.value })}
-              />
-              <div className="android-quick-tray">
-                {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
-                  <button
-                    key={opt}
-                    type="button"
-                    className={`android-quick-chip ${editingAppointment.sourceOfInfo === opt ? 'selected' : ''}`}
-                    onClick={() => setEditingAppointment({ ...editingAppointment, sourceOfInfo: opt })}
-                  >{opt}</button>
-                ))}
-              </div>
+              <PatientSourceSelect variant="android" value={editingAppointment.sourceOfInfo || ''} onChange={v => setEditingAppointment({ ...editingAppointment, sourceOfInfo: v })} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px' }}>
@@ -6557,21 +6510,7 @@ export default function AppointmentBoard() {
 
                 <div className="form-group" style={{ marginBottom: '15px' }}>
                   <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>SOURCE OF INFORMATION</label>
-                  <input 
-                    type="text" 
-                    placeholder="Discovery source..." 
-                    style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '10px', outline: 'none', fontWeight: 600, color: '#1e293b' }} 
-                    value={editingAppointment.sourceOfInfo || ''} 
-                    onChange={e => setEditingAppointment({...editingAppointment, sourceOfInfo: e.target.value})} 
-                  />
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
-                    {['Friend / Family', 'By Doctor', 'Camp', 'Social Media', 'Previous Patient', 'Walk-in'].map(opt => (
-                      <button key={opt} type="button" onClick={() => setEditingAppointment({...editingAppointment, sourceOfInfo: opt})}
-                        style={{ padding: '4px 10px', fontSize: '9px', fontWeight: 700, borderRadius: '20px', background: editingAppointment.sourceOfInfo === opt ? '#0f52ba' : '#f8fafc', color: editingAppointment.sourceOfInfo === opt ? 'white' : '#475569', border: `1px solid ${editingAppointment.sourceOfInfo === opt ? '#0f52ba' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s ease' }}>
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
+                  <PatientSourceSelect variant="field" value={editingAppointment.sourceOfInfo || ''} onChange={v => setEditingAppointment({ ...editingAppointment, sourceOfInfo: v })} />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '15px' }}>

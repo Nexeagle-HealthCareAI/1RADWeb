@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
+import useSourceVisits from '../hooks/useSourceVisits';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import useFinanceRevision from '../hooks/useFinanceRevision';
-import { buildPatientAge } from '../utils/patientAge';
+import { buildPatientAge, formatPatientAge } from '../utils/patientAge';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
@@ -20,7 +21,8 @@ import DoctorLinkSendSheet from './referrals/DoctorLinkSendSheet';
 import DoctorLinksView from './referrals/DoctorLinksView';
 import { getReferrerProfileCompletion, completionColor } from './referrals/referrerProfile';
 import { sortArrow } from './referrals/sortArrow';
-import { getISODate, getOverviewDates } from './referrals/dateRanges';
+import { getISODate, getOverviewDates, fmtLocalISO } from './referrals/dateRanges';
+import { downloadCsv, csvCell, csvPhone, csvNumber } from '../utils/csv';
 import ReferrerEditDrawer from './referrals/ReferrerEditDrawer';
 import { UnmergeReferrerModal, DeleteReferrerModal, MergeReferrerModal } from './referrals/ReferrerLifecycleModals';
 import PatientEditDrawer from './referrals/PatientEditDrawer';
@@ -134,6 +136,16 @@ export default function ReferralsPage() {
   const [expandedReferrer, setExpandedReferrer] = useState(null);
   const [personnel, setPersonnel] = useState([]);
   const [referralIntelligence, setReferralIntelligence] = useState([]);
+
+  // Source Analytics loads a SUMMARY (one row per source, every total, no visit rows) and fetches a
+  // source's visits only when it is opened, a page at a time (useSourceVisits). The old single call
+  // returned every visit of every source for the whole range, which got slower with every month of
+  // history. Rows are cached per source AND date range.
+  const rangeParams = useMemo(() => (referralFilterMode === 'ALL'
+    ? {}
+    : { startDate: referralRange.start, endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end }),
+  [referralRange, referralFilterMode]);
+  const { sourceVisits, loadSourceVisits, peek: peekVisits, rangeKey } = useSourceVisits(rangeParams);
   const [allReferrers, setAllReferrers] = useState([]);
   const [referralLoading, setReferralLoading] = useState(false);
   // Live-data health for the intelligence/roster fetch: last error (null when the
@@ -195,6 +207,18 @@ export default function ReferralsPage() {
   const [referralLinksSearch, setReferralLinksSearch] = useState('');
   const [linkSend, setLinkSend] = useState(null); // { doctor, channel, email, contact, saving, err }
   const [selectedLinks, setSelectedLinks] = useState(() => new Set()); // referrerIds checked in Doctor Links
+  // referrerId -> { lastSentAt, lastSentChannel, lastSentExpiresAt, autoRenew, revokedAt } for the Doctor Links tab
+  const [linkStatus, setLinkStatus] = useState({});
+  const loadLinkStatus = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/referrers/link-status');
+      const map = {};
+      (Array.isArray(data) ? data : []).forEach(r => { map[r.referrerId] = r; });
+      setLinkStatus(map);
+    } catch (err) {
+      console.warn('[DOCTOR LINKS] link status unavailable', err);   // informational only - the tab still works without it
+    }
+  }, []);
   const [bulkSend, setBulkSend] = useState(null); // null | { status:'sending'|'done', channel, sent, skipped, failed }
   const doctorList = useMemo(
     () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
@@ -211,6 +235,7 @@ export default function ReferralsPage() {
   const revokeDoctorLinks = async (referrerId) => {
     await apiClient.post(`/referrers/${referrerId}/revoke-links`);
     notifyToast('Old links stopped working. Send the doctor a fresh link.', 'success');
+    loadLinkStatus();
   };
   const copyDoctorLink = async (referrerId) => {
     try { 
@@ -270,7 +295,7 @@ export default function ReferralsPage() {
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send on WhatsApp.', 'error');
       return null;
-    } finally { setLinksBusy(false); }
+    } finally { setLinksBusy(false); loadLinkStatus(); }
   };
   const emailDoctors = async (ids) => {
     if (!ids.length) { notifyToast('No doctors to email.', 'error'); return null; }
@@ -282,7 +307,7 @@ export default function ReferralsPage() {
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send emails.', 'error');
       return null;
-    } finally { setLinksBusy(false); }
+    } finally { setLinksBusy(false); loadLinkStatus(); }
   };
 
   // ── Doctor-link multi-select + bulk send ──────────────────────────────────
@@ -470,30 +495,42 @@ export default function ReferralsPage() {
     setSelectedLedgerRows(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  // "Aarav Kumar" -> "A. K." - the WhatsApp share is a payout summary sent to an arbitrary chat,
+  // so it carries the patient ID, never the full name.
+  const initialsOf = (name) => String(name || '').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + '.').join(' ') || 'PATIENT';
+  // A visit may carry several service lines; the scalar modality/service is only the first one.
+  const visitModalities = (p) => (Array.isArray(p.serviceLines) && p.serviceLines.length > 0
+    ? [...new Set(p.serviceLines.map(l => l.modality).filter(Boolean))].join(' + ')
+    : (p.modality || ''));
+  const visitServices = (p) => (Array.isArray(p.serviceLines) && p.serviceLines.length > 0
+    ? p.serviceLines.map(l => l.serviceName).filter(Boolean).join(' + ')
+    : (p.service || ''));
+
   const handleExportLedger = (type) => {
-    const selectedData = referralIntelligence.flatMap(r => r.patients).filter(p => selectedLedgerRows.includes(p.appointmentId || p.patientId));
+    // Rows come from whatever the screen has loaded (a summary carries none; opened sources hold theirs).
+    const loadedRows = new Map();
+    [...referralIntelligence.flatMap(r => r.patients || []),
+     ...Object.values(sourceVisits).filter(v => v.rangeKey === rangeKey).flatMap(v => v.rows)]
+      .forEach(p => loadedRows.set(p.appointmentId || p.patientId, p));
+    const selectedData = [...loadedRows.values()].filter(p => selectedLedgerRows.includes(p.appointmentId || p.patientId));
     if (selectedData.length === 0) return;
 
     if (type === 'EXCEL') {
-        let csv = "REFERRAL_ID,PATIENT,CONTACT,MODALITY,SERVICE,COMMISSION,STATUS,DATE,ADDRESS,SOURCE_OF_INFO\n";
-        selectedData.forEach(p => {
-            const addressStr = [p.address, p.village, p.district].filter(Boolean).join(', ');
-            const escapedAddress = `"${addressStr.replace(/"/g, '""')}"`;
-            const escapedSource = `"${(p.sourceOfInfo || '').replace(/"/g, '""')}"`;
-            csv += `${p.patientIdentifier || 'N/A'},"${p.name}",${p.mobile},${p.modality},"${p.service}",${p.commissionAmount},${p.status},${p.registrationDate},${escapedAddress},${escapedSource}\n`;
-        });
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Referral_Ledger_${new Date().toISOString().slice(0,10)}.csv`;
-        a.click();
+      const header = ['REFERRAL_ID', 'PATIENT', 'CONTACT', 'MODALITY', 'SERVICE', 'VISIT_DATE', 'BILLED', 'COLLECTED', 'COMMISSION', 'COMMISSION_STATUS', 'VISIT_STATUS', 'ADDRESS', 'SOURCE_OF_INFO'];
+      const lines = selectedData.map(p => [
+        csvCell(p.patientIdentifier || 'N/A'), csvCell(p.name), csvPhone(p.mobile),
+        csvCell(visitModalities(p)), csvCell(visitServices(p)), csvCell(p.registrationDate),
+        csvNumber(p.totalAmount), csvNumber(p.paidAmount), csvNumber(p.commissionAmount),
+        csvCell(p.commissionStatus), csvCell(p.status),
+        csvCell([p.address, p.village, p.district].filter(Boolean).join(', ')), csvCell(p.sourceOfInfo),
+      ].join(','));
+      downloadCsv(`Referral_Ledger_${fmtLocalISO(new Date())}.csv`, [header.join(','), ...lines]);
     } else if (type === 'WHATSAPP') {
-        let msg = `*REFERRAL CASE LEDGER REPORT*\n\n`;
-        selectedData.forEach((p, i) => {
-            msg += `${i+1}. *${p.name.toUpperCase()}* (${p.modality})\n   ID: ${p.patientIdentifier || 'N/A'}\n   Service: ${p.service}\n   Payout: ₹${p.commissionAmount}\n   Status: ${p.status}\n\n`;
-        });
-        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+      let msg = `*REFERRAL CASE LEDGER REPORT*\n\n`;
+      selectedData.forEach((p, i) => {
+        msg += `${i + 1}. *${initialsOf(p.name)}* (${visitModalities(p)})\n   ID: ${p.patientIdentifier || 'N/A'}\n   Service: ${visitServices(p)}\n   Payout: ₹${p.commissionAmount}\n   Status: ${p.status}\n\n`;
+      });
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -512,42 +549,22 @@ export default function ReferralsPage() {
 
   const handleExportMatrix = () => {
     if (!temporalMatrixData) return;
-    
-    // Headers with quotes to prevent breakage
-    const headers = ["REFERRING SOURCE", ...temporalMatrixData.cols, "TOTAL PULL"];
-    let csv = headers.map(h => `"${h}"`).join(",") + "\n";
 
-    // Row data
-    temporalMatrixData.rows.forEach(row => {
-      const rowData = [
-        `"${row.name || 'ANONYMOUS'}"`,
-        ...temporalMatrixData.cols.map(c => row.counts[c] || 0),
-        row.total
-      ];
-      csv += rowData.join(",") + "\n";
-    });
+    const header = ['REFERRING SOURCE', ...temporalMatrixData.cols, 'TOTAL VISITS'].map(csvCell).join(',');
+    const lines = temporalMatrixData.rows.map(row => [
+      csvCell(row.name || 'ANONYMOUS'),
+      ...temporalMatrixData.cols.map(c => csvNumber(row.counts[c])),
+      csvNumber(row.total),
+    ].join(','));
 
-    // Grand Totals Row
+    // Grand totals row
     if (temporalMatrixData.rows.length > 0) {
-      const colTotals = temporalMatrixData.cols.map(c => 
-        temporalMatrixData.rows.reduce((sum, r) => sum + (r.counts[c] || 0), 0)
-      );
+      const colTotals = temporalMatrixData.cols.map(c => temporalMatrixData.rows.reduce((sum, r) => sum + (r.counts[c] || 0), 0));
       const grandTotal = temporalMatrixData.rows.reduce((sum, r) => sum + r.total, 0);
-      
-      const footerData = [
-        `"GRAND TOTAL"`,
-        ...colTotals,
-        grandTotal
-      ];
-      csv += footerData.join(",") + "\n";
+      lines.push([csvCell('GRAND TOTAL'), ...colTotals, grandTotal].join(','));
     }
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Referral_Matrix_${matrixPeriod}_${matrixDateStr}_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
+
+    downloadCsv(`Referral_Matrix_${matrixPeriod}_${matrixDateStr}_${fmtLocalISO(new Date())}.csv`, [header, ...lines]);
   };
 
   const handleExportRoster = () => {
@@ -555,34 +572,21 @@ export default function ReferralsPage() {
       notifyToast('No partners to export yet.', 'info');
       return;
     }
-    // Plain, complete headers — every detail a partner row carries.
-    const headers = [
+    // Plain, complete headers - every detail a partner row carries.
+    const header = [
       'Rank', 'Partner Name', 'Type', 'Speciality', 'Degree', 'Supporting Doctor',
-      'Email', 'Contact Number', 'Address', 'Total Studies', 'Total Revenue',
+      'Email', 'Contact Number', 'Address', 'Total Visits', 'Total Billed',
       'Total Commission', 'Total Paid Incentive', 'Unpaid Commission',
-    ];
-    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    let csv = headers.join(',') + '\n';
-    caseLedgerList.forEach((s, i) => {
-      const type = s.isDoctor ? 'Doctor' : 'Other person';
-      const spec = s.isDoctor ? (s.specialty || '') : '';
-      const deg = s.isDoctor ? (s.degree || '') : '';
-      const supp = !s.isDoctor ? (s.supportedByDoctor || '') : '';
-      csv += [
-        i + 1, cell(s.name), cell(type), cell(spec), cell(deg), cell(supp),
-        cell(s.email), cell(s.contact), cell(s.address),
-        s.patientCount || 0, s.totalRevenue || 0, s.totalCommission || 0,
-        s.paidCommission || 0, s.unpaidCommission || 0,
-      ].join(',') + '\n';
-    });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Partner_Network_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    // Release the object URL once the download has spooled (avoids a leak).
-    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    ].map(csvCell).join(',');
+    const lines = caseLedgerList.map((s, i) => [
+      i + 1, csvCell(s.name), csvCell(s.isDoctor ? 'Doctor' : 'Other person'),
+      csvCell(s.isDoctor ? (s.specialty || '') : ''), csvCell(s.isDoctor ? (s.degree || '') : ''),
+      csvCell(!s.isDoctor ? (s.supportedByDoctor || '') : ''),
+      csvCell(s.email), csvPhone(s.contact), csvCell(s.address),
+      csvNumber(s.patientCount), csvNumber(s.totalRevenue), csvNumber(s.totalCommission),
+      csvNumber(s.paidCommission), csvNumber(s.unpaidCommission),
+    ].join(','));
+    downloadCsv(`Partner_Network_${fmtLocalISO(new Date())}.csv`, [header, ...lines]);
     notifyToast(`Download started — ${caseLedgerList.length} partner${caseLedgerList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
   };
 
@@ -591,25 +595,14 @@ export default function ReferralsPage() {
       notifyToast('No patients to export yet.', 'info');
       return;
     }
-    const headers = ['ID', 'PTID', 'Full Name', 'Mobile', 'Age', 'Gender', 'Address', 'Source Of Info', 'Registered Date'];
-    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    let csv = headers.join(',') + '\n';
-    patientMasterList.forEach((p, i) => {
-      const addressStr = [p.address, p.village, p.district].filter(Boolean).join(', ');
-      csv += [
-        i + 1, cell(p.patientIdentifier), cell(p.fullName), cell(p.mobile),
-        p.age || '', cell(p.gender), cell(addressStr), cell(p.sourceOfInfo),
-        cell(new Date(p.registeredAt).toLocaleDateString())
-      ].join(',') + '\n';
-    });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Patient_Master_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-    notifyToast(`Download started — ${patientMasterList.length} patient${patientMasterList.length === 1 ? '' : 's'} exported to Excel (CSV).`, 'success');
+    const header = ['ID', 'PTID', 'Full Name', 'Mobile', 'Age', 'Gender', 'Address', 'Source Of Info', 'Registered Date'].map(csvCell).join(',');
+    const lines = patientMasterList.map((p, i) => [
+      i + 1, csvCell(p.patientIdentifier), csvCell(p.fullName), csvPhone(p.mobile),
+      csvCell(formatPatientAge(p.age)), csvCell(p.gender),
+      csvCell([p.address, p.village, p.district].filter(Boolean).join(', ')), csvCell(p.sourceOfInfo),
+      csvCell(p.registeredAt ? fmtLocalISO(new Date(p.registeredAt)) : ''),
+    ].join(','));
+    downloadCsv(`Patient_Master_${fmtLocalISO(new Date())}.csv`, [header, ...lines]);
   };
 
   // Sync settings when doctor selection changes
@@ -880,8 +873,12 @@ export default function ReferralsPage() {
             startDate: startDate || referralRange.start,
             endDate: endDate || (referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end)
           };
+      // Summary first; an API that predates it (404) answers the full endpoint, whose rows the
+      // screen then simply uses as already loaded.
+      const loadIntel = () => apiClient.get('/referrers/intelligence/summary', { params })
+        .catch(err => (err?.response?.status === 404 ? apiClient.get('/referrers/intelligence', { params }) : Promise.reject(err)));
       const [res, allRes] = await Promise.all([
-        apiClient.get('/referrers/intelligence', { params }),
+        loadIntel(),
         apiClient.get('/referrers'),
       ]);
       if (seq !== intelSeq.current) return;
@@ -1103,6 +1100,11 @@ export default function ReferralsPage() {
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [activeTab, fetchReferralIntelligence]);
+
+  // Doctor Links tab: show when each doctor's link was sent / expires / renews.
+  useEffect(() => {
+    if (activeTab === 'Referrals' && referralViewMode === 'LINKS') loadLinkStatus();
+  }, [activeTab, referralViewMode, loadLinkStatus]);
 
   // Patient Master List
   useEffect(() => {
@@ -1380,29 +1382,11 @@ export default function ReferralsPage() {
   const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
 
   // Referral Intelligence Logic (Moved to top-level to satisfy Rules of Hooks)
-  const temporalPatients = useMemo(() => {
-    // Flatten all patients from grouped intelligence data
-    const allPatients = referralIntelligence.flatMap(ref => 
-      ref.patients.map(p => ({
-        ...p,
-        referredBy: p.referrerName || ref.name,
-        sourceContact: ref.contact,
-        sourceAddress: ref.address,
-        registered: p.registrationDate // Alias for consistency
-      }))
-    );
-
-    if (referralViewMode === 'LOG' && referralLogSearch) {
-      const searchLow = referralLogSearch.toLowerCase();
-      return allPatients.filter(p => {
-        const sourceMatch = (p.referredBy || '').toLowerCase().includes(searchLow);
-        const patientMatch = (p.name || '').toLowerCase().includes(searchLow);
-        return sourceMatch || patientMatch;
-      });
-    }
-
-    return allPatients;
-  }, [referralIntelligence, referralLogSearch, referralViewMode]);
+  // Every attended visit in range, across all sources (a server total - the summary has no rows).
+  const totalAttendedVisits = useMemo(
+    () => (referralIntelligence || []).reduce((n, r) => n + (r.totalPatients || 0), 0),
+    [referralIntelligence]
+  );
 
   const caseLedgerList = useMemo(() => {
     const safeAll = allReferrers || [];
@@ -1495,16 +1479,34 @@ export default function ReferralsPage() {
   // out of the partner list and surfaced as its own section. (#20)
   const selfSummary = useMemo(() => {
     const EMPTY = '00000000-0000-0000-0000-000000000000';
+    // The API labels every source with sourceKind (PARTNER | SELF | UNLINKED | UNATTRIBUTED). "Empty id"
+    // used to mean Self, but a typed name with no partner record is ALSO empty-id - so the first such
+    // node was shown as Self / Walk-in. (Older API without sourceKind: fall back to the old rule.)
     const node = (referralIntelligence || []).find(
-      i => i.referrerId === EMPTY || i.name === 'Self / Walk-in'
+      i => i.sourceKind ? i.sourceKind === 'SELF' : (i.referrerId === EMPTY || i.name === 'Self / Walk-in')
     );
     if (!node) return null;
     return {
       patientCount: node.totalPatients || 0,
       totalRevenue: node.totalRevenue || 0,
+      totalCollected: node.totalCollected || 0,
       totalDiscount: node.totalDiscount || 0,
+      bookedPending: node.bookedPending || 0,
+      noShows: node.noShows || 0,
       patients: node.patients || [],
     };
+  }, [referralIntelligence]);
+
+  // Sources that are not partners: a hand-typed referrer name with no partner record (UNLINKED) and
+  // visits that record no referrer at all (UNATTRIBUTED). Shown so the totals reconcile and the
+  // data gaps can be fixed, instead of being silently dropped.
+  const unlinkedSources = useMemo(
+    () => (referralIntelligence || []).filter(i => i.sourceKind === 'UNLINKED'),
+    [referralIntelligence]
+  );
+  const unattributedSummary = useMemo(() => {
+    const node = (referralIntelligence || []).find(i => i.sourceKind === 'UNATTRIBUTED');
+    return node ? { patientCount: node.totalPatients || 0, bookedPending: node.bookedPending || 0, noShows: node.noShows || 0, patients: node.patients || [] } : null;
   }, [referralIntelligence]);
 
   const filteredCaseLedger = useMemo(() => {
@@ -1518,20 +1520,26 @@ export default function ReferralsPage() {
   }, [caseLedgerList, referralLogSearch]);
 
   const referralAggregated = useMemo(() => {
-    // Map the backend intelligence DTOs to the frontend's expected Matrix
-    // structure. The "Self / Walk-in" node (referrerId = empty guid) is NOT a
-    // partner — it's shown in its own section, so drop it here. (#20)
+    // Map the backend intelligence DTOs to the frontend's expected Matrix structure. Only real
+    // PARTNERS belong here - Self / Walk-in, unlinked names and unattributed visits have their own
+    // sections (identified by sourceKind; an empty id is NOT enough to tell them apart).
     const EMPTY = '00000000-0000-0000-0000-000000000000';
+    const isPartner = (ref) => (ref.sourceKind
+      ? ref.sourceKind === 'PARTNER'
+      : (ref.referrerId !== EMPTY && (ref.name || '').trim().toLowerCase() !== 'self' && ref.name !== 'Self / Walk-in'));
     const mapped = referralIntelligence
-      .filter(ref => ref.referrerId !== EMPTY && (ref.name || '').trim().toLowerCase() !== 'self' && ref.name !== 'Self / Walk-in')
+      .filter(isPartner)
       .map(ref => {
-      // Multi-service rollout (batch-5 fix). Per-modality counts now
-      // walk the ServiceLines array when the server provided it — so a
-      // single patient referred for X-Ray + CT + USG contributes 3
-      // counts (one per modality) rather than 1 attributed to the
-      // primary scalar. Falls back to the scalar modality when the
-      // server is older or the entry has no service lines.
-      const modalities = ref.patients.reduce((acc, p) => {
+      // Multi-service rollout (batch-5 fix). Per-modality counts walk the ServiceLines array when the
+      // server provided it - so a single patient referred for X-Ray + CT + USG contributes 3 counts
+      // (one per modality) rather than 1 attributed to the primary scalar. Falls back to the scalar
+      // modality when the server is older or the entry has no service lines.
+      const key = ref.sourceKey || String(ref.referrerId);
+      const cached = sourceVisits[key];
+      const cachedForRange = cached && cached.rangeKey === rangeKey ? cached : null;
+      const inlineRows = Array.isArray(ref.patients) ? ref.patients : [];
+      const rows = inlineRows.length > 0 ? inlineRows : (cachedForRange ? cachedForRange.rows : []);
+      const derivedModalities = rows.reduce((acc, p) => {
         const lines = Array.isArray(p.serviceLines) ? p.serviceLines : null;
         if (lines && lines.length > 0) {
           for (const line of lines) {
@@ -1544,40 +1552,70 @@ export default function ReferralsPage() {
         }
         return acc;
       }, {});
+      // The server counts the modality mix over EVERY visit of the source; only an older API lacks it.
+      const modalities = ref.modalities || derivedModalities;
 
       return {
         referrerId: ref.referrerId,
+        sourceKey: key,
         name: ref.name,
         contact: ref.contact,
         address: ref.address,
-        patients: ref.patients,
+        patients: rows,
+        // The number of attended visits is a server total; `patients` is only what has been loaded so far.
+        totalPatients: ref.totalPatients ?? rows.length,
+        visitsInline: inlineRows.length > 0,
+        visitsLoading: !!(cachedForRange && cachedForRange.loading),
+        visitsError: cachedForRange ? cachedForRange.error : null,
         modalities,
         totalCommission: ref.totalCommission,
         paidCommission: ref.paidCommission,
         unpaidCommission: ref.unpaidCommission,
         totalRevenue: ref.totalRevenue,
-        netProfit: ref.netProfit
+        totalCollected: ref.totalCollected ?? 0,
+        totalDiscount: ref.totalDiscount ?? 0,
+        netProfit: ref.netProfit,
+        // Attendance + real new-vs-returning from the server (null on an older API -> the panel falls back).
+        bookedPending: ref.bookedPending ?? 0,
+        noShows: ref.noShows ?? 0,
+        uniquePatients: ref.uniquePatients ?? null,
+        newPatients: ref.newPatients ?? null,
+        returningVisits: ref.returningVisits ?? null,
       };
     });
 
-    // When showing ALL records, include registered referrers with zero activity
+    // When showing ALL records, include registered referrers with zero activity. Merged duplicates are
+    // left out: their visits already roll up under their primary partner.
     if (referralFilterMode === 'ALL') {
       const mappedIds = new Set(mapped.map(r => r.referrerId));
       allReferrers.forEach(ref => {
         if ((ref.name || '').trim().toLowerCase() === 'self') return; // Self excluded from partners (#20)
+        if (ref.mergedIntoId) return;
         if (!mappedIds.has(ref.referrerId)) {
           mapped.push({
             referrerId: ref.referrerId,
+            sourceKey: String(ref.referrerId),
             name: ref.name,
             contact: ref.contact,
             address: ref.address,
             patients: [],
+            totalPatients: 0,
+            visitsInline: false,
+            visitsLoading: false,
+            visitsError: null,
             modalities: {},
             totalCommission: 0,
             paidCommission: 0,
             unpaidCommission: 0,
             totalRevenue: 0,
-            netProfit: 0
+            totalCollected: 0,
+            totalDiscount: 0,
+            netProfit: 0,
+            bookedPending: 0,
+            noShows: 0,
+            uniquePatients: 0,
+            newPatients: 0,
+            returningVisits: 0,
           });
         }
       });
@@ -1585,9 +1623,8 @@ export default function ReferralsPage() {
 
     let final = [...mapped];
 
-    // Person-type filter (#2): Doctor / Other / Self. isDoctor comes from the
-    // referrer roster (intelligence rows don't carry it). SELF hides partners —
-    // the Self / Walk-in card renders separately.
+    // Person-type filter (#2): Doctor / Other / Self. isDoctor comes from the referrer roster
+    // (intelligence rows don't carry it). SELF hides partners - the Self / Walk-in card renders separately.
     if (personTypeFilter === 'SELF') {
       final = [];
     } else if (personTypeFilter === 'DOCTOR' || personTypeFilter === 'OTHER') {
@@ -1599,140 +1636,144 @@ export default function ReferralsPage() {
       });
     }
 
-    // Sort logic
+    // Sort. The old comparator never returned 0 (it answered -1 for equal values), which breaks the
+    // sort contract - ties flipped order between renders. Equal values now fall back to name, always A-Z.
+    const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
     final.sort((a, b) => {
-      let valA, valB;
-      if (referralSort.key === 'missions') { valA = a.patients.length; valB = b.patients.length; }
-      else if (referralSort.key === 'yield') { valA = a.totalCommission; valB = b.totalCommission; }
-      else if (referralSort.key === 'pending') { valA = a.unpaidCommission; valB = b.unpaidCommission; }
-      else { valA = a.name; valB = b.name; }
-
-      if (referralSort.direction === 'asc') return valA > valB ? 1 : -1;
-      return valA < valB ? 1 : -1;
+      let cmp;
+      if (referralSort.key === 'missions') cmp = (a.totalPatients || 0) - (b.totalPatients || 0);
+      else if (referralSort.key === 'yield') cmp = (Number(a.totalCommission) || 0) - (Number(b.totalCommission) || 0);
+      else if (referralSort.key === 'pending') cmp = (Number(a.unpaidCommission) || 0) - (Number(b.unpaidCommission) || 0);
+      else cmp = byName(a, b);
+      if (cmp === 0) return byName(a, b);
+      return referralSort.direction === 'asc' ? cmp : -cmp;
     });
 
     if (!referralMatrixSearch) return final;
 
     const searchLow = referralMatrixSearch.toLowerCase();
-    return final.filter(ref => ref.name.toLowerCase().includes(searchLow));
-  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter]);
+    return final.filter(ref => (ref.name || '').toLowerCase().includes(searchLow));
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter, sourceVisits, rangeKey]);
 
   // Auto-select first referrer in Matrix mode
   useEffect(() => {
-    if (referralViewMode === 'MATRIX' && referralAggregated.length > 0 && !expandedReferrer) {
-      setExpandedReferrer(referralAggregated[0].name);
+    if (referralViewMode === 'MATRIX' && referralAggregated.length > 0
+        && (!expandedReferrer || !referralAggregated.some(r => r.referrerId === expandedReferrer))) {
+      setExpandedReferrer(referralAggregated[0].referrerId);
     }
   }, [referralViewMode, referralAggregated, expandedReferrer]);
 
+  // Opening a source loads its visits (page 1); every summary refresh quietly re-reads what is on
+  // screen. A source whose rows arrived inline (older API) or that has no visits needs no call.
+  const expandedNode = referralAggregated.find(r => r.referrerId === expandedReferrer);
+  const expandedKey = expandedNode && !expandedNode.visitsInline && expandedNode.totalPatients > 0 ? expandedNode.sourceKey : null;
+  useEffect(() => {
+    if (activeTab !== 'Referrals' || referralViewMode !== 'MATRIX' || !expandedKey) return;
+    const cached = peekVisits(expandedKey);
+    loadSourceVisits(expandedKey, { silent: !!(cached && cached.rangeKey === rangeKey && cached.rows.length > 0) });
+  }, [activeTab, referralViewMode, expandedKey, referralUpdatedAt, rangeKey, loadSourceVisits, peekVisits]);
+
+  // The Volume Matrix is computed by the SERVER (/referrers/matrix): IST day / hour buckets, the same
+  // attribution and "the patient arrived" rule as Source Analytics, merged duplicates rolled into their
+  // primary. It used to be rebuilt in the browser from whatever the page-level date range had loaded -
+  // so choosing Month / Year (or another week) showed only that range's visits, and the Day view put
+  // every visit in "Morning" because visits carried no time.
+  // "How They Heard": patients by the channel recorded at registration (/referrers/acquisition-sources),
+  // for the same date range the rest of the page uses.
+  const [channelData, setChannelData] = useState({ data: null, loading: false, error: null });
+  const channelSeq = useRef(0);
+  useEffect(() => {
+    if (activeTab !== 'Referrals' || referralViewMode !== 'CHANNELS') return;
+    const seq = ++channelSeq.current;
+    setChannelData(prev => ({ ...prev, loading: true, error: null }));
+    const params = referralFilterMode === 'ALL'
+      ? {}
+      : { startDate: referralRange.start, endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end };
+    apiClient.get('/referrers/acquisition-sources', { params })
+      .then(res => {
+        if (seq !== channelSeq.current) return;
+        setChannelData({ data: res.data || null, loading: false, error: null });
+      })
+      .catch(err => {
+        if (seq !== channelSeq.current) return;
+        console.error('[PATIENT SOURCES] Live fetch failed', err);
+        setChannelData(prev => ({ ...prev, loading: false, error: 'Could not load this report - the figures below may be out of date.' }));
+      });
+  }, [activeTab, referralViewMode, referralRange, referralFilterMode]);
+  const channelRangeLabel = referralFilterMode === 'ALL'
+    ? 'all time'
+    : (referralFilterMode === 'SINGLE' || referralRange.start === referralRange.end
+        ? referralRange.start
+        : `${referralRange.start} to ${referralRange.end}`);
+
+  const [matrixServer, setMatrixServer] = useState({ cols: [], rows: [], loading: false, error: null });
+  const matrixSeq = useRef(0);
+  useEffect(() => {
+    if (referralViewMode !== 'LOG') return;
+    const seq = ++matrixSeq.current;
+    setMatrixServer(prev => ({ ...prev, loading: true, error: null }));
+    apiClient.get('/referrers/matrix', {
+      params: { period: matrixPeriod, referenceDate: matrixDateStr || TODAY, weekIndex: matrixWeekIndex },
+    })
+      .then(res => {
+        if (seq !== matrixSeq.current) return;   // a newer selection superseded this one
+        setMatrixServer({ cols: res.data?.cols || [], rows: res.data?.rows || [], loading: false, error: null });
+      })
+      .catch(err => {
+        if (seq !== matrixSeq.current) return;
+        console.error('[REFERRAL MATRIX] Live fetch failed', err);
+        setMatrixServer(prev => ({ ...prev, loading: false, error: 'Could not load the volume matrix — the figures below may be out of date.' }));
+      });
+  }, [referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex]);
+
   const temporalMatrixData = useMemo(() => {
     if (referralViewMode !== 'LOG') return null;
-    
-    let cols = [];
-    let getColKey = () => "";
-    
-    const dStr = matrixDateStr || TODAY;
-    const year = parseInt(dStr.substring(0, 4), 10);
-    const month = parseInt(dStr.substring(5, 7), 10) - 1; // 0-11
-    
-    if (matrixPeriod === 'DAY') {
-      cols = ['Morning (12am-12pm)', 'Afternoon (12pm-5pm)', 'Evening (5pm-12am)'];
-      getColKey = (pStr) => {
-        if (!pStr.startsWith(dStr.substring(0,10))) return null;
-        const d = new Date(pStr);
-        const h = d.getHours();
-        if (h < 12) return cols[0];
-        if (h < 17) return cols[1];
-        return cols[2];
-      };
-    } else if (matrixPeriod === 'WEEK') {
-      const startDay = (matrixWeekIndex - 1) * 7 + 1;
-      const endDay = matrixWeekIndex === 4 ? new Date(year, month + 1, 0).getDate() : startDay + 6;
-      
-      for (let i = startDay; i <= endDay; i++) {
-        const d = new Date(year, month, i);
-        cols.push(d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
-      }
-      
-      getColKey = (pStr) => {
-        const d = new Date(pStr);
-        if (d.getFullYear() === year && d.getMonth() === month && d.getDate() >= startDay && d.getDate() <= endDay) {
-           return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        }
-        return null;
-      };
-    } else if (matrixPeriod === 'MONTH') {
-      cols = ['Week 1 (1st-7th)', 'Week 2 (8th-14th)', 'Week 3 (15th-21st)', 'Week 4 (22nd-End)'];
-      getColKey = (pStr) => {
-        const d = new Date(pStr);
-        if (d.getFullYear() === year && d.getMonth() === month) {
-           const dt = d.getDate();
-           if (dt <= 7) return cols[0];
-           if (dt <= 14) return cols[1];
-           if (dt <= 21) return cols[2];
-           return cols[3];
-        }
-        return null;
-      };
-    } else if (matrixPeriod === 'YEAR') {
-      cols = Array.from({length: 12}).map((_, i) => {
-        const d = new Date(year, i, 1);
-        return d.toLocaleDateString('en-US', { month: 'short' });
-      });
-      getColKey = (pStr) => {
-        const d = new Date(pStr);
-        if (d.getFullYear() === year) {
-           return d.toLocaleDateString('en-US', { month: 'short' });
-        }
-        return null;
-      };
-    }
-
+    const { cols, rows: serverRows } = matrixServer;
     const searchLow = (referralLogSearch || '').toLowerCase();
-    const rows = allReferrers
-      .filter(ref => !searchLow || (ref.name || '').toLowerCase().includes(searchLow))
-      .map(ref => {
-        const counts = {};
-        cols.forEach(c => counts[c] = 0);
-        let totalMatched = 0;
-        const intel = referralIntelligence.find(i => i.referrerId === ref.referrerId || i.name === ref.name);
-        const patientsList = intel ? (intel.patients || []) : [];
+    const zeroCounts = () => Object.fromEntries(cols.map(c => [c, 0]));
+    const docById = new Map((allReferrers || []).map(r => [r.referrerId, r.isDoctor !== false]));
+    const partnerVisible = (id) => {
+      const isDoc = docById.has(id) ? docById.get(id) : true;
+      if (personTypeFilter === 'DOCTOR') return isDoc;
+      if (personTypeFilter === 'OTHER') return !isDoc;
+      return personTypeFilter !== 'SELF';
+    };
+    const matches = (name) => !searchLow || String(name || '').toLowerCase().includes(searchLow);
 
-        patientsList.forEach(p => {
-           const pStr = p.registrationDate || p.date || TODAY;
-           const key = getColKey(pStr);
-           if (key && counts[key] !== undefined) {
-              counts[key]++;
-              totalMatched++;
-           }
-        });
-        return {
-          name: ref.name,
-          contact: ref.contact,
-          total: totalMatched,
-          counts
-        };
+    const partnerRows = new Map(serverRows.filter(r => r.kind === 'PARTNER').map(r => [r.referrerId, r]));
+    const rows = [];
+    // Every registered PRIMARY partner gets a row (zeros included). Merged duplicates are left out - the
+    // server already rolled their visits into the primary.
+    (allReferrers || [])
+      .filter(ref => !ref.mergedIntoId && (ref.name || '').trim().toLowerCase() !== 'self')
+      .forEach(ref => {
+        if (!matches(ref.name) || !partnerVisible(ref.referrerId)) return;
+        const hit = partnerRows.get(ref.referrerId);
+        partnerRows.delete(ref.referrerId);
+        rows.push({ referrerId: ref.referrerId, name: ref.name, contact: ref.contact, total: hit?.total || 0, counts: hit?.counts || zeroCounts(), kind: 'PARTNER' });
       });
-
-    // Self / Walk-in folded in as ONE accumulated row (direct patients, no
-    // referral commission) — replaces the old standalone dark self card.
-    if (selfSummary && selfSummary.patientCount > 0 && personTypeFilter !== 'DOCTOR' && personTypeFilter !== 'OTHER'
-        && (!searchLow || 'self / walk-in'.includes(searchLow))) {
-      const selfCounts = {};
-      cols.forEach(c => { selfCounts[c] = 0; });
-      let selfTotal = 0;
-      (selfSummary.patients || []).forEach(p => {
-        const key = getColKey(p.registrationDate || p.date || TODAY);
-        if (key && selfCounts[key] !== undefined) { selfCounts[key]++; selfTotal++; }
+    // A partner with visits that is not in the roster list (e.g. since deleted).
+    partnerRows.forEach(hit => {
+      if (!matches(hit.name) || !partnerVisible(hit.referrerId)) return;
+      rows.push({ referrerId: hit.referrerId, name: hit.name, contact: hit.contact, total: hit.total, counts: hit.counts, kind: 'PARTNER' });
+    });
+    // Self / Walk-in, unlinked names and unattributed visits - each its own labelled row, so the matrix
+    // adds up to every visit.
+    if (personTypeFilter !== 'DOCTOR' && personTypeFilter !== 'OTHER') {
+      serverRows.filter(r => r.kind !== 'PARTNER').forEach(r => {
+        const label = r.kind === 'SELF' ? 'Self / Walk-in' : r.kind === 'UNATTRIBUTED' ? 'Unattributed (no source recorded)' : r.name;
+        if (!matches(label)) return;
+        rows.push({ referrerId: null, name: label, contact: '', total: r.total, counts: r.counts, kind: r.kind, isSelf: r.kind === 'SELF' });
       });
-      if (selfTotal > 0) rows.push({ name: 'Self / Walk-in', contact: '', total: selfTotal, counts: selfCounts, isSelf: true });
     }
-    rows.sort((a, b) => b.total - a.total);
-    // Self / Walk-in pinned to the TOP of the Case Ledger matrix by default.
+
+    rows.sort((a, b) => (b.total - a.total) || String(a.name).localeCompare(String(b.name)));
+    // Self / Walk-in pinned to the TOP of the matrix by default.
     const selfIdx = rows.findIndex(r => r.isSelf);
     if (selfIdx > 0) { const [selfRow] = rows.splice(selfIdx, 1); rows.unshift(selfRow); }
 
     return { cols, rows };
-  }, [allReferrers, referralIntelligence, referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex, referralLogSearch, selfSummary, personTypeFilter]);
+  }, [matrixServer, allReferrers, referralViewMode, referralLogSearch, personTypeFilter]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -1923,6 +1964,7 @@ export default function ReferralsPage() {
         caseLedgerList={caseLedgerList}
         copyDoctorLink={copyDoctorLink}
         revokeDoctorLinks={revokeDoctorLinks}
+        linkStatus={linkStatus}
         doctorList={doctorList}
         emailDoctors={emailDoctors}
         expandedReferrer={expandedReferrer}
@@ -1965,10 +2007,17 @@ export default function ReferralsPage() {
         referralRange={referralRange}
         referralRosterSearch={referralRosterSearch}
         referralViewMode={referralViewMode}
+        channelData={channelData}
+        channelRangeLabel={channelRangeLabel}
         rosterSort={rosterSort}
         selectedLedgerRows={selectedLedgerRows}
         selectedLinks={selectedLinks}
         selfSummary={selfSummary}
+        unlinkedSources={unlinkedSources}
+        unattributedSummary={unattributedSummary}
+        referralSort={referralSort}
+        matrixLoading={matrixServer.loading}
+        matrixError={matrixServer.error}
         sendSelectedLinks={sendSelectedLinks}
         setBulkSend={setBulkSend}
         setDeleteAfterMerge={setDeleteAfterMerge}
@@ -2000,7 +2049,9 @@ export default function ReferralsPage() {
         sortedRoster={sortedRoster}
         submitLinkSend={submitLinkSend}
         temporalMatrixData={temporalMatrixData}
-        temporalPatients={temporalPatients}
+        totalAttendedVisits={totalAttendedVisits}
+        loadMoreSourceVisits={(key) => loadSourceVisits(key, { more: true })}
+        retrySourceVisits={(key) => loadSourceVisits(key)}
         toggleAllLedger={toggleAllLedger}
         toggleLedgerSelection={toggleLedgerSelection}
         toggleLinkSel={toggleLinkSel}
