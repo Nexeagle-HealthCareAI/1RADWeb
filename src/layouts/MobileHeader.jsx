@@ -83,10 +83,10 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <img
           src={`${import.meta.env.BASE_URL}Logo.png`}
-          alt="1Rad"
+          alt="1Rad Flow"
           style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
         />
-        <span style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>1Rad</span>
+        <span style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>1Rad Flow</span>
       </div>
 
       {/* Right: Switcher + Profile */}

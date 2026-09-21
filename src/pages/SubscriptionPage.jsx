@@ -138,7 +138,7 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, on
                 Submit Payment Details
               </h3>
               <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
-                ₹{amount.toLocaleString('en-IN')} via 1Rad Premium
+                ₹{amount.toLocaleString('en-IN')} via 1Rad Flow Premium
               </p>
             </div>
             <button onClick={onClose} style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>×</button>
@@ -163,7 +163,7 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, on
                 </div>
                 <div style={{ textAlign:'right' }}>
                   <div style={{ fontSize:'10px',fontWeight:800,color:'#94a3b8',letterSpacing:'1px',textTransform:'uppercase' }}>Pay To</div>
-                  <div style={{ fontSize:'13px',fontWeight:700,color:'#0f172a' }}>1Rad by Nexeagle</div>
+                  <div style={{ fontSize:'13px',fontWeight:700,color:'#0f172a' }}>1Rad Flow by Nexeagle</div>
                   <div style={{ fontSize:'11px',color:'#64748b',fontWeight:600 }}>Contact Admin for UPI</div>
                 </div>
               </div>
@@ -523,7 +523,7 @@ const SubscriptionPage = () => {
 
       <PaymentRequestDrawer
         isOpen={!!paymentModal}
-        plan={{ name: activePlan?.name || '1Rad Premium' }}
+        plan={{ name: activePlan?.name || '1Rad Flow Premium' }}
         billingCycle={paymentModal || 'monthly'}
         planId={activePlan?.planId}
         estimate={estimate}
@@ -620,7 +620,7 @@ const SubscriptionPage = () => {
                   <div>
                     <div style={{ fontSize: '10px', fontWeight: 900, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Active Plan</div>
                     <div style={{ fontSize: '22px', fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>
-                      1Rad Premium — {billingCycleFromServer}
+                      1Rad Flow Premium — {billingCycleFromServer}
                     </div>
                   </div>
                   <span style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: '20px', background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 800 }}>ACTIVE</span>

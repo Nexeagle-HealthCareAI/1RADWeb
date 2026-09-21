@@ -315,7 +315,7 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
             </button>
           </div>
           <div style={{ textAlign: 'center', fontSize: '10px', color: '#94a3b8', marginTop: '14px', fontWeight: 600, letterSpacing: '0.3px' }}>
-            1Rad Mobile · Android-PWA v2.4 · Offline Ready
+            1Rad Flow Mobile · Android-PWA v2.4 · Offline Ready
           </div>
         </div>
       </div>

@@ -2162,7 +2162,7 @@ export default function AppointmentBoard() {
     ghostPrint(`
       <html>
         <head>
-          <title>1Rad Invoice - ${inv.displayId}</title>
+          <title>1Rad Flow Invoice - ${inv.displayId}</title>
           <style>
             body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; }
             .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #0f52ba; padding-bottom: 20px; }
@@ -2228,7 +2228,7 @@ export default function AppointmentBoard() {
           </div>
           <div style="margin-top: 150px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
              This is a computer-generated diagnostic invoice. No physical signature required.<br/>
-             1Rad Powered by NexEagle
+             1Rad Flow Powered by NexEagle
           </div>
         </body>
       </html>
@@ -2276,9 +2276,9 @@ export default function AppointmentBoard() {
           </div>
           <div class="divider"></div>
           <div class="center" style="margin-top: 20px; font-size: 10px; font-weight: bold;">
-            THANK YOU FOR CHOOSING 1RAD
+            THANK YOU FOR CHOOSING 1RAD FLOW
           </div>
-          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">1RAD POWERED BY NEXEAGLE</div>
+          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">1RAD FLOW POWERED BY NEXEAGLE</div>
         </body>
       </html>
     `);
@@ -2389,7 +2389,7 @@ export default function AppointmentBoard() {
                  </div>
               </div>
             </div>
-            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Powered by NexEagle</div>
+            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Flow Powered by NexEagle</div>
           </div>
         </body>
       </html>

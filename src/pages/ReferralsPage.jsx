@@ -1093,7 +1093,7 @@ export default function ReferralsPage() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `1Rad_Intelligence_${exportParams.start}_to_${exportParams.end}.xlsx`);
+      link.setAttribute('download', `1RadFlow_Intelligence_${exportParams.start}_to_${exportParams.end}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -1733,14 +1733,14 @@ export default function ReferralsPage() {
   };
 
   const handleCopyCredentials = (user) => {
-    const text = `1Rad Clinical Hub Access\nLogin ID: ${user.email}\nSecurity Key: ${user.password || '[Hidden]'}\nHub URL: ${window.location.origin}`;
+    const text = `1Rad Flow Clinical Hub Access\nLogin ID: ${user.email}\nSecurity Key: ${user.password || '[Hidden]'}\nHub URL: ${window.location.origin}`;
     navigator.clipboard.writeText(text);
     setCopyFeedback(user.id);
     setTimeout(() => setCopyFeedback(''), 3000);
   };
 
   const handleWhatsAppShare = (user) => {
-    const message = `Hello ${user.name},\n\nYour 1Rad Clinical Hub credentials have been initialized.\n\n🌐 Hub URL: ${window.location.origin}\n🔑 Login ID: ${user.email}\n🛡️ Security Key: ${user.password || '[Please use the reset link if unknown]'}\n\nPlease maintain strict confidentiality of these credentials.`;
+    const message = `Hello ${user.name},\n\nYour 1Rad Flow Clinical Hub credentials have been initialized.\n\n🌐 Hub URL: ${window.location.origin}\n🔑 Login ID: ${user.email}\n🛡️ Security Key: ${user.password || '[Please use the reset link if unknown]'}\n\nPlease maintain strict confidentiality of these credentials.`;
     const encoded = encodeURIComponent(message);
     const mobile = user.mobile?.replace(/\D/g, ''); // Ensure only numbers
     const finalMobile = mobile?.length === 10 ? `91${mobile}` : mobile; // Default to India if 10 digits

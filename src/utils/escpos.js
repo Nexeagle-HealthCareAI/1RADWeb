@@ -152,8 +152,8 @@ export function buildReceiptBytes(data = {}) {
     p.drawLine();
   }
   p.align('center');
-  for (const line of (data.footer || ['THANK YOU FOR CHOOSING 1RAD'])) p.line(line);
-  p.line('').line('1Rad Powered by NexEagle').feed(1);
+  for (const line of (data.footer || ['THANK YOU FOR CHOOSING 1RAD FLOW'])) p.line(line);
+  p.line('').line('1Rad Flow Powered by NexEagle').feed(1);
   if (data.cut !== false) p.cut();
   if (data.cashDrawer) p.cashDrawer();
   return p.getBytes();
@@ -184,7 +184,7 @@ export function buildTokenBytes(data = {}) {
   if (data.qr) p.qr(String(data.qr), { size: 6, ec: 'M' });
   p.drawLine();
   for (const line of (data.footer || ['PLEASE KEEP THIS TOKEN'])) p.line(line);
-  p.line('').line('1Rad Powered by NexEagle');
+  p.line('').line('1Rad Flow Powered by NexEagle');
   p.feed(1);
   if (data.cut !== false) p.cut();
   return p.getBytes();

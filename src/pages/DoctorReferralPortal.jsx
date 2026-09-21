@@ -807,10 +807,10 @@ function Shell({ children, centre, location, adminName, contact, email, headerAc
               divided, the DIAGNOSTIC CENTRE, so the two are never confused. */}
           <div className="nx-brandrow" style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-              <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle 1Rad" style={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0 }} />
+              <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle 1Rad Flow" style={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0 }} />
               <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
                 <span style={{ fontSize: '16px', fontWeight: 950, color: '#0f172a', letterSpacing: '-0.3px' }}>NexEagle</span>
-                <span style={{ fontSize: '10.5px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f52ba' }}>1Rad</span>
+                <span style={{ fontSize: '10.5px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f52ba' }}>1Rad Flow</span>
               </div>
             </div>
             <div className="nx-divider" style={{ width: '1px', height: '38px', background: '#e7ecf3', flexShrink: 0 }} />

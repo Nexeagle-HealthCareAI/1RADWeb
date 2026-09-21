@@ -13,8 +13,8 @@ export default defineConfig({
       devOptions: { enabled: false },
       includeAssets: ['favicon.ico', 'Logo.png'],
       manifest: {
-        name: '1Rad NexEagle',
-        short_name: '1Rad',
+        name: '1Rad Flow NexEagle',
+        short_name: '1Rad Flow',
         description: 'Radiology Management & Reporting System',
         theme_color: '#0f172a',
         background_color: '#060a12',

@@ -344,9 +344,9 @@ export default function StudiesPage() {
     }
   };
   const nativeShare = async () => {
-    const msg = `View this radiology study on 1Rad (secure link, expires in 24h):\n${shareLink}\n\nPowered by NexEagle 1Rad — fast, secure cloud DICOM.`;
+    const msg = `View this radiology study on 1Rad Flow (secure link, expires in 24h):\n${shareLink}\n\nPowered by NexEagle 1Rad Flow — fast, secure cloud DICOM.`;
     try {
-      if (navigator.share) await navigator.share({ title: 'Radiology study · NexEagle 1Rad', text: msg, url: shareLink });
+      if (navigator.share) await navigator.share({ title: 'Radiology study · NexEagle 1Rad Flow', text: msg, url: shareLink });
       else { await navigator.clipboard.writeText(msg); showToast('ok', 'Share message copied.'); }
     } catch { /* user cancelled */ }
   };
@@ -1123,9 +1123,9 @@ export default function StudiesPage() {
                 </div>
 
                 <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8', letterSpacing: 0.5, marginBottom: 4 }}>POWERED BY NEXEAGLE 1Rad</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8', letterSpacing: 0.5, marginBottom: 4 }}>POWERED BY NEXEAGLE 1Rad Flow</div>
                   <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
-                    Faster reads, rock-solid data security and instant cloud sharing. Ask your centre about 1Rad to speed up reporting and collaborate with referring doctors effortlessly.
+                    Faster reads, rock-solid data security and instant cloud sharing. Ask your centre about 1Rad Flow to speed up reporting and collaborate with referring doctors effortlessly.
                   </div>
                 </div>
 

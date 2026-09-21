@@ -149,7 +149,7 @@ export default function StatusTracking() {
     const modality = study?.modality || 'radiology';
     const shareData = {
       title: 'My Radiology Report',
-      text: `My ${modality} report from 1Rad`,
+      text: `My ${modality} report from 1Rad Flow`,
       url: shareUrl,
     };
     try {
@@ -194,7 +194,7 @@ export default function StatusTracking() {
     <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '40px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ maxWidth: '420px', textAlign: 'center' }}>
         <div style={{ fontSize: '56px', marginBottom: '16px' }}>🔒</div>
-        <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>1Rad · Report Tracker</div>
+        <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>1Rad Flow · Report Tracker</div>
         <h1 style={{ fontSize: '22px', fontWeight: 900, margin: 0 }}>This link is invalid or expired</h1>
         <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '14px', lineHeight: 1.6 }}>
           Please re-scan the QR code on your most recent prescription or
@@ -243,7 +243,7 @@ export default function StatusTracking() {
             marginBottom: '14px', gap: '10px', flexWrap: 'wrap',
           }}>
             <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase' }}>
-              1RAD · Final Report
+              1RAD FLOW · Final Report
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
@@ -371,7 +371,7 @@ export default function StatusTracking() {
           </div>
 
           <div style={{ textAlign: 'center', marginTop: '14px', fontSize: '10px', color: '#94a3b8' }}>
-            Scanned via 1Rad QR · Token #{study?.displayId || id}
+            Scanned via 1Rad Flow QR · Token #{study?.displayId || id}
           </div>
 
           <PoweredByNexEagle dark={false} />
@@ -458,7 +458,7 @@ export default function StatusTracking() {
       <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '40px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ maxWidth: '420px', textAlign: 'center' }}>
           <div style={{ fontSize: '56px', marginBottom: '16px' }}>⌛</div>
-          <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>1Rad · Report Tracker</div>
+          <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>1Rad Flow · Report Tracker</div>
           <h1 style={{ fontSize: '22px', fontWeight: 900, margin: 0, letterSpacing: '-0.3px' }}>This tracker has expired</h1>
           <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '14px', lineHeight: 1.6 }}>
             The live status link is only active on the day of your visit and
@@ -500,7 +500,7 @@ export default function StatusTracking() {
       <div style={{ maxWidth: '500px', margin: '0 auto' }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>1Rad · Report Tracker</div>
+          <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>1Rad Flow · Report Tracker</div>
           <h1 style={{ fontSize: '24px', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
             {currentStatus === 'reported' ? 'Your report is ready' : 'We’re working on your report'}
           </h1>

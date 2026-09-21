@@ -189,7 +189,7 @@ function BrowserSettings() {
     const cfg = persist();
     setStatus('Printing test slip…');
     const p = new EscPos(width === 58 ? 32 : 48);
-    p.align('center').bold(true).line('1RAD TEST PRINT').bold(false)
+    p.align('center').bold(true).line('1RAD FLOW TEST PRINT').bold(false)
       .line(`${width}mm · ${transport.toUpperCase()}`)
       .line(new Date().toLocaleString()).drawLine().cut();
     const r = await webPrint(p.getBytes(), cfg);

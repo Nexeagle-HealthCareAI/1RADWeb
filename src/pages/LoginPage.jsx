@@ -11,12 +11,12 @@ const INDUSTRY_QUOTES = [
   {
     title: "Report delays",
     problem: "You finished the scan hours ago. The report is still sitting in a queue — the surgeon is waiting, the patient is anxious.",
-    solution: "1rad's smart worklist prioritises critical cases automatically, cutting average report turnaround by up to 40%.",
+    solution: "1Rad Flow's smart worklist prioritises critical cases automatically, cutting average report turnaround by up to 40%.",
   },
   {
     title: "Radiologist shortage",
     problem: "One radiologist for every 1,00,000 patients in India. The gap doesn't shrink — it just moves to the next shift.",
-    solution: "Teleradiology tools on 1rad connect Tier 2 & 3 hospitals to qualified radiologists anywhere in India, 24/7.",
+    solution: "Teleradiology tools on 1Rad Flow connect Tier 2 & 3 hospitals to qualified radiologists anywhere in India, 24/7.",
   },
   {
     title: "Burnout & overload",
@@ -26,17 +26,17 @@ const INDUSTRY_QUOTES = [
   {
     title: "Integration chaos",
     problem: "Three systems, two logins, one missing image. Every workaround you build today becomes tomorrow's bottleneck.",
-    solution: "1rad unifies RIS, PACS, and reporting in one platform — no toggling, no lost studies.",
+    solution: "1Rad Flow unifies RIS, PACS, and reporting in one platform — no toggling, no lost studies.",
   },
   {
     title: "Tier 2/3 access gap",
     problem: "In smaller cities, patients wait days for a specialist read that a metro hospital gets in 2 hours.",
-    solution: "Cloud-based remote reporting on 1rad brings specialist reads to any district hospital within the hour.",
+    solution: "Cloud-based remote reporting on 1Rad Flow brings specialist reads to any district hospital within the hour.",
   },
   {
     title: "Career & earnings",
     problem: "You trained for years, but your earnings don't reflect your expertise — and there's no visibility into your output.",
-    solution: "1rad's RVU dashboard gives radiologists transparent productivity tracking and data to negotiate fairly.",
+    solution: "1Rad Flow's RVU dashboard gives radiologists transparent productivity tracking and data to negotiate fairly.",
   },
 ];
 
@@ -399,7 +399,7 @@ export default function LoginPage() {
           }} />
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
             <span style={{ fontSize: '26px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>NexEagle</span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', letterSpacing: '3px' }}>1RAD FLOW</span>
           </div>
         </div>
         <div style={{ fontSize: '10px', fontWeight: 800, color: 'rgba(15,23,42,0.65)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>

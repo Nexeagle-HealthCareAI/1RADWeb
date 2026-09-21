@@ -96,7 +96,7 @@ export default function AppLayout() {
         </div>
         <h1 style={{ fontSize: '24px', fontWeight: 900, marginBottom: '10px' }}>Connection Required</h1>
         <p style={{ fontSize: '14px', color: '#94a3b8', textAlign: 'center', maxWidth: '400px', lineHeight: 1.6 }}>
-          1Rad needs an internet connection to continue. This screen will disappear automatically as soon as you're back online — nothing to do here.
+          1Rad Flow needs an internet connection to continue. This screen will disappear automatically as soon as you're back online — nothing to do here.
         </p>
       </div>
     );
@@ -114,7 +114,7 @@ export default function AppLayout() {
         </div>
         <h1 style={{ fontSize: '24px', fontWeight: 900, marginBottom: '10px' }}>System Access Locked</h1>
         <p style={{ fontSize: '14px', color: '#94a3b8', textAlign: 'center', maxWidth: '400px', lineHeight: 1.6, marginBottom: '30px' }}>
-          Your hospital's subscription has expired or a payment is overdue. Operational access to 1Rad has been restricted.
+          Your hospital's subscription has expired or a payment is overdue. Operational access to 1Rad Flow has been restricted.
         </p>
         
         {isAdmin ? (

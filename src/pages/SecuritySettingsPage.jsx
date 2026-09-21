@@ -45,7 +45,7 @@ function PrefetchPreferenceCard() {
         Allow pre-loading on mobile data (cellular)
       </label>
       <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px', lineHeight: 1.5 }}>
-        Off by default to protect your data plan. When off, 1Rad still pre-loads a few imminent studies on 3G and skips slow/2G links entirely.
+        Off by default to protect your data plan. When off, 1Rad Flow still pre-loads a few imminent studies on 3G and skips slow/2G links entirely.
       </div>
     </div>
   );
@@ -194,7 +194,7 @@ export default function SecuritySettingsPage() {
     <div style={{ padding: '24px 28px', maxWidth: '720px', margin: '0 auto', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
       <SettingsSubPageHeader
         title="Security & quick-unlock PIN"
-        description={<>A PIN lets you sign back into 1Rad on <strong>this device</strong> without your password while you're offline or on a flaky connection. The PIN is stored only on this device and never transmitted to the server.</>}
+        description={<>A PIN lets you sign back into 1Rad Flow on <strong>this device</strong> without your password while you're offline or on a flaky connection. The PIN is stored only on this device and never transmitted to the server.</>}
       />
 
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px 22px', boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>

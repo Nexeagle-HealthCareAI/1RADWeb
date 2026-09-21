@@ -2,7 +2,7 @@
   "name": "1rad",
   "private": true,
   "version": "1.0.0",
-  "description": "1Rad — Radiology Management & Reporting System",
+  "description": "1Rad Flow — Radiology Management & Reporting System",
   "author": "NexEagle",
   "main": "electron/main.cjs",
   "type": "module",
@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "com.nexeagle.1rad",
-    "productName": "1Rad",
+    "productName": "1Rad Flow",
     "directories": {
       "output": "release"
     },
@@ -43,7 +43,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "1Rad",
+      "shortcutName": "1Rad Flow",
       "artifactName": "1Rad-Setup.${ext}"
     }
   },

@@ -35,7 +35,7 @@ export default function DesktopUpdateBanner() {
         </span>
       </div>
       <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.5 }}>
-        A new version of 1Rad has been downloaded. Restart to apply it now, or it
+        A new version of 1Rad Flow has been downloaded. Restart to apply it now, or it
         will install automatically the next time you close the app.
       </div>
       <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>

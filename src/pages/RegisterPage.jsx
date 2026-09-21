@@ -323,7 +323,7 @@ export default function RegisterPage() {
               <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle" style={{ width: '42px', height: '42px', objectFit: 'contain', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', padding: '4px' }} />
               <div>
                 <div style={{ fontSize: '21px', fontWeight: 800, color: 'white', letterSpacing: '-0.3px', lineHeight: 1.1 }}>NexEagle</div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#60a5fa', letterSpacing: '1.5px' }}>1Rad</div>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#60a5fa', letterSpacing: '1.5px' }}>1Rad Flow</div>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -827,7 +827,7 @@ function WelcomeCelebration({ name, centerName, onContinue }) {
           margin: '0 0 8px',
           lineHeight: 1.55,
         }}>
-          <strong style={{ color: '#a78bfa' }}>{centerName || 'Your clinical hub'}</strong> has been provisioned on the 1Rad grid.
+          <strong style={{ color: '#a78bfa' }}>{centerName || 'Your clinical hub'}</strong> has been provisioned on the 1Rad Flow grid.
         </p>
         <p style={{
           fontSize: '13px', color: 'rgba(255,255,255,0.45)',
