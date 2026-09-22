@@ -57,6 +57,8 @@ export default function ReferralIntelligencePanel({
   openBulkAdd,
   openLinkSend,
   patientMasterList,
+  patientMasterError,
+  retryPatientMasterList,
   personTypeFilter,
   referralAggregated,
   referralFilterMode,
@@ -71,6 +73,8 @@ export default function ReferralIntelligencePanel({
   referralRange,
   referralRosterSearch,
   referralViewMode,
+  hideZeroSources,
+  setHideZeroSources,
   channelData,
   channelRangeLabel,
   rosterSort,
@@ -249,6 +253,22 @@ export default function ReferralIntelligencePanel({
                     <option key={k} value={k}>{lbl}</option>
                   ))}
                 </select>
+              )}
+
+              {/* Hide zero-visit partners (Source Analytics + Case Ledger only - Roster is a directory, not an activity list) */}
+              {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG') && (
+                <label
+                  title="Hide a registered partner that has no visits in this range"
+                  style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', background: hideZeroSources ? '#eff6ff' : '#f8fafc', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={hideZeroSources}
+                    onChange={e => setHideZeroSources(e.target.checked)}
+                    style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#0f52ba' }}
+                  />
+                  <span style={{ fontSize: '10px', fontWeight: 900, color: hideZeroSources ? '#1d4ed8' : '#64748b', letterSpacing: '0.3px' }}>HIDE 0-VISIT</span>
+                </label>
               )}
 
               {/* Temporal Unit */}
@@ -455,13 +475,20 @@ export default function ReferralIntelligencePanel({
                     <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>Patient Directory</div>
                     <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>All patients linked to referrers</div>
                   </div>
-                  <button 
+                  <button
                     onClick={handleExportPatientMasterList}
                     style={{ padding: '10px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                   >
                     📥 EXPORT TO EXCEL
                   </button>
                 </div>
+                {patientMasterError && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', padding: '12px 30px', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#b91c1c' }}>{patientMasterError}</span>
+                    <button type="button" onClick={retryPatientMasterList}
+                      style={{ padding: '6px 12px', borderRadius: '9px', border: '1px solid #fecaca', background: 'white', color: '#b91c1c', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>Retry</button>
+                  </div>
+                )}
                 {!isMobile ? (
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
