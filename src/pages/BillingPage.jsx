@@ -743,143 +743,115 @@ export default function BillingPage() {
     return () => clearTimeout(timer);
   }, [patientSearchQuery, fetchPatients]);
 
+  // Android billing tab definitions (used in both bottom nav and content switcher)
+  const BILLING_TABS = [
+    { id: 'INVOICES',      label: 'Revenue',     icon: '💰' },
+    { id: 'REFERRAL_CUTS', label: 'Incentives',  icon: '🤝' },
+    { id: 'EXPENSES',      label: 'Expenses',    icon: '📋' },
+    { id: 'SERVICES',      label: 'Services',    icon: '📊' },
+    { id: 'FINANCE',       label: 'Pricing',     icon: '⚙️' },
+    { id: 'ANALYTICS',     label: 'Analytics',   icon: '📈' },
+  ];
+
   return (
-    <div className="billing-page" style={{ padding: isMobile ? '15px' : '40px', background: '#f8fafc', minHeight: '100vh' }}>
-      {/* Header Section */}
-      <div className="board-header" style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        alignItems: isMobile ? 'stretch' : 'flex-start', 
-        marginBottom: isMobile ? '25px' : '40px',
-        gap: isMobile ? '20px' : '0'
-      }}>
-        <div>
-          <h1 style={{
-            fontSize: isMobile ? '20px' : '24px',
-            fontWeight: 700,
-            color: '#0a1628',
-            letterSpacing: '-0.5px',
-            marginBottom: '8px',
-            margin: 0
-          }}>Finance</h1>
-          <div className="billing-tabs" style={{ 
-            display: 'flex', 
-            marginTop: '20px', 
-            overflowX: 'auto', 
-            borderBottom: '1px solid #e2e8f0',
-            WebkitOverflowScrolling: 'touch',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            marginRight: isMobile ? '-15px' : '0',
-            paddingRight: isMobile ? '15px' : '0'
-          }}>
-            <style>{`
-              .billing-tabs::-webkit-scrollbar { display: none; }
-            `}</style>
-            {[
-              { id: 'INVOICES',      label: 'Revenue' },
-              { id: 'REFERRAL_CUTS', label: 'Incentives' },
-              { id: 'EXPENSES',      label: 'Expenses' },
-              { id: 'SERVICES',      label: 'Service Performance' },
-              { id: 'FINANCE',       label: 'Pricing' },
-              { id: 'ANALYTICS',     label: 'Analytics' },
-            ].map(tab => {
-              const active = billingViewMode === tab.id;
-              return (
+    <div className="billing-page" style={{ padding: isMobile ? '0' : '40px', background: '#f8fafc', minHeight: '100vh' }}>
+
+      {/* ── ANDROID TOP APP BAR (mobile only, sticky) ───────────────────── */}
+      {isMobile && (
+        <div className="billing-android-topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💳</div>
+          </div>
+          <div className="billing-android-topbar-title">
+            <h1>Finance</h1>
+            <span className="billing-android-topbar-subtitle">
+              {activeCenter?.name || 'Current Facility'}
+            </span>
+          </div>
+          <div className="billing-android-topbar-actions">
+            <span className={`billing-android-online-badge ${isOnline ? 'online' : 'offline'}`}>
+              <span style={{ fontSize: 6 }}>●</span>
+              {isOnline ? 'LIVE' : 'OFFLINE'}
+            </span>
+            {localStorage.getItem('1rad_invoices') && (
               <button
-                key={tab.id}
-                onClick={() => setBillingViewMode(tab.id)}
-                style={{
-                  padding: '12px 16px', 
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent',
-                  fontSize: '13px', 
-                  fontWeight: active ? 800 : 600, 
-                  cursor: 'pointer',
-                  color: active ? '#0f52ba' : '#64748b',
-                  transition: 'color 0.2s, border-color 0.2s',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}
+                className="billing-android-topbar-btn"
+                onClick={handleSyncLegacyData}
+                disabled={isSyncing}
+                title="Sync local data"
               >
-                {tab.label}
+                {isSyncing ? '⟳' : '☁'}
               </button>
-            )})}
-          </div>
-          {!isMobile && (
-            <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
-              {activeCenter?.name || 'Current facility'} · Finance & Billing
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
-          {billingViewMode === 'REFERRAL_CUTS' && (
-            <></>
-          )}
-          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
-             <div id="billing-header-actions-portal"></div>
-             {localStorage.getItem('1rad_invoices') && (
-               <button
-                 onClick={handleSyncLegacyData}
-                 disabled={isSyncing}
-                 style={{
-                   padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0',
-                   background: '#f8fafc', color: '#1d4ed8', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                   width: isMobile ? '100%' : 'auto'
-                 }}
-               >
-                 {isSyncing ? 'Syncing...' : 'Sync Local'}
-               </button>
-             )}
-
-          </div>
-        </div>
-      </div>
-
-      {/* Local-compute banner — surfaces when dashboard numbers come from
-          cached invoices instead of /finance/stats. Visible when offline
-          OR when the outbox has unsynced mutations the server can't yet
-          reflect. Disappears as soon as the queue drains AND the next
-          server fetch lands. */}
-      {(!isOnline || pendingCount > 0) && (
-        <div style={{
-          margin: '0 20px 14px',
-          background: '#fffbeb',
-          border: '1px solid #fde68a',
-          borderLeft: '4px solid #b45309',
-          color: '#78350f',
-          borderRadius: '10px',
-          padding: '10px 14px',
-          fontSize: '12px',
-          fontWeight: 600,
-          lineHeight: 1.5,
-          display: 'flex', alignItems: 'center', gap: '10px',
-        }}>
-          <span style={{ fontSize: '14px' }}>📊</span>
-          <div>
-            <strong>Dashboard values computed locally</strong> — {!isOnline
-              ? 'you are offline; numbers reflect what your device has cached.'
-              : `${pendingCount} pending change${pendingCount === 1 ? '' : 's'} not yet on the server.`} They will switch back to the server's authoritative figures once the queue drains.
+            )}
           </div>
         </div>
       )}
+
+      {/* ── DESKTOP HEADER (non-mobile only) ───────────────────────────── */}
+      {!isMobile && (
+        <>
+          <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+            <div>
+              <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Finance</h1>
+              <div className="billing-tabs" style={{ display: 'flex', marginTop: '20px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <style>{`.billing-tabs::-webkit-scrollbar { display: none; }`}</style>
+                {BILLING_TABS.map(tab => {
+                  const active = billingViewMode === tab.id;
+                  return (
+                    <button key={tab.id} onClick={() => setBillingViewMode(tab.id)}
+                      style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent', fontSize: '13px', fontWeight: active ? 800 : 600, cursor: 'pointer', color: active ? '#0f52ba' : '#64748b', transition: 'color 0.2s, border-color 0.2s', whiteSpace: 'nowrap', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                    >{tab.label}</button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
+                {activeCenter?.name || 'Current facility'} · Finance &amp; Billing
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div id="billing-header-actions-portal"></div>
+                {localStorage.getItem('1rad_invoices') && (
+                  <button onClick={handleSyncLegacyData} disabled={isSyncing}
+                    style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#1d4ed8', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                  >{isSyncing ? 'Syncing...' : 'Sync Local'}</button>
+                )}
+              </div>
+            </div>
+          </div>
+          {(!isOnline || pendingCount > 0) && (
+            <div style={{ margin: '0 0 14px', background: '#fffbeb', border: '1px solid #fde68a', borderLeft: '4px solid #b45309', color: '#78350f', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', fontWeight: 600, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '14px' }}>📊</span>
+              <div><strong>Dashboard values computed locally</strong> — {!isOnline ? 'you are offline; numbers reflect what your device has cached.' : `${pendingCount} pending change${pendingCount === 1 ? '' : 's'} not yet on the server.`} They will switch back to the server’s authoritative figures once the queue drains.</div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Portal for hub components that inject export/action buttons into header on desktop */}
+      {isMobile && <div id="billing-header-actions-portal" style={{ display: 'none' }}></div>}
+
+      {/* ── ANDROID SYNC BANNER (mobile offline/pending notice) ────────── */}
+      {isMobile && (!isOnline || pendingCount > 0) && (
+        <div style={{ margin: '12px 16px 0', background: '#fffbeb', border: '1px solid #fde68a', borderLeft: '4px solid #b45309', color: '#78350f', borderRadius: '12px', padding: '10px 14px', fontSize: '11px', fontWeight: 600, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: 16 }}>📊</span>
+          <div><strong>Locally computed</strong> — {!isOnline ? 'offline; device cache.' : `${pendingCount} change${pendingCount === 1 ? '' : 's'} pending sync.`}</div>
+        </div>
+      )}
+
+      {/* ── MAIN CONTENT WRAPPER ───────────────────────────────────────── */}
+      {/* On mobile this is the scrollable body div. On desktop it's just a passthrough. */}
+      <div className={isMobile ? 'billing-android-body' : ''}>
 
       {billingViewMode === 'EXPENSES' && (
         <ExpenseLedger
           isMobile={isMobile}
           outflowStats={outflowStats}
-          /* ── Cursor-pagination props (Phase 5) ──────────────────────── */
           pagedExpenses={isArchive ? archiveExpenses : (filteredOutflow || []).slice(0, expensePageSize)}
           expenseTotalCount={isArchive ? archiveExpensesTotal : (filteredOutflow || []).length}
           expenseHasMore={isArchive ? archiveExpensesHasMore : (expensePageSize < (filteredOutflow || []).length)}
           onLoadMoreExpenses={isArchive ? loadMoreArchiveExpenses : loadMoreExpenses}
           expenseLoadingMore={isArchive ? archiveExpensesLoading : expenseLoadingMore}
-          /* ─────────────────────────────────────────────────────────────── */
           timeFilter={timeFilter}
           setTimeFilter={setTimeFilter}
           startDate={startDate}
@@ -906,6 +878,7 @@ export default function BillingPage() {
           confirmDialog={confirmModal}
         />
       )}
+
 
       {billingViewMode === 'INVOICES' && (
         <RevenueHub
@@ -1067,6 +1040,9 @@ export default function BillingPage() {
         />
       )}
 
+      </div>{/* end billing-android-body / desktop passthrough wrapper */}
+
+      {/* ── SHARED DRAWERS (rendered outside the scroll wrapper, fixed position) ──── */}
       {/* Shared Drawers */}
       {isInvoiceDrawerOpen && (
         <InvoiceDrawer 
@@ -1156,6 +1132,39 @@ export default function BillingPage() {
         onDismiss={() => setPaymentSuccess(null)}
         isMobile={isMobile}
       />
+
+      {/* ── Android Bottom Nav + FAB (mobile only) ───────────────────────── */}
+      {isMobile && (
+        <>
+          {/* FAB — New Invoice shortcut, only visible on Revenue tab */}
+          {billingViewMode === 'INVOICES' && (
+            <button
+              className="billing-android-fab"
+              onClick={() => setIsNewInvoiceDrawerOpen(true)}
+              title="New Invoice"
+              aria-label="Create new invoice"
+            >
+              +
+            </button>
+          )}
+
+          {/* Fixed Bottom Navigation Bar */}
+          <nav className="billing-android-bottomnav" aria-label="Billing navigation">
+            {BILLING_TABS.map(tab => (
+              <button
+                key={tab.id}
+                className={`billing-android-nav-item${billingViewMode === tab.id ? ' active' : ''}`}
+                onClick={() => setBillingViewMode(tab.id)}
+                aria-label={tab.label}
+                aria-current={billingViewMode === tab.id ? 'page' : undefined}
+              >
+                <span className="billing-android-nav-icon">{tab.icon}</span>
+                <span className="billing-android-nav-label">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
     </div>
   );
 }
