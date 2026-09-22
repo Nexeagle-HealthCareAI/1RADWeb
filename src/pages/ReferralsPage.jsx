@@ -90,6 +90,10 @@ export default function ReferralsPage() {
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
   const [referrerFilter, setReferrerFilter] = useState('ALL');
   const [personTypeFilter, setPersonTypeFilter] = useState('ALL'); // ALL | DOCTOR | OTHER | SELF (#2)
+  // Source Analytics + Case Ledger: hide a registered partner that has zero visits in the selected
+  // range/filter (they still get a row otherwise, so every roster partner is visible even before
+  // their first referral - useful on Partner Network, just noise once there are dozens of them).
+  const [hideZeroSources, setHideZeroSources] = useState(false);
   const [overviewTimeframe, setOverviewTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'
   
   // Layout Builder State
@@ -130,6 +134,7 @@ export default function ReferralsPage() {
   const [importResult, setImportResult] = useState(null);
   const [patientMasterList, setPatientMasterList] = useState([]);
   const [loadingMaster, setLoadingMaster] = useState(false);
+  const [patientMasterError, setPatientMasterError] = useState(null);
   // Default to RANGE — current week. The Case Ledger lands pre-filtered to
   // this week's cases instead of forcing the user to pick a range manually.
   const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE', 'RANGE' or 'ALL'
@@ -220,6 +225,7 @@ export default function ReferralsPage() {
     }
   }, []);
   const [bulkSend, setBulkSend] = useState(null); // null | { status:'sending'|'done', channel, sent, skipped, failed }
+  const patientMasterSeq = useRef(0);
   const doctorList = useMemo(
     () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
     [allReferrers]
@@ -731,7 +737,11 @@ export default function ReferralsPage() {
     return () => { subPersonnel.unsubscribe(); };
   }, []);
 
+  // Live only — no cached fallback. The old fallback was keyed by referralFilterMode alone (not the
+  // actual date range or search text), so a failed request could show an EARLIER range's or search's
+  // patient list as if it were the one on screen right now.
   const fetchPatientMasterList = useCallback(async () => {
+    const seq = ++patientMasterSeq.current;
     try {
       setLoadingMaster(true);
       const params = referralFilterMode === 'ALL'
@@ -742,14 +752,17 @@ export default function ReferralsPage() {
             search: referralPatientsSearch
           };
       const res = await apiClient.get('/patients', { params });
+      if (seq !== patientMasterSeq.current) return;
       setPatientMasterList(res.data);
-      await nativeStorage.set(`1rad_cache_patient_master_${referralFilterMode}`, res.data);
+      setPatientMasterError(null);
     } catch (err) {
-      console.error('[PATIENT MASTER] Fetch failed, trying cache', err);
-      const cached = await nativeStorage.get(`1rad_cache_patient_master_${referralFilterMode}`);
-      if (cached) setPatientMasterList(cached);
+      if (seq !== patientMasterSeq.current) return;
+      console.error('[PATIENT MASTER] Live fetch failed', err);
+      setPatientMasterError(!err?.response
+        ? 'Cannot reach the server — the patient list shown may be out of date.'
+        : 'Could not load the live patient list — the list shown may be out of date.');
     } finally {
-      setLoadingMaster(false);
+      if (seq === patientMasterSeq.current) setLoadingMaster(false);
     }
   }, [referralRange, referralFilterMode, referralPatientsSearch]);
 
@@ -1636,6 +1649,8 @@ export default function ReferralsPage() {
       });
     }
 
+    if (hideZeroSources) final = final.filter(r => (r.totalPatients || 0) > 0);
+
     // Sort. The old comparator never returned 0 (it answered -1 for equal values), which breaks the
     // sort contract - ties flipped order between renders. Equal values now fall back to name, always A-Z.
     const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
@@ -1653,7 +1668,7 @@ export default function ReferralsPage() {
 
     const searchLow = referralMatrixSearch.toLowerCase();
     return final.filter(ref => (ref.name || '').toLowerCase().includes(searchLow));
-  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter, sourceVisits, rangeKey]);
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter, sourceVisits, rangeKey, hideZeroSources]);
 
   // Auto-select first referrer in Matrix mode
   useEffect(() => {
@@ -1767,13 +1782,14 @@ export default function ReferralsPage() {
       });
     }
 
-    rows.sort((a, b) => (b.total - a.total) || String(a.name).localeCompare(String(b.name)));
+    const visibleRows = hideZeroSources ? rows.filter(r => r.total > 0) : rows;
+    visibleRows.sort((a, b) => (b.total - a.total) || String(a.name).localeCompare(String(b.name)));
     // Self / Walk-in pinned to the TOP of the matrix by default.
-    const selfIdx = rows.findIndex(r => r.isSelf);
-    if (selfIdx > 0) { const [selfRow] = rows.splice(selfIdx, 1); rows.unshift(selfRow); }
+    const selfIdx = visibleRows.findIndex(r => r.isSelf);
+    if (selfIdx > 0) { const [selfRow] = visibleRows.splice(selfIdx, 1); visibleRows.unshift(selfRow); }
 
-    return { cols, rows };
-  }, [matrixServer, allReferrers, referralViewMode, referralLogSearch, personTypeFilter]);
+    return { cols, rows: visibleRows };
+  }, [matrixServer, allReferrers, referralViewMode, referralLogSearch, personTypeFilter, hideZeroSources]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -1993,6 +2009,8 @@ export default function ReferralsPage() {
         openBulkAdd={openBulkAdd}
         openLinkSend={openLinkSend}
         patientMasterList={patientMasterList}
+        patientMasterError={patientMasterError}
+        retryPatientMasterList={fetchPatientMasterList}
         personTypeFilter={personTypeFilter}
         referralAggregated={referralAggregated}
         referralFilterMode={referralFilterMode}
@@ -2007,6 +2025,8 @@ export default function ReferralsPage() {
         referralRange={referralRange}
         referralRosterSearch={referralRosterSearch}
         referralViewMode={referralViewMode}
+        hideZeroSources={hideZeroSources}
+        setHideZeroSources={setHideZeroSources}
         channelData={channelData}
         channelRangeLabel={channelRangeLabel}
         rosterSort={rosterSort}
