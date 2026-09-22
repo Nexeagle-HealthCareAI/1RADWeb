@@ -7,6 +7,43 @@ import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
 
+// Sibling NexEagle platforms, cross-promoted on the login banner. Feature bullets are a first
+// DRAFT (placeholder copy based on the product name/category) — swap them for the real ones
+// before this ships. prodUrl / devUrl are TODO: paste the real URLs; until then the card shows
+// "Coming soon" instead of a dead/wrong link.
+const OTHER_PLATFORMS = [
+  {
+    key: '1hms',
+    name: '1HMS Flow',
+    tagline: 'Hospital Management System',
+    icon: '🏥',
+    accent: '#0891b2',
+    features: [
+      'OPD & IPD patient records, one timeline',
+      'Bed, ward & admission management',
+      'Pharmacy & inventory tracking',
+      'Billing, insurance & claims',
+    ],
+    prodUrl: 'https://1hms.nexeagle.com',
+    devUrl: 'https://1hms-dev.nexeagle.com',
+  },
+  {
+    key: 'doctordekho',
+    name: 'DoctorDekho',
+    tagline: 'Find & Book a Doctor',
+    icon: '🩺',
+    accent: '#7c3aed',
+    features: [
+      'Search verified doctors by speciality & city',
+      'Instant appointment booking',
+      'Patient reviews & ratings',
+      'Teleconsultation support',
+    ],
+    prodUrl: 'https://doctordekho.nexeagle.com',
+    devUrl: 'https://doctordekho-dev.nexeagle.com',
+  },
+];
+
 const INDUSTRY_QUOTES = [
   {
     title: "Report delays",
@@ -519,6 +556,19 @@ export default function LoginPage() {
         </div>
         {/* end hero wrapper */}
 
+        {/* ── Other NexEagle platforms — cross-promo, each clickable to prod/dev ── */}
+        <div style={{ marginTop: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#94a3b8' }} />
+            <span style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '2.5px', textTransform: 'uppercase', color: 'rgba(15,23,42,0.5)' }}>
+              More from NexEagle
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {OTHER_PLATFORMS.map(p => <PlatformCard key={p.key} platform={p} />)}
+          </div>
+        </div>
+
       </div>
       {/* end immersive-brand */}
 
@@ -862,6 +912,75 @@ export default function LoginPage() {
           navigate(resolveRedirectPath(postLoginRoles), { replace: true });
         }}
       />
+    </div>
+  );
+}
+
+// One sibling-platform card in the login banner's "More from NexEagle" strip. The whole card is
+// clickable (opens Prod in a new tab); a small secondary link opens Dev instead, for staff who
+// need it. Either link is simply omitted if that URL hasn't been configured yet (rather than
+// shipping a link to an empty href), so a missing environment fails safe, not broken.
+function PlatformCard({ platform }) {
+  const { name, tagline, icon, accent, features, prodUrl, devUrl } = platform;
+  const openProd = () => { if (prodUrl) window.open(prodUrl, '_blank', 'noopener,noreferrer'); };
+  return (
+    <div
+      onClick={openProd}
+      role={prodUrl ? 'link' : undefined}
+      title={prodUrl ? `Open ${name} ↗` : undefined}
+      style={{
+        background: 'rgba(255,255,255,0.55)',
+        border: '1px solid rgba(15,23,42,0.08)',
+        borderRadius: '14px',
+        padding: '16px 18px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        cursor: prodUrl ? 'pointer' : 'default',
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
+      }}
+      onMouseEnter={e => { if (prodUrl) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 10px 24px -8px ${accent}55`; e.currentTarget.style.borderColor = `${accent}55`; } }}
+      onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.08)'; }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: `${accent}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>
+          {icon}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.2px' }}>{name}</div>
+          <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'rgba(15,23,42,0.5)' }}>{tagline}</div>
+        </div>
+      </div>
+
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {features.map((f, i) => (
+          <li key={i} style={{ fontSize: '10.5px', fontWeight: 600, color: 'rgba(15,23,42,0.72)', lineHeight: 1.45, display: 'flex', gap: '6px' }}>
+            <span style={{ color: accent, flexShrink: 0 }}>✓</span>
+            <span>{f}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '2px' }}>
+        {prodUrl ? (
+          <span style={{ fontSize: '10.5px', fontWeight: 800, color: accent, display: 'flex', alignItems: 'center', gap: '4px' }}>
+            Open platform <span style={{ fontSize: '12px' }}>↗</span>
+          </span>
+        ) : (
+          <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'rgba(15,23,42,0.4)' }}>Coming soon</span>
+        )}
+        {devUrl && (
+          <a
+            href={devUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{ fontSize: '9.5px', fontWeight: 800, color: 'rgba(15,23,42,0.45)', textDecoration: 'none', marginLeft: 'auto', padding: '3px 8px', borderRadius: '999px', border: '1px solid rgba(15,23,42,0.12)' }}
+          >
+            Dev ↗
+          </a>
+        )}
+      </div>
     </div>
   );
 }
