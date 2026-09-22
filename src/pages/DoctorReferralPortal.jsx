@@ -8,9 +8,10 @@
 //  cuts, a profile-completion ring with self-service editing, and a warm
 //  thank-you. Premium, works on mobile + web.
 // ════════════════════════════════════════════════════════════════════════════
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import useHomeScreenInstall from '../hooks/useHomeScreenInstall';
 
 const inr = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`;
 const todayStr = () => new Date().toLocaleDateString('en-CA');
@@ -288,6 +289,9 @@ export default function DoctorReferralPortal() {
       headerAction={<ProfileButton id={id} token={token} data={data} setData={setData} />}>
       {/* Thank-you note */}
       <ThankYou doctor={data.doctorName} centre={data.centreName} todayCount={todayCount} todayEligible={todayEligible} />
+
+      <InstallBanner centre={data.centreName} />
+      <BookingPanel id={id} token={token} centreName={data.centreName} />
 
       {/* Date filter — at the top; drives every KPI and the table below */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '16px' }}>
@@ -701,50 +705,296 @@ function ProfileButton({ id, token, data, setData }) {
                 <button onClick={save} disabled={saving} className="nxpf-btn-primary">{saving ? 'Saving…' : 'Save changes'}</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+// The .nxpf-* modal CSS these two components share lives in Shell's persistent <style> block
+// (below) so it's in the DOM regardless of which modal - profile or booking - opens first.
 
-            <style>{`
-              .nxpf-overlay { position: fixed; inset: 0; background: rgba(8,12,30,0.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; animation: nxpfFade .2s ease-out; }
-              .nxpf-card { width: 100%; max-width: 470px; background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 40px 90px -20px rgba(2,6,23,0.55); display: flex; flex-direction: column; max-height: 90vh; animation: nxpfPop .26s cubic-bezier(0.16,1,0.3,1); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
-              .nxpf-grip { display: none; }
-              .nxpf-head { position: relative; padding: 22px 24px; background: linear-gradient(135deg,#0a1628 0%,#0f52ba 100%); color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
-              .nxpf-head-l { display: flex; align-items: center; gap: 13px; min-width: 0; }
-              .nxpf-avatar { width: 44px; height: 44px; border-radius: 14px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 900; flex-shrink: 0; }
-              .nxpf-eyebrow { font-size: 10px; font-weight: 900; letter-spacing: 1.8px; opacity: .72; }
-              .nxpf-title { font-size: 18px; font-weight: 950; margin-top: 2px; letter-spacing: -0.3px; }
-              .nxpf-x { border: none; background: rgba(255,255,255,0.14); width: 32px; height: 32px; border-radius: 50%; color: #fff; font-size: 14px; font-weight: 900; cursor: pointer; flex-shrink: 0; transition: background .15s; }
-              .nxpf-x:hover { background: rgba(255,255,255,0.28); }
-              .nxpf-body { padding: 20px 24px; overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-              .nxpf-help { font-size: 11.5px; font-weight: 600; color: #94a3b8; line-height: 1.5; }
-              .nxpf-missing { font-size: 11px; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; padding: 9px 12px; border-radius: 11px; }
-              .nxpf-section { font-size: 10px; font-weight: 950; letter-spacing: .8px; text-transform: uppercase; color: #0f52ba; margin-top: 6px; }
-              .nxpf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-              .nxpf-field { display: flex; flex-direction: column; min-width: 0; }
-              .nxpf-field label { font-size: 10px; font-weight: 900; letter-spacing: .5px; text-transform: uppercase; color: #64748b; margin-bottom: 5px; }
-              .nxpf-input { width: 100%; box-sizing: border-box; padding: 12px 13px; border-radius: 12px; border: 1.5px solid #e2e8f0; background: #f8fafc; font-size: 14px; font-weight: 600; color: #0f172a; outline: none; transition: border-color .15s, background .15s, box-shadow .15s; font-family: inherit; }
-              .nxpf-input:focus { border-color: #0f52ba; background: #fff; box-shadow: 0 0 0 4px rgba(15,82,186,.1); }
-              .nxpf-input::placeholder { color: #cbd5e1; font-weight: 600; }
-              .nxpf-err { font-size: 11.5px; font-weight: 800; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 9px 12px; border-radius: 11px; }
-              .nxpf-foot { display: flex; gap: 10px; padding: 16px 24px 20px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
-              .nxpf-btn-ghost { padding: 13px 18px; border-radius: 12px; border: 1.5px solid #e2e8f0; background: #fff; color: #64748b; font-size: 13px; font-weight: 900; cursor: pointer; transition: background .15s; font-family: inherit; }
-              .nxpf-btn-ghost:hover { background: #f8fafc; }
-              .nxpf-btn-primary { flex: 1; padding: 13px 18px; border-radius: 12px; border: none; background: linear-gradient(135deg,#0f52ba,#1d4ed8); color: #fff; font-size: 13px; font-weight: 950; cursor: pointer; box-shadow: 0 12px 26px -8px rgba(15,82,186,.6); transition: transform .12s, box-shadow .12s, opacity .15s; font-family: inherit; }
-              .nxpf-btn-primary:hover { transform: translateY(-1px); }
-              .nxpf-btn-primary:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; transform: none; }
-              .nxpf-success { text-align: center; padding: 22px 8px 10px; }
-              .nxpf-check { width: 62px; height: 62px; margin: 0 auto; border-radius: 50%; background: #dcfce7; color: #16a34a; font-size: 32px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: nxpfPop .3s cubic-bezier(0.16,1,0.3,1); }
-              .nxpf-success-t { font-size: 17px; font-weight: 950; color: #0f172a; margin-top: 14px; }
-              .nxpf-success-s { font-size: 12px; font-weight: 600; color: #94a3b8; margin-top: 4px; }
-              @keyframes nxpfFade { from { opacity: 0; } to { opacity: 1; } }
-              @keyframes nxpfPop { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
-              @keyframes nxpfSheet { from { transform: translateY(100%); } to { transform: none; } }
-              @media (max-width: 560px) {
-                .nxpf-overlay { padding: 0; align-items: flex-end; }
-                .nxpf-card { max-width: 100%; border-radius: 24px 24px 0 0; max-height: 94vh; animation: nxpfSheet .32s cubic-bezier(0.16,1,0.3,1); }
-                .nxpf-grip { display: block; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: 40px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.45); }
-                .nxpf-head { padding-top: 24px; }
-                .nxpf-foot { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
-              }
-            `}</style>
+const REQUEST_STATUS_TONE = {
+  PENDING:  { bg: '#fef3c7', fg: '#b45309', icon: '⏳', label: 'Pending' },
+  SCHEDULED: { bg: '#dcfce7', fg: '#166534', icon: '✓', label: 'Scheduled' },
+  DECLINED: { bg: '#fee2e2', fg: '#991b1b', icon: '✕', label: 'Declined' },
+};
+
+// "Add to Home Screen" — a slim, dismissible banner (once per browser; localStorage, best-effort).
+// Hidden once already installed, or once this doctor has installed/dismissed it before.
+function InstallBanner({ centre }) {
+  const { isStandalone, isIOS, canPrompt, installed, promptInstall } = useHomeScreenInstall({
+    title: `${centre || 'Diagnostic Centre'} — Referral Portal`,
+    shortTitle: 'Referral Portal',
+    iconPath: `${import.meta.env.BASE_URL}Logo.png`,
+  });
+  const storageKey = 'nx_portal_install_dismissed';
+  // Lazy initializer (not an effect) — localStorage.getItem is synchronous, so there's nothing to
+  // "synchronize" here; reading it up front just picks the correct initial render.
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(storageKey) === '1'; } catch { return false; /* private mode — just show it */ }
+  });
+  const [showIOSHelp, setShowIOSHelp] = useState(false);
+  const dismiss = () => {
+    setDismissed(true);
+    try { localStorage.setItem(storageKey, '1'); } catch { /* not persisted this session — harmless */ }
+  };
+
+  if (isStandalone || installed || dismissed) return null;
+
+  return (
+    <div className="nx-install-banner">
+      <span style={{ fontSize: '22px', flexShrink: 0 }}>🏠</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#166534' }}>Add this to your home screen</div>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: '#15803d', marginTop: '1px' }}>
+          {isIOS ? 'Tap Share, then "Add to Home Screen" — it opens straight to your dashboard.' : 'One tap, and it opens straight to your dashboard, no browser bar.'}
+        </div>
+      </div>
+      {isIOS ? (
+        <button onClick={() => setShowIOSHelp(true)} className="nx-action-btn" style={{ flexShrink: 0, background: 'white', borderColor: '#bbf7d0', color: '#166534' }}>How?</button>
+      ) : canPrompt ? (
+        <button onClick={promptInstall} className="nx-action-btn" style={{ flexShrink: 0, background: 'white', borderColor: '#bbf7d0', color: '#166534' }}>Add now</button>
+      ) : null}
+      <button onClick={dismiss} title="Dismiss" style={{ flexShrink: 0, border: 'none', background: 'transparent', color: '#166534', opacity: 0.5, fontSize: '15px', fontWeight: 900, cursor: 'pointer', padding: '2px 4px' }}>✕</button>
+
+      {showIOSHelp && (
+        <div onClick={() => setShowIOSHelp(false)} className="nxpf-overlay">
+          <div onClick={e => e.stopPropagation()} className="nxpf-card" style={{ maxWidth: '360px' }}>
+            <div className="nxpf-head">
+              <div className="nxpf-head-l"><div className="nxpf-avatar">🏠</div><div className="nxpf-title" style={{ fontSize: '15px' }}>Add to Home Screen</div></div>
+              <button onClick={() => setShowIOSHelp(false)} className="nxpf-x" aria-label="Close">✕</button>
+            </div>
+            <div className="nxpf-body" style={{ fontSize: '13px', fontWeight: 600, color: '#334155', lineHeight: 1.7 }}>
+              <div>1. Tap the <b>Share</b> icon <span style={{ fontSize: '15px' }}>⬆️</span> in Safari's toolbar.</div>
+              <div>2. Scroll down and tap <b>"Add to Home Screen"</b>.</div>
+              <div>3. Tap <b>Add</b> — your dashboard is now one tap away.</div>
+            </div>
+            <div className="nxpf-foot"><button onClick={() => setShowIOSHelp(false)} className="nxpf-btn-primary">Got it</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Request an appointment + see the status of everything this doctor has asked for. Own state,
+// fetches its own service menu + request history — mirrors ProfileButton's self-contained shape.
+function BookingPanel({ id, token, centreName }) {
+  const params = token ? { token } : undefined;
+  const [services, setServices] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [openForm, setOpenForm] = useState(false);
+  const [openHistory, setOpenHistory] = useState(false);
+  const blank = { patientName: '', mobile: '', age: '', gender: '', service: '', preferredDate: '', notes: '' };
+  const [form, setForm] = useState(blank);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState('');
+
+  // Reusable for the initial fetch AND for an imperative refresh after a successful submit
+  // (called from an event handler, not listed in any effect's deps — see below for why that
+  // distinction matters here).
+  const load = useCallback(async () => {
+    try {
+      const [svcRes, reqRes] = await Promise.all([
+        apiClient.get(`/public/referral/${id}/services`, { params }),
+        apiClient.get(`/public/referral/${id}/booking-requests`, { params }),
+      ]);
+      setServices(svcRes?.data?.data || []);
+      setRequests(reqRes?.data?.data || []);
+    } catch (e) {
+      console.warn('[BOOKING] Could not load services / requests', e);   // informational only — the button still works
+    } finally {
+      setLoaded(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, token]);
+
+  // The initial fetch is its own inline effect (matching the portal's main data-fetch above)
+  // rather than `useEffect(() => { load(); }, [load])` — referencing a memoized async function
+  // in the deps array is exactly the shape the set-state-in-effect lint rule flags, since it
+  // can't tell this "fetch on mount" apart from a stale-closure bug.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [svcRes, reqRes] = await Promise.all([
+          apiClient.get(`/public/referral/${id}/services`, { params }),
+          apiClient.get(`/public/referral/${id}/booking-requests`, { params }),
+        ]);
+        if (!active) return;
+        setServices(svcRes?.data?.data || []);
+        setRequests(reqRes?.data?.data || []);
+      } catch (e) {
+        if (active) console.warn('[BOOKING] Could not load services / requests', e);   // informational only — the button still works
+      } finally {
+        if (active) setLoaded(true);
+      }
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, token]);
+
+  const pendingCount = requests.filter(r => r.status === 'PENDING').length;
+
+  const openModal = () => { setForm(blank); setErr(''); setSaved(false); setOpenForm(true); };
+
+  const submit = async () => {
+    if (!form.patientName.trim()) { setErr('Please enter the patient\'s name.'); return; }
+    setSaving(true); setErr('');
+    try {
+      await apiClient.post(`/public/referral/${id}/booking-requests`, {
+        patientName: form.patientName.trim(),
+        mobile: form.mobile.trim() || null,
+        age: form.age.trim() || null,
+        gender: form.gender || null,
+        modality: form.service ? form.service.split(' — ')[0] : null,
+        serviceName: form.service ? form.service.split(' — ')[1] : null,
+        preferredDate: form.preferredDate || null,
+        notes: form.notes.trim() || null,
+      }, { params });
+      setSaved(true);
+      load();
+    } catch (e) {
+      setErr(e?.response?.data?.error || e?.response?.data?.message || (!e?.response ? 'No connection — please try again.' : 'Could not submit this request. Please try again.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = (label, key, ph, type = 'text') => (
+    <div className="nxpf-field">
+      <label>{label}</label>
+      <input className="nxpf-input" type={type} value={form[key]} placeholder={ph} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
+    </div>
+  );
+
+  return (
+    <>
+      <div className="nx-actions">
+        <button onClick={openModal} className="nx-action-btn">📅 Request an appointment</button>
+        {loaded && requests.length > 0 && (
+          <button onClick={() => setOpenHistory(true)} className="nx-action-btn nx-action-ghost">
+            📋 My requests {pendingCount > 0 ? `(${pendingCount} pending)` : `(${requests.length})`}
+          </button>
+        )}
+      </div>
+
+      {openForm && (
+        <div onClick={() => !saving && setOpenForm(false)} className="nxpf-overlay">
+          <div onClick={e => e.stopPropagation()} className="nxpf-card nxpf-wide">
+            <div className="nxpf-head">
+              <div className="nxpf-head-l">
+                <div className="nxpf-avatar">📅</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="nxpf-eyebrow">BOOKING REQUEST</div>
+                  <div className="nxpf-title">Request an appointment</div>
+                </div>
+              </div>
+              <button onClick={() => setOpenForm(false)} className="nxpf-x" aria-label="Close">✕</button>
+            </div>
+            <div className="nxpf-body">
+              {saved ? (
+                <div className="nxpf-success">
+                  <div className="nxpf-check">✓</div>
+                  <div className="nxpf-success-t">Request sent</div>
+                  <div className="nxpf-success-s">{centreName || 'The centre'} will confirm it shortly — track it under "My requests".</div>
+                  <button onClick={() => setOpenForm(false)} className="nxpf-btn-primary" style={{ flex: 'unset', marginTop: '18px', minWidth: '150px' }}>Done</button>
+                </div>
+              ) : (
+                <>
+                  <div className="nxpf-help">
+                    This asks {centreName || 'the centre'} to book the patient in — their front desk confirms the exact time and doctor, then it shows here as Scheduled.
+                  </div>
+                  <div className="nxpf-section">Patient</div>
+                  <div className="nxpf-row">
+                    {field('Full name', 'patientName', 'Patient\'s name')}
+                    {field('Mobile', 'mobile', '10-digit mobile', 'tel')}
+                  </div>
+                  <div className="nxpf-row">
+                    {field('Age', 'age', 'e.g. 45')}
+                    <div className="nxpf-field">
+                      <label>Gender</label>
+                      <select className="nxpf-input" value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
+                        <option value="">Select…</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="nxpf-section">What's needed</div>
+                  <div className="nxpf-row">
+                    <div className="nxpf-field">
+                      <label>Service</label>
+                      <select className="nxpf-input" value={form.service} onChange={e => setForm(f => ({ ...f, service: e.target.value }))}>
+                        <option value="">Select…</option>
+                        {services.map(s => (
+                          <option key={`${s.modality}—${s.serviceName}`} value={`${s.modality} — ${s.serviceName}`}>{s.modality} — {s.serviceName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="nxpf-field">
+                      <label>Preferred date</label>
+                      <input className="nxpf-input" type="date" min={todayStr()} value={form.preferredDate} onChange={e => setForm(f => ({ ...f, preferredDate: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="nxpf-field">
+                    <label>Notes (optional)</label>
+                    <textarea className="nxpf-input" rows={2} placeholder="Anything the front desk should know" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+                  </div>
+                  {err && <div className="nxpf-err">⚠ {err}</div>}
+                </>
+              )}
+            </div>
+            {!saved && (
+              <div className="nxpf-foot">
+                <button onClick={() => setOpenForm(false)} disabled={saving} className="nxpf-btn-ghost">Cancel</button>
+                <button onClick={submit} disabled={saving} className="nxpf-btn-primary">{saving ? 'Sending…' : 'Send request'}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {openHistory && (
+        <div onClick={() => setOpenHistory(false)} className="nxpf-overlay">
+          <div onClick={e => e.stopPropagation()} className="nxpf-card nxpf-wide">
+            <div className="nxpf-head">
+              <div className="nxpf-head-l">
+                <div className="nxpf-avatar">📋</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="nxpf-eyebrow">{requests.length} REQUEST{requests.length === 1 ? '' : 'S'}</div>
+                  <div className="nxpf-title">My requests</div>
+                </div>
+              </div>
+              <button onClick={() => setOpenHistory(false)} className="nxpf-x" aria-label="Close">✕</button>
+            </div>
+            <div className="nxpf-body">
+              {requests.length === 0 ? (
+                <div className="nxpf-help">No requests yet.</div>
+              ) : requests.map(r => {
+                const tone = REQUEST_STATUS_TONE[r.status] || REQUEST_STATUS_TONE.PENDING;
+                return (
+                  <div key={r.id} className="nx-req-row">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{r.patientName}</div>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', marginTop: '1px' }}>
+                        {[r.modality, r.serviceName].filter(Boolean).join(' · ') || 'No service specified'}
+                        {r.preferredDate ? ` · wanted ${prettyDate(r.preferredDate)}` : ''}
+                      </div>
+                      {r.status === 'DECLINED' && r.declineReason && (
+                        <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#991b1b', marginTop: '3px' }}>Reason: {r.declineReason}</div>
+                      )}
+                    </div>
+                    <span className="nx-req-chip" style={{ background: tone.bg, color: tone.fg }}>{tone.icon} {tone.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="nxpf-foot"><button onClick={() => setOpenHistory(false)} className="nxpf-btn-primary">Close</button></div>
           </div>
         </div>
       )}
@@ -841,6 +1091,64 @@ function Shell({ children, centre, location, adminName, contact, email, headerAc
           .nx-table-wrap { display: none; }
           .nx-cards { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
         }
+
+        /* Shared modal chrome — the profile editor and the booking-request forms both use it. */
+        .nxpf-overlay { position: fixed; inset: 0; background: rgba(8,12,30,0.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; animation: nxpfFade .2s ease-out; }
+        .nxpf-card { width: 100%; max-width: 470px; background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 40px 90px -20px rgba(2,6,23,0.55); display: flex; flex-direction: column; max-height: 90vh; animation: nxpfPop .26s cubic-bezier(0.16,1,0.3,1); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+        .nxpf-card.nxpf-wide { max-width: 560px; }
+        .nxpf-grip { display: none; }
+        .nxpf-head { position: relative; padding: 22px 24px; background: linear-gradient(135deg,#0a1628 0%,#0f52ba 100%); color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+        .nxpf-head-l { display: flex; align-items: center; gap: 13px; min-width: 0; }
+        .nxpf-avatar { width: 44px; height: 44px; border-radius: 14px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 900; flex-shrink: 0; }
+        .nxpf-eyebrow { font-size: 10px; font-weight: 900; letter-spacing: 1.8px; opacity: .72; }
+        .nxpf-title { font-size: 18px; font-weight: 950; margin-top: 2px; letter-spacing: -0.3px; }
+        .nxpf-x { border: none; background: rgba(255,255,255,0.14); width: 32px; height: 32px; border-radius: 50%; color: #fff; font-size: 14px; font-weight: 900; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+        .nxpf-x:hover { background: rgba(255,255,255,0.28); }
+        .nxpf-body { padding: 20px 24px; overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+        .nxpf-help { font-size: 11.5px; font-weight: 600; color: #94a3b8; line-height: 1.5; }
+        .nxpf-missing { font-size: 11px; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; padding: 9px 12px; border-radius: 11px; }
+        .nxpf-section { font-size: 10px; font-weight: 950; letter-spacing: .8px; text-transform: uppercase; color: #0f52ba; margin-top: 6px; }
+        .nxpf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .nxpf-field { display: flex; flex-direction: column; min-width: 0; }
+        .nxpf-field label { font-size: 10px; font-weight: 900; letter-spacing: .5px; text-transform: uppercase; color: #64748b; margin-bottom: 5px; }
+        .nxpf-input { width: 100%; box-sizing: border-box; padding: 12px 13px; border-radius: 12px; border: 1.5px solid #e2e8f0; background: #f8fafc; font-size: 14px; font-weight: 600; color: #0f172a; outline: none; transition: border-color .15s, background .15s, box-shadow .15s; font-family: inherit; }
+        .nxpf-input:focus { border-color: #0f52ba; background: #fff; box-shadow: 0 0 0 4px rgba(15,82,186,.1); }
+        .nxpf-input::placeholder { color: #cbd5e1; font-weight: 600; }
+        select.nxpf-input { cursor: pointer; }
+        textarea.nxpf-input { resize: vertical; min-height: 64px; font-family: inherit; }
+        .nxpf-err { font-size: 11.5px; font-weight: 800; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 9px 12px; border-radius: 11px; }
+        .nxpf-foot { display: flex; gap: 10px; padding: 16px 24px 20px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
+        .nxpf-btn-ghost { padding: 13px 18px; border-radius: 12px; border: 1.5px solid #e2e8f0; background: #fff; color: #64748b; font-size: 13px; font-weight: 900; cursor: pointer; transition: background .15s; font-family: inherit; }
+        .nxpf-btn-ghost:hover { background: #f8fafc; }
+        .nxpf-btn-primary { flex: 1; padding: 13px 18px; border-radius: 12px; border: none; background: linear-gradient(135deg,#0f52ba,#1d4ed8); color: #fff; font-size: 13px; font-weight: 950; cursor: pointer; box-shadow: 0 12px 26px -8px rgba(15,82,186,.6); transition: transform .12s, box-shadow .12s, opacity .15s; font-family: inherit; }
+        .nxpf-btn-primary:hover { transform: translateY(-1px); }
+        .nxpf-btn-primary:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; transform: none; }
+        .nxpf-success { text-align: center; padding: 22px 8px 10px; }
+        .nxpf-check { width: 62px; height: 62px; margin: 0 auto; border-radius: 50%; background: #dcfce7; color: #16a34a; font-size: 32px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: nxpfPop .3s cubic-bezier(0.16,1,0.3,1); }
+        .nxpf-success-t { font-size: 17px; font-weight: 950; color: #0f172a; margin-top: 14px; }
+        .nxpf-success-s { font-size: 12px; font-weight: 600; color: #94a3b8; margin-top: 4px; }
+        @keyframes nxpfFade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes nxpfPop { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+        @keyframes nxpfSheet { from { transform: translateY(100%); } to { transform: none; } }
+        @media (max-width: 560px) {
+          .nxpf-overlay { padding: 0; align-items: flex-end; }
+          .nxpf-card { max-width: 100%; border-radius: 24px 24px 0 0; max-height: 94vh; animation: nxpfSheet .32s cubic-bezier(0.16,1,0.3,1); }
+          .nxpf-grip { display: block; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: 40px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.45); }
+          .nxpf-head { padding-top: 24px; }
+          .nxpf-foot { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+        }
+
+        /* Book-an-appointment + Add-to-Home-Screen action row, and the request-history rows. */
+        .nx-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .nx-action-btn { display: inline-flex; align-items: center; gap: 7px; padding: 10px 15px; border-radius: 12px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 900; cursor: pointer; white-space: nowrap; font-family: inherit; transition: background .15s, transform .1s; }
+        .nx-action-btn:hover { background: #dbeafe; }
+        .nx-action-btn:active { transform: scale(.98); }
+        .nx-action-btn.nx-action-ghost { border-color: #e2e8f0; background: #fff; color: #475569; }
+        .nx-req-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-top: 1px solid #f1f5f9; }
+        .nx-req-row:first-child { border-top: none; }
+        .nx-req-chip { padding: 3px 9px; border-radius: 999px; font-size: 9.5px; font-weight: 950; white-space: nowrap; letter-spacing: .3px; }
+        .nx-install-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: linear-gradient(120deg,#f0fdf4,#ecfdf5); border: 1px solid #bbf7d0; margin-bottom: 16px; }
+        @media (max-width: 560px) { .nx-install-banner { flex-wrap: wrap; } }
       `}</style>
       <header style={{ background: 'white', borderBottom: '1px solid #e7ecf3', position: 'sticky', top: 0, zIndex: 50 }}>
         <div className="nx-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>

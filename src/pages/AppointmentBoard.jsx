@@ -184,6 +184,12 @@ export default function AppointmentBoard() {
 
 
   const [isBookingOpen, setIsBookingOpen] = useState(false);
+  // Set when the booking form was opened by "Book" on a doctor-portal request (see
+  // DoctorRequestsPanel) — carried through to the create-appointment payload so the server marks
+  // that request SCHEDULED and links it to the new appointment. Cleared on any other booking.
+  const [pendingBookingRequestId, setPendingBookingRequestId] = useState(null);
+  const [doctorRequestsOpen, setDoctorRequestsOpen] = useState(false);
+  const [doctorRequestsPendingCount, setDoctorRequestsPendingCount] = useState(0);
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [isEditingOpen, setIsEditingOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
@@ -1545,6 +1551,10 @@ export default function AppointmentBoard() {
       referrerDegree: newPatient.referrerIsDoctor !== false ? (newPatient.referrerDegree || '') : '',
       notes: newBooking.notes,
       priority: newBooking.priority || 'ROUTINE',
+      // Fulfilling a doctor-portal booking request (see DoctorRequestsPanel) — the server marks
+      // it SCHEDULED and links it to this appointment. undefined (not null) for an ordinary
+      // booking, so an older server that doesn't know the field sees it simply absent.
+      bookingRequestId: pendingBookingRequestId || undefined,
     };
 
 
@@ -1576,6 +1586,7 @@ export default function AppointmentBoard() {
       setIsBookingOpen(false);
       resetBooking();
       refreshAppointments();
+      if (pendingBookingRequestId) loadDoctorRequestsCount();
     } catch (error) {
 
       console.error('Failed to book appointment:', error);
@@ -1623,7 +1634,56 @@ export default function AppointmentBoard() {
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
     setShowBookingValidation(false);
+    setPendingBookingRequestId(null);
   };
+
+  // Pre-fill the New Appointment form from a doctor-portal request (DoctorRequestsPanel's "Book").
+  // Staff still complete the form normally — patient dedup, Lead Specialist, service pricing are
+  // all exactly as an ordinary booking; this only seeds the starting values.
+  const openBookingFromRequest = (req) => {
+    resetBooking();
+    setNewPatient(prev => ({
+      ...prev,
+      name: req.patientName || '',
+      mobile: req.mobile || '',
+      age: req.age || '',
+      gender: ['Male', 'Female', 'Other'].includes(req.gender) ? req.gender : prev.gender,
+      referredBy: req.referrerName || '',
+      referrerId: req.referrerId || null,
+      referrerContact: req.referrerContact || '',
+    }));
+    setNewBooking(prev => ({
+      ...prev,
+      modality: req.modality ? req.modality.toUpperCase() : prev.modality,
+      date: req.preferredDate || prev.date,
+      notes: [req.serviceName ? `Requested: ${req.serviceName}` : '', req.notes].filter(Boolean).join(' — '),
+    }));
+    setPendingBookingRequestId(req.id);
+    setDoctorRequestsOpen(false);
+    setIsBookingOpen(true);
+  };
+
+  // Reusable for the post-booking refresh (called from an event handler, not an effect — see the
+  // mount-only fetch just below for why that distinction matters here).
+  const loadDoctorRequestsCount = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/referrers/booking-requests', { params: { includeDecided: false } });
+      setDoctorRequestsPendingCount((res?.data || []).length);
+    } catch { /* best-effort badge — DoctorRequestsPanel surfaces a real error if opened */ }
+  }, [setDoctorRequestsPendingCount]);
+
+  // Mount-only: an inline IIFE (not `useEffect(() => { loadDoctorRequestsCount(); }, [...])`,
+  // which the set-state-in-effect lint rule flags as indistinguishable from a stale-closure bug).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await apiClient.get('/referrers/booking-requests', { params: { includeDecided: false } });
+        if (active) setDoctorRequestsPendingCount((res?.data || []).length);
+      } catch { /* best-effort badge */ }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const startEditingAppointment = async (appIn) => {
     let app = appIn;
@@ -8201,8 +8261,13 @@ export default function AppointmentBoard() {
                   Future <span className="tab-badge">{stats.expected || 0}</span>
                 </button>
               </div>
-              <button 
-                className="mobile-fab-btn" 
+              {doctorRequestsPendingCount > 0 && (
+                <button className="mobile-fab-btn" style={{ background: '#0f52ba' }} onClick={() => setDoctorRequestsOpen(true)}>
+                  📋 {doctorRequestsPendingCount}
+                </button>
+              )}
+              <button
+                className="mobile-fab-btn"
                 onClick={() => { resetBooking(); setIsBookingOpen(true); }}
               >
                 <span>+</span> New
@@ -8437,6 +8502,11 @@ export default function AppointmentBoard() {
               </button>
             </div>
             
+            {doctorRequestsPendingCount > 0 && (
+              <button className="appt-new-mission-btn" style={{ background: '#0f172a' }} onClick={() => setDoctorRequestsOpen(true)}>
+                📋 Doctor requests · {doctorRequestsPendingCount} pending
+              </button>
+            )}
             <button className="appt-new-mission-btn" onClick={() => { resetBooking(); setIsBookingOpen(true); }}>
               + Add Appointment
             </button>
@@ -9544,6 +9614,163 @@ export default function AppointmentBoard() {
         @keyframes apptNoticeFade { from { opacity: 0 } to { opacity: 1 } }
         @keyframes apptNoticePop  { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }
       `}</style>
+
+      {doctorRequestsOpen && (
+        <DoctorRequestsPanel
+          onClose={() => setDoctorRequestsOpen(false)}
+          onBook={openBookingFromRequest}
+          onPendingCountChange={setDoctorRequestsPendingCount}
+        />
+      )}
+    </div>
+  );
+}
+
+// A referring doctor's booking request, submitted from their portal link (/r/{id}). Self-contained:
+// fetches its own queue (pending first, oldest first; recently decided trailing behind) and lets
+// staff decline (with a reason the doctor sees back on their portal) or book it, which hands the
+// patient's details to AppointmentBoard's normal New Appointment form via `onBook` — staff still
+// complete that form as usual (patient dedup, Lead Specialist, service pricing); this only seeds it.
+function DoctorRequestsPanel({ onClose, onBook, onPendingCountChange }) {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [declining, setDeclining] = useState(null); // { id, reason, busy } | null
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get('/referrers/booking-requests', { params: { includeDecided: true } });
+      const rows = res?.data || [];
+      setRequests(rows);
+      setError(null);
+      onPendingCountChange?.(rows.filter(r => r.status === 'PENDING').length);
+    } catch (e) {
+      console.error('[DOCTOR REQUESTS] Live fetch failed', e);
+      setError(!e?.response ? 'Cannot reach the server — please try again.' : 'Could not load doctor requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, [onPendingCountChange]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await apiClient.get('/referrers/booking-requests', { params: { includeDecided: true } });
+        if (!active) return;
+        const rows = res?.data || [];
+        setRequests(rows);
+        setError(null);
+        onPendingCountChange?.(rows.filter(r => r.status === 'PENDING').length);
+      } catch (e) {
+        if (!active) return;
+        console.error('[DOCTOR REQUESTS] Live fetch failed', e);
+        setError(!e?.response ? 'Cannot reach the server — please try again.' : 'Could not load doctor requests.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const confirmDecline = async () => {
+    if (!declining || declining.busy) return;
+    setDeclining(d => ({ ...d, busy: true }));
+    try {
+      await apiClient.post(`/referrers/booking-requests/${declining.id}/decline`, { reason: declining.reason || null });
+      setDeclining(null);
+      load();
+    } catch (e) {
+      setDeclining(d => ({ ...d, busy: false, err: e?.response?.data?.message || e?.response?.data?.error || 'Could not decline this request.' }));
+    }
+  };
+
+  const pending = requests.filter(r => r.status === 'PENDING');
+  const decided = requests.filter(r => r.status !== 'PENDING');
+  const TONE = {
+    PENDING: { bg: '#fef3c7', fg: '#b45309' },
+    SCHEDULED: { bg: '#dcfce7', fg: '#166534' },
+    DECLINED: { bg: '#fee2e2', fg: '#991b1b' },
+  };
+
+  const Row = (r) => (
+    <div key={r.id} style={{ padding: '13px 16px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{r.patientName}</span>
+          <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 950, background: (TONE[r.status] || TONE.PENDING).bg, color: (TONE[r.status] || TONE.PENDING).fg }}>{r.status}</span>
+        </div>
+        <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '3px' }}>
+          Referred by <b>{r.referrerName}</b>{r.referrerContact ? ` (${r.referrerContact})` : ''}
+        </div>
+        <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>
+          {[r.modality, r.serviceName].filter(Boolean).join(' · ') || 'No service specified'}
+          {r.mobile ? ` · 📱 ${r.mobile}` : ''}
+          {r.preferredDate ? ` · wants ${r.preferredDate}` : ''}
+        </div>
+        {r.notes && <div style={{ fontSize: '10.5px', fontWeight: 600, color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>"{r.notes}"</div>}
+        {r.status === 'DECLINED' && r.declineReason && (
+          <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#991b1b', marginTop: '4px' }}>Declined: {r.declineReason}</div>
+        )}
+        {declining?.id === r.id && (
+          <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input
+              type="text" placeholder="Reason (optional)" value={declining.reason}
+              onChange={e => setDeclining(d => ({ ...d, reason: e.target.value }))}
+              style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11.5px', outline: 'none' }}
+            />
+            <button onClick={confirmDecline} disabled={declining.busy}
+              style={{ padding: '7px 12px', borderRadius: '8px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10.5px', fontWeight: 900, cursor: declining.busy ? 'wait' : 'pointer' }}>
+              {declining.busy ? 'Declining…' : 'Confirm decline'}
+            </button>
+            <button onClick={() => setDeclining(null)} disabled={declining.busy}
+              style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '10.5px', fontWeight: 900, cursor: 'pointer' }}>Cancel</button>
+            {declining.err && <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c' }}>{declining.err}</span>}
+          </div>
+        )}
+      </div>
+      {r.status === 'PENDING' && declining?.id !== r.id && (
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <button onClick={() => onBook(r)}
+            style={{ padding: '8px 13px', borderRadius: '9px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '10.5px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            📅 Book
+          </button>
+          <button onClick={() => setDeclining({ id: r.id, reason: '', busy: false })}
+            style={{ padding: '8px 13px', borderRadius: '9px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontSize: '10.5px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Decline
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(8,12,30,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '640px', maxHeight: '86vh', background: 'white', borderRadius: '20px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 40px 90px -20px rgba(2,6,23,0.5)' }}>
+        <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#0a1628,#0f52ba)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: 900, letterSpacing: '1.5px', opacity: 0.75 }}>FROM DOCTOR PORTAL LINKS</div>
+            <div style={{ fontSize: '16px', fontWeight: 950, marginTop: '2px' }}>Booking requests{pending.length > 0 ? ` · ${pending.length} pending` : ''}</div>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'rgba(255,255,255,0.15)', width: '30px', height: '30px', borderRadius: '50%', color: 'white', fontSize: '13px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {loading ? (
+            <div style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>Loading…</div>
+          ) : error ? (
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#b91c1c' }}>{error}</div>
+              <button onClick={load} style={{ marginTop: '12px', padding: '8px 16px', borderRadius: '9px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>Retry</button>
+            </div>
+          ) : requests.length === 0 ? (
+            <div style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No booking requests from any referring doctor yet.</div>
+          ) : (
+            <>{pending.map(Row)}{decided.map(Row)}</>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
