@@ -7,10 +7,9 @@ import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
 
-// Sibling NexEagle platforms, cross-promoted on the login banner. Feature bullets are a first
-// DRAFT (placeholder copy based on the product name/category) — swap them for the real ones
-// before this ships. prodUrl / devUrl are TODO: paste the real URLs; until then the card shows
-// "Coming soon" instead of a dead/wrong link.
+// Sibling NexEagle platforms, cross-promoted on the login banner. prodUrl/devUrl are the real
+// URLs; features are grounded in each product's own repo (1HMS's feature-module list, DoctorDekho's
+// README), not guesses.
 const OTHER_PLATFORMS = [
   {
     key: '1hms',
@@ -19,10 +18,10 @@ const OTHER_PLATFORMS = [
     icon: '🏥',
     accent: '#0891b2',
     features: [
-      'OPD & IPD patient records, one timeline',
-      'Bed, ward & admission management',
-      'Pharmacy & inventory tracking',
-      'Billing, insurance & claims',
+      'OPD, IPD & pathology in one connected system',
+      'ABDM-integrated digital health records',
+      'Pharmacy, billing & HR built in',
+      'Doctor calendar & appointment scheduling',
     ],
     prodUrl: 'https://1hms.nexeagle.com',
     devUrl: 'https://1hms-dev.nexeagle.com',
@@ -34,10 +33,10 @@ const OTHER_PLATFORMS = [
     icon: '🩺',
     accent: '#7c3aed',
     features: [
-      'Search verified doctors by speciality & city',
-      'Instant appointment booking',
-      'Patient reviews & ratings',
-      'Teleconsultation support',
+      'Search doctors by specialty, condition or symptom',
+      'Book across hospitals & labs instantly',
+      'WhatsApp OTP login — no passwords',
+      'English, Hindi, Bengali & Hinglish',
     ],
     prodUrl: 'https://doctordekho.nexeagle.com',
     devUrl: 'https://doctordekho-dev.nexeagle.com',
