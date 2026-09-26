@@ -49,6 +49,21 @@ const INDUSTRY_QUOTES = [
     problem: "You finished the scan hours ago. The report is still sitting in a queue — the surgeon is waiting, the patient is anxious.",
     solution: "1Rad Flow's smart worklist prioritises critical cases automatically, cutting average report turnaround by up to 40%.",
   },
+  // Slides 2 and 3 promote the sibling platforms (OTHER_PLATFORMS). `platformKey` switches the slide
+  // to that platform's accent colour and adds its "Open" link; the copy sticks to the feature lists
+  // above rather than adding new claims.
+  {
+    title: "Beyond radiology · 1HMS Flow",
+    platformKey: '1hms',
+    problem: "Radiology is only one department. OPD, IPD, pharmacy, billing and HR still run on separate tools that don't talk to each other.",
+    solution: "1HMS Flow connects OPD, IPD, pathology, pharmacy, billing and HR in one system, with ABDM-integrated digital health records and doctor appointment scheduling.",
+  },
+  {
+    title: "For patients · DoctorDekho",
+    platformKey: 'doctordekho',
+    problem: "A patient knows the symptoms but not which specialist to see, or which hospital has a slot today.",
+    solution: "DoctorDekho lets patients search doctors by specialty, condition or symptom and book across hospitals and labs instantly, with WhatsApp OTP login in English, Hindi, Bengali and Hinglish.",
+  },
   {
     title: "Radiologist shortage",
     problem: "One radiologist for every 1,00,000 patients in India. The gap doesn't shrink — it just moves to the next shift.",
@@ -134,6 +149,9 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [quoteFading, setQuoteFading] = useState(false);
+  // Held while the pointer is over the banner card so the 6s rotation can't swap the slide (and its
+  // "Open" link) out from under someone who is reading it.
+  const [quotePaused, setQuotePaused] = useState(false);
   // Premium error modal — surfaces login failures (wrong credentials,
   // unknown user, inactive account, OTP rejection) in a high-attention
   // overlay rather than an easy-to-miss inline band.
@@ -154,6 +172,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    if (quotePaused) return undefined;
     const interval = setInterval(() => {
       setQuoteFading(true);
       setTimeout(() => {
@@ -162,7 +181,7 @@ export default function LoginPage() {
       }, 400);
     }, 6000);
     return () => clearInterval(interval);
-  }, []);
+  }, [quotePaused]);
 
   const startCountdown = () => {
     if (timerId) clearInterval(timerId);
@@ -424,6 +443,11 @@ export default function LoginPage() {
   };
 
 
+  const slide = INDUSTRY_QUOTES[quoteIndex];
+  const slidePlatform = slide.platformKey ? OTHER_PLATFORMS.find(p => p.key === slide.platformKey) : null;
+  // Hex-alpha suffixes (e.g. `${slideAccent}26`) work because every accent is a 6-digit hex.
+  const slideAccent = slidePlatform?.accent || '#2563eb';
+
   return (
     <div className="auth-immersive-container">
       <RadiologyWorkflowBG />
@@ -447,6 +471,8 @@ export default function LoginPage() {
 
           {/* Clickable quote card */}
           <div
+            onMouseEnter={() => setQuotePaused(true)}
+            onMouseLeave={() => setQuotePaused(false)}
             onClick={() => {
               setQuoteFading(true);
               setTimeout(() => {
@@ -469,16 +495,16 @@ export default function LoginPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{
                   width: '4px', height: '4px', borderRadius: '50%',
-                  background: '#2563eb', boxShadow: '0 0 6px #2563eb',
+                  background: slideAccent, boxShadow: `0 0 6px ${slideAccent}`,
                 }} />
                 <span style={{
                   fontSize: '9px', fontWeight: 800, letterSpacing: '2.5px',
-                  textTransform: 'uppercase', color: '#2563eb', opacity: 0.8,
+                  textTransform: 'uppercase', color: slideAccent, opacity: 0.8,
                 }}>
-                  {INDUSTRY_QUOTES[quoteIndex].title}
+                  {slide.title}
                 </span>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#2563eb', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.8 }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: slideAccent, letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.8 }}>
                 tap for next <span style={{ fontSize: '14px' }}>›</span>
               </span>
             </div>
@@ -489,7 +515,7 @@ export default function LoginPage() {
               <span style={{
                 position: 'absolute', top: '-18px', left: '-4px',
                 fontSize: '72px', fontFamily: 'Georgia, serif',
-                color: 'rgba(37,99,235,0.15)', lineHeight: 1,
+                color: `${slideAccent}26`, lineHeight: 1,
                 userSelect: 'none', pointerEvents: 'none',
               }}>&ldquo;</span>
 
@@ -497,7 +523,7 @@ export default function LoginPage() {
               <div style={{
                 position: 'absolute', left: 0, top: '4px', bottom: '4px',
                 width: '3px', borderRadius: '2px',
-                background: 'linear-gradient(to bottom, #2563eb, rgba(37,99,235,0.2))',
+                background: `linear-gradient(to bottom, ${slideAccent}, ${slideAccent}33)`,
               }} />
 
               <p style={{
@@ -505,27 +531,47 @@ export default function LoginPage() {
                 color: 'rgba(15,23,42,0.95)', lineHeight: 1.7,
                 margin: 0,
               }}>
-                {INDUSTRY_QUOTES[quoteIndex].problem}
+                {slide.problem}
               </p>
             </div>
 
             {/* Solution — highlighted box */}
             <div style={{
-              background: 'rgba(37,99,235,0.08)',
-              border: '1px solid rgba(37,99,235,0.3)',
+              background: `${slideAccent}14`,
+              border: `1px solid ${slideAccent}4D`,
               borderRadius: '10px',
               padding: '16px 18px',
               display: 'flex',
               gap: '10px',
               alignItems: 'flex-start',
             }}>
-              <span style={{ color: '#2563eb', fontSize: '16px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
-              <p style={{
-                fontSize: '13px', color: 'rgba(15,23,42,0.9)',
-                lineHeight: 1.65, margin: 0, fontWeight: 500,
-              }}>
-                {INDUSTRY_QUOTES[quoteIndex].solution}
-              </p>
+              <span style={{ color: slideAccent, fontSize: '16px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+                <p style={{
+                  fontSize: '13px', color: 'rgba(15,23,42,0.9)',
+                  lineHeight: 1.65, margin: 0, fontWeight: 500,
+                }}>
+                  {slide.solution}
+                </p>
+                {/* Platform slides only. stopPropagation so opening the link doesn't also advance the slide. */}
+                {slidePlatform?.prodUrl && (
+                  <a
+                    href={slidePlatform.prodUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 16px', borderRadius: '999px',
+                      background: slideAccent, color: '#ffffff',
+                      fontSize: '12px', fontWeight: 800, textDecoration: 'none',
+                      boxShadow: `0 6px 16px -6px ${slideAccent}`,
+                    }}
+                  >
+                    Open {slidePlatform.name} <span style={{ fontSize: '13px' }}>↗</span>
+                  </a>
+                )}
+              </div>
             </div>
 
             {/* Progress dots */}
@@ -886,6 +932,32 @@ export default function LoginPage() {
            <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(15,23,42,0.7)' }}>
               New centre? <Link to="/register" style={{ color: '#2563eb', textDecoration: 'none', borderBottom: '1px solid #2563eb' }}>Register here</Link>
            </p>
+        </div>
+
+        {/* Same cross-promo as the banner's "More from NexEagle" cards, compact. CSS shows it only
+            when the left banner panel is hidden (<=1100px) — otherwise those screens would get no
+            sign of the other platforms at all. */}
+        <div className="login-platform-strip">
+          <div className="login-platform-strip__label">More from NexEagle</div>
+          <div className="login-platform-strip__list">
+            {OTHER_PLATFORMS.filter(p => p.prodUrl).map(p => (
+              <a
+                key={p.key}
+                href={p.prodUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="login-platform-chip"
+                style={{ '--chip-accent': p.accent }}
+              >
+                <span className="login-platform-chip__icon">{p.icon}</span>
+                <span className="login-platform-chip__text">
+                  <span className="login-platform-chip__name">{p.name}</span>
+                  <span className="login-platform-chip__tagline">{p.tagline}</span>
+                </span>
+                <span className="login-platform-chip__arrow">↗</span>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
 
