@@ -2782,6 +2782,59 @@ button, a, input[type="button"], input[type="submit"] {
   }
 }
 
+/* Compact "More from NexEagle" strip inside the login card. The full cards live in the left
+   .immersive-brand panel, which is hidden at <=1100px — this is what those screens get instead. */
+.login-platform-strip { display: none; }
+
+@media (max-width: 1100px) {
+  .login-platform-strip {
+    display: block;
+    width: 100%;
+    max-width: 400px;
+    margin-top: 24px;
+  }
+  .login-platform-strip__label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: rgba(15, 23, 42, 0.5);
+    margin-bottom: 10px;
+    text-align: center;
+  }
+  .login-platform-strip__list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .login-platform-chip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px; /* comfortable touch target */
+    padding: 10px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-left: 3px solid var(--chip-accent, #2563eb);
+    background: rgba(255, 255, 255, 0.75);
+    text-decoration: none;
+  }
+  .login-platform-chip__icon { font-size: 20px; flex-shrink: 0; }
+  .login-platform-chip__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .login-platform-chip__name { font-size: 13px; font-weight: 900; color: #0f172a; letter-spacing: -0.2px; }
+  .login-platform-chip__tagline { font-size: 11px; font-weight: 600; color: rgba(15, 23, 42, 0.55); }
+  .login-platform-chip__arrow { font-size: 14px; font-weight: 800; color: var(--chip-accent, #2563eb); flex-shrink: 0; }
+}
+
+/* Phones: the mobile redesign below sizes .glass-card with height:auto inside a fixed, overflow-hidden
+   container, so any content taller than the screen (small phones, or the strip above) was clipped
+   and unreachable. Capping it at the container height lets its own overflow-y:auto scroll instead. */
+@media (max-width: 767px) {
+  .auth-immersive-container .glass-card {
+    max-height: 100%;
+  }
+}
+
 
 /* ==========================================================================
    MOBILE-FIRST RESPONSIVE OPTIMIZATIONS
