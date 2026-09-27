@@ -1,26 +1,15 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useSourceVisits from '../hooks/useSourceVisits';
-import useAuth from '../auth/useAuth';
-import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
-import useOffline from '../hooks/useOffline';
-import { nativeStorage } from '../hooks/useElectron';
-import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import useFinanceRevision from '../hooks/useFinanceRevision';
 import { buildPatientAge, formatPatientAge } from '../utils/patientAge';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
-import PrescriptionPreview from '../components/PrescriptionPreview';
-import FinanceManager from '../components/FinanceManager';
-import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
 import { celebrate } from '../utils/celebrate';
 import * as XLSX from 'xlsx-js-style';
 import DoctorLinkSendSheet from './referrals/DoctorLinkSendSheet';
 import DoctorLinksView from './referrals/DoctorLinksView';
-import { getReferrerProfileCompletion, completionColor } from './referrals/referrerProfile';
-import { sortArrow } from './referrals/sortArrow';
 import { getISODate, getOverviewDates, fmtLocalISO } from './referrals/dateRanges';
 import { downloadCsv, csvCell, csvPhone, csvNumber } from '../utils/csv';
 import ReferrerEditDrawer from './referrals/ReferrerEditDrawer';
@@ -31,36 +20,8 @@ import ReferralIntelligencePanel from './referrals/ReferralIntelligencePanel';
 
 // --- HELPERS ---
 const TODAY = getISODate(0);
-const YESTERDAY = getISODate(1);
-
-// --- MOCK DATA ---
-const INITIAL_LAYOUTS = [];
-const REFERRAL_LOG = [];
-const DAILY_VOLUME_MOCK = [];
-const MODALITY_STATS_MOCK = [];
-const MODALITY_DAILY_TREND_MOCK = [];
-const STAFF_PERFORMANCE_MOCK = [];
-
-const SECTIONS_POOL = [
-  { id: 'history', name: 'Clinical History' },
-  { id: 'technique', name: 'Technique' },
-  { id: 'findings', name: 'Findings' },
-  { id: 'impression', name: 'Impression' },
-  { id: 'advice', name: 'Advice' },
-  { id: 'recommendation', name: 'Recommendation' },
-  { id: 'comparison', name: 'Comparison' },
-  { id: 'notes', name: 'Notes' }
-];
 
 export default function ReferralsPage() {
-  const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
-  const { isOnline, addToOutbox } = useOffline();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('Referrals');
-  const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
-  const [patients, setPatients] = useState([]);
-  const [patientSearch, setPatientSearch] = useState('');
-  const [personnelSearch, setPersonnelSearch] = useState('');
   const [referralMatrixSearch, setReferralMatrixSearch] = useState('');
   const [referralLogSearch, setReferralLogSearch] = useState('');
   const [referralRosterSearch, setReferralRosterSearch] = useState('');
@@ -86,41 +47,12 @@ export default function ReferralsPage() {
     return Math.min(4, Math.ceil(day / 7));
   });
   
-  // Dashboard Filters
-  const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
-  const [referrerFilter, setReferrerFilter] = useState('ALL');
   const [personTypeFilter, setPersonTypeFilter] = useState('ALL'); // ALL | DOCTOR | OTHER | SELF (#2)
   // Source Analytics + Case Ledger: hide a registered partner that has zero visits in the selected
   // range/filter (they still get a row otherwise, so every roster partner is visible even before
   // their first referral - useful on Partner Network, just noise once there are dozens of them).
   const [hideZeroSources, setHideZeroSources] = useState(false);
-  const [overviewTimeframe, setOverviewTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'
   
-  // Layout Builder State
-  const [isLayoutDrawerOpen, setIsLayoutDrawerOpen] = useState(false);
-  const [editLayout, setEditLayout] = useState({ name: '', modality: 'X-RAY', type: '', active: true, selectedSections: ['findings', 'impression'] });
-
-  // User Management State
-  const [isUserDrawerOpen, setIsUserDrawerOpen] = useState(false);
-  const [isHospitalDrawerOpen, setIsHospitalDrawerOpen] = useState(false);
-  const [isChainDrawerOpen, setIsChainDrawerOpen] = useState(false);
-  const [isDeployingChain, setIsDeployingChain] = useState(false);
-  const [newChainData, setNewChainData] = useState({ chainName: '', hospitalName: '', hospitalAddress: '' });
-  const [showChainSelector, setShowChainSelector] = useState(false);
-  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
-  const [isSwitchingNode, setIsSwitchingNode] = useState(false);
-  const [userRegStep, setUserRegStep] = useState(1);
-  const [editUser, setEditUser] = useState(null);
-  const [selectedDocId, setSelectedDocId] = useState('');
-  const [settings, setSettings] = useState({ allowCustom: true, lockApproved: false, reqFindings: true, reqImpression: true });
-  const [showPasswords, setShowPasswords] = useState(false);
-  const [sharingUser, setSharingUser] = useState(null);
-  const [copyFeedback, setCopyFeedback] = useState('');
-
-  // Custom Sections Registry
-  const [customSections, setCustomSections] = useState([]);
-  const [newSectionName, setNewSectionName] = useState('');
-
   // Referral Intel State
   // Lazy init with the CURRENT calendar week (Mon → Sun) so the date inputs
   // reflect the active week the moment the page mounts. We reuse the same
@@ -130,8 +62,6 @@ export default function ReferralsPage() {
     const { start, end } = getOverviewDates('WEEK');
     return { start, end };
   });
-  const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null);
   const [patientMasterList, setPatientMasterList] = useState([]);
   const [loadingMaster, setLoadingMaster] = useState(false);
   const [patientMasterError, setPatientMasterError] = useState(null);
@@ -139,7 +69,6 @@ export default function ReferralsPage() {
   // this week's cases instead of forcing the user to pick a range manually.
   const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE', 'RANGE' or 'ALL'
   const [expandedReferrer, setExpandedReferrer] = useState(null);
-  const [personnel, setPersonnel] = useState([]);
   const [referralIntelligence, setReferralIntelligence] = useState([]);
 
   // Source Analytics loads a SUMMARY (one row per source, every total, no visit rows) and fetches a
@@ -158,45 +87,20 @@ export default function ReferralsPage() {
   const [referralError, setReferralError] = useState(null);
   const [referralUpdatedAt, setReferralUpdatedAt] = useState(null);
   const intelSeq = useRef(0);
-  const [personnelLoading, setPersonnelLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [referralSort, setReferralSort] = useState({ key: 'missions', direction: 'desc' });
+  const [referralSort] = useState({ key: 'missions', direction: 'desc' });
   
   // Referral Payout State
   const [showExportOverlay, setShowExportOverlay] = useState(false);
   const [exportParams, setExportParams] = useState({ start: TODAY, end: TODAY, allTime: false });
-  const [loading, setLoading] = useState(false);
 
   // Responsive layout detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   // Bumps when cached finance data changes; added to the analytics fetch
   // effects below so the referral/finance dashboards refresh themselves.
   const financeRev = useFinanceRevision();
-  const [billingSettings, setBillingSettings] = useState({ autoBill: false, currency: '₹' });
 
-  // Prescription Architect State
-  const [selectedPrescriptionDoctorId, setSelectedPrescriptionDoctorId] = useState('');
-  const [doctorPrescriptionMap, setDoctorPrescriptionMap] = useState({}); // { docId: settings }
-  
-  const [prescriptionSettings, setPrescriptionSettings] = useState({
-    headerMargin: 50,
-    leftMargin: 20,
-    rightMargin: 20,
-    bottomMargin: 30,
-    fontSize: 14,
-    fontColor: '#1e293b',
-    fontFamily: 'Inter',
-    letterhead: null,
-    overflowBackgroundMode: 'REUSE' // 'REUSE' or 'BLANK'
-  });
-  const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
-  const [isProtocolLoading, setIsProtocolLoading] = useState(false);
-  const [activeProtocolData, setActiveProtocolData] = useState(null);
-  const [previewScale, setPreviewScale] = useState(0.8); // 80% default scale to fit screen
-  const [numPdfPages, setNumPdfPages] = useState(null);
-  const [pdfError, setPdfError] = useState(null);
   const [isReferrerEditDrawerOpen, setIsReferrerEditDrawerOpen] = useState(false);
   const [editingReferrer, setEditingReferrer] = useState(null);
   // ── Bulk-add partners (#21): Excel upload only ───────────────────────────
@@ -230,7 +134,6 @@ export default function ReferralsPage() {
     () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
     [allReferrers]
   );
-  const linkBtn = (fg, bg, bd, disabled) => ({ padding: '7px 11px', borderRadius: '9px', border: `1px solid ${bd}`, background: disabled ? '#f1f5f9' : bg, color: disabled ? '#cbd5e1' : fg, fontSize: '11px', fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' });
   const buildDoctorLink = async (referrerId) => {
     const { data } = await apiClient.get(`/referrers/${referrerId}/share-link`);
     return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
@@ -485,7 +388,7 @@ export default function ReferralsPage() {
   const [isPatientEditDrawerOpen, setIsPatientEditDrawerOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [isSavingPatient, setIsSavingPatient] = useState(false);
-  const [isTestMode, setIsTestMode] = useState(false);
+  const [isTestMode] = useState(false);
 
   // Partner merge state
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
@@ -611,132 +514,8 @@ export default function ReferralsPage() {
     downloadCsv(`Patient_Master_${fmtLocalISO(new Date())}.csv`, [header, ...lines]);
   };
 
-  // Sync settings when doctor selection changes
-  const fetchDoctorProtocol = useCallback(async (docId) => {
-    if (!docId) {
-      setPrescriptionSettings({
-        headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-        fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-        letterheadFile: null, overflowBackgroundMode: 'REUSE'
-      });
-      setActiveProtocolData(null);
-      return;
-    }
-
-    setIsProtocolLoading(true);
-    try {
-      const res = await apiClient.get(`/Prescription/${docId}`);
-      if (res.data?.success && res.data?.data) {
-        const data = res.data.data;
-        setActiveProtocolData(data);
-        const settings = {
-          headerMargin: Number(data.headerMargin) || 50,
-          leftMargin: Number(data.leftMargin) || 20,
-          rightMargin: Number(data.rightMargin) || 20,
-          bottomMargin: Number(data.bottomMargin) || 30,
-          fontSize: Number(data.fontSize) || 14,
-          fontColor: data.fontColor || '#1e293b',
-          fontFamily: data.fontFamily || 'Inter',
-          letterhead: data.letterheadBlobUrl || null,
-          overflowBackgroundMode: data.overflowBackgroundMode || 'REUSE',
-          letterheadFile: null
-        };
-        setPrescriptionSettings(settings);
-        await nativeStorage.set(`1rad_cache_prescription_${docId}`, { data, settings });
-      } else {
-        setActiveProtocolData(null);
-        setPrescriptionSettings({
-          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-          letterheadFile: null, overflowBackgroundMode: 'REUSE'
-        });
-      }
-    } catch (err) {
-      console.error("[PRESCRIPTION] Fetch failed, trying cache", err);
-      const cached = await nativeStorage.get(`1rad_cache_prescription_${docId}`);
-      if (cached) {
-        setActiveProtocolData(cached.data);
-        setPrescriptionSettings(cached.settings);
-      } else {
-        setActiveProtocolData(null);
-      }
-    } finally {
-      setIsProtocolLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDoctorProtocol(selectedPrescriptionDoctorId);
-  }, [selectedPrescriptionDoctorId, fetchDoctorProtocol]);
-
-
-  const [hospitalData, setHospitalData] = useState({
-    hospitalName: '',
-    hospitalAddress: '',
-    gstin: '',
-    registrationNumber: '',
-    pan: '',
-    nabhNumber: '',
-    isAutoBillingEnabled: false,
-    latitude: null,
-    longitude: null
-  });
-  const [mappedHospitals, setMappedHospitals] = useState([]);
-  const [viewingHubId, setViewingHubId] = useState(null); // null = show list
-
-  // UX Refinement: Auto-populate brand identity
-  useEffect(() => {
-    if (isChainDrawerOpen) {
-      setNewChainData(prev => ({ 
-        ...prev, 
-        chainName: activeCenter?.groupName || activeCenter?.name || '',
-        hospitalName: '' 
-      }));
-    }
-  }, [isChainDrawerOpen, activeCenter?.id]);
-  const [hospitalLoading, setHospitalLoading] = useState(false);
-  const [savingHospital, setSavingHospital] = useState(false);
-  const [hospitalMessage, setHospitalMessage] = useState({ type: '', text: '' });
 
   // --- API FETCHING ---
-  // Warm the personnel snapshot; the staff list renders from watchPersonnel
-  // below, so a staff change appears here on its own. Offline keeps the snapshot.
-  const fetchPersonnel = useCallback(async () => {
-    try {
-      setPersonnelLoading(true);
-      const res = await apiClient.get('/personnel');
-      await snapshotPersonnel(res.data);
-    } catch (err) {
-      console.error('Personnel refresh failed — keeping offline snapshot.', err);
-    } finally {
-      setPersonnelLoading(false);
-    }
-  }, []);
-
-  // Staff list renders from the local personnel cache (refreshed every sync
-  // cycle). (The price-registry subscription that used to sit beside it fed a
-  // state setter that was never declared — every emit threw a ReferenceError —
-  // and nothing on this page reads prices, so it is gone.)
-  useEffect(() => {
-    const subPersonnel = watchPersonnel().subscribe({
-      next: (rows) => setPersonnel((rows || []).map(p => ({
-        id: p.userId,
-        name: p.fullName || 'UNKNOWN_STAFF',
-        email: p.email,
-        mobile: p.mobile,
-        roles: (p.roles || []).map(r => String(r).toLowerCase()),
-        password: p.password,
-        specialization: p.specialization,
-        degree: p.degree,
-        licenseNo: p.licenseNo,
-        status: p.status,
-        createdAt: p.createdAt
-      }))),
-      error: (err) => console.warn('[ReferralsPage] personnel liveQuery error', err),
-    });
-    return () => { subPersonnel.unsubscribe(); };
-  }, []);
-
   // Live only — no cached fallback. The old fallback was keyed by referralFilterMode alone (not the
   // actual date range or search text), so a failed request could show an EARLIER range's or search's
   // patient list as if it were the one on screen right now.
@@ -765,108 +544,6 @@ export default function ReferralsPage() {
       if (seq === patientMasterSeq.current) setLoadingMaster(false);
     }
   }, [referralRange, referralFilterMode, referralPatientsSearch]);
-
-  const handleImport = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    setImportResult(null);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await apiClient.post('/appointments/import', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      setImportResult(response.data);
-      fetchReferralIntelligence();
-      if (referralViewMode === 'PATIENTS') fetchPatientMasterList();
-    } catch (error) {
-      console.error('Import failed:', error);
-      setImportResult({ successCount: 0, failureCount: 1, errors: ['Error: Could not connect to data source.'] });
-    } finally {
-      setIsImporting(false);
-      e.target.value = ''; // Reset input
-    }
-  };
-
-  const fetchHospitalData = useCallback(async (hubId) => {
-    try {
-      setHospitalLoading(true);
-      const res = await apiClient.get(`/hospitals/${hubId}`);
-      const data = {
-        hospitalName: res.data.hospitalName || res.data.HospitalName || '',
-        hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
-        gstin: res.data.gstin || res.data.GSTIN || '',
-        registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
-        pan: res.data.pan || res.data.PAN || '',
-        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
-        isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false,
-        // Nullable: a centre with no pin set yet has neither field, and 0 is
-        // a valid coordinate (equator/prime meridian) so this can't use `||`.
-        latitude: res.data.latitude ?? res.data.Latitude ?? null,
-        longitude: res.data.longitude ?? res.data.Longitude ?? null
-      };
-      setHospitalData(data);
-      setViewingHubId(hubId);
-      await nativeStorage.set(`1rad_cache_hospital_${hubId}`, data);
-    } catch (err) {
-      console.error('[HOSPITAL] Fetch failed, trying cache', err);
-      const cached = await nativeStorage.get(`1rad_cache_hospital_${hubId}`);
-      if (cached) {
-        setHospitalData(cached);
-        setViewingHubId(hubId);
-      }
-    } finally {
-      setHospitalLoading(false);
-    }
-  }, []);
-
-  const fetchMappedHospitals = useCallback(async () => {
-    try {
-      setHospitalLoading(true);
-      // Fetch metadata for the hubs in the current context's group
-      const res = await apiClient.get('/hospitals/group');
-      const groupMetas = Array.isArray(res.data) ? res.data : [];
-
-      // Merge with the total authorized centers list to ensure universal visibility
-      const mapped = centers.map(c => {
-        const meta = groupMetas.find(m => (m.hospitalId || m.HospitalId) === c.id);
-        return {
-          hospitalId: c.id,
-          hospitalName: meta?.hospitalName || meta?.HospitalName || c.name,
-          hospitalAddress: meta?.hospitalAddress || meta?.HospitalAddress || 'Institutional routing active; address metadata pending sync.',
-          gstin: meta?.gstin || meta?.GSTIN || '',
-          registrationNumber: meta?.registrationNumber || meta?.RegistrationNumber || '',
-          pan: meta?.pan || meta?.PAN || '',
-          nabhNumber: meta?.nabhNumber || meta?.NABHNumber || '',
-          status: meta?.status || meta?.Status || 'active',
-          groupId: c.groupId || '',
-          groupName: c.groupName || ''
-        };
-      });
-      setMappedHospitals(mapped);
-      await nativeStorage.set('1rad_cache_hospitals_group', mapped);
-    } catch (err) {
-      console.error('[HUB REGISTRY] Sync failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_hospitals_group');
-      if (cached) {
-        setMappedHospitals(cached);
-      } else {
-        // Ultimate fallback: use basic center info if API and cache fail
-        setMappedHospitals(centers.map(c => ({
-          hospitalId: c.id,
-          hospitalName: c.name,
-          hospitalAddress: 'Offline routing active.',
-          status: 'active'
-        })));
-      }
-    } finally {
-      setHospitalLoading(false);
-    }
-  }, [centers]);
 
   // Live only: the money on this page must reflect the server right now. There is
   // deliberately NO cached fallback — the old one keyed the cache by the (usually
@@ -1096,35 +773,32 @@ export default function ReferralsPage() {
   
   // Referral Intelligence
   useEffect(() => {
-    if (activeTab === 'Referrals') {
-      fetchReferralIntelligence();
-    }
+    fetchReferralIntelligence();
     // financeRev: refresh when a commission/invoice change syncs in.
-  }, [activeTab, financeRev, fetchReferralIntelligence]);
+  }, [financeRev, fetchReferralIntelligence]);
 
   // Keep the Referrals figures live: refresh quietly every 90s while this tab is
   // showing, and immediately when the browser tab comes back to the foreground
   // (a payout / patient payment recorded on another screen or device shows up
   // without a manual reload).
   useEffect(() => {
-    if (activeTab !== 'Referrals') return undefined;
     const tick = () => { if (!document.hidden) fetchReferralIntelligence(null, null, false, { silent: true }); };
     const id = setInterval(tick, 90_000);
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
-  }, [activeTab, fetchReferralIntelligence]);
+  }, [fetchReferralIntelligence]);
 
   // Doctor Links tab: show when each doctor's link was sent / expires / renews.
   useEffect(() => {
-    if (activeTab === 'Referrals' && referralViewMode === 'LINKS') loadLinkStatus();
-  }, [activeTab, referralViewMode, loadLinkStatus]);
+    if (referralViewMode === 'LINKS') loadLinkStatus();
+  }, [referralViewMode, loadLinkStatus]);
 
   // Patient Master List
   useEffect(() => {
-    if (activeTab === 'Referrals' && referralViewMode === 'PATIENTS') {
+    if (referralViewMode === 'PATIENTS') {
       fetchPatientMasterList();
     }
-  }, [activeTab, referralViewMode, fetchPatientMasterList]);
+  }, [referralViewMode, fetchPatientMasterList]);
 
   const handleExportIntelligence = async () => {
     try {
@@ -1151,65 +825,6 @@ export default function ReferralsPage() {
     }
   };
 
-  const handleSwitchNode = async (id) => {
-    if (id === activeCenter?.id) return;
-    try {
-      setIsSwitchingNode(true);
-      setShowChainSelector(false);
-      const result = await switchCenter(id);
-      if (result?.success) {
-        // Clear local data to force re-sync (and drop any response still in flight
-        // for the previous centre so it cannot repopulate the page).
-        intelSeq.current += 1;
-        setReferralIntelligence([]);
-        setPersonnel([]);
-        
-        // Success feedback handled by effect dependency on activeCenter
-      }
-    } catch (err) {
-      console.error('Node Transition Failed:', err);
-    } finally {
-      // Small artificial delay for smooth transition feel
-      setTimeout(() => setIsSwitchingNode(false), 800);
-    }
-  };
-
-  const handleDeployChain = async (e) => {
-    e.preventDefault();
-    const payload = newChainData;
-
-    if (!isOnline) {
-      await addToOutbox('CHAIN_DEPLOY', payload);
-      notifyToast({ title: 'Queued for sync', message: 'Centre expansion will sync when connection is restored.' }, 'info');
-      setIsChainDrawerOpen(false);
-      return;
-    }
-
-    try {
-      setIsDeployingChain(true);
-      const res = await apiClient.post('/hospitals/chain', payload);
-      
-      if (res.data.success) {
-        setIsChainDrawerOpen(false);
-        setNewChainData({ chainName: '', hospitalName: '', hospitalAddress: '' });
-        
-        // Use standard transition logic
-        await handleSwitchNode(res.data.hospitalId);
-      }
-    } catch (err) {
-      console.error('Chain Deployment Failure:', err);
-      if (!err.response) {
-        await addToOutbox('CHAIN_DEPLOY', payload);
-        notifyToast({ title: 'Network error', message: 'Centre deployment queued in offline outbox.' }, 'warning');
-        setIsChainDrawerOpen(false);
-      } else {
-        notifyToast(err.response?.data?.message || 'Centre expansion failed.', 'error');
-      }
-    } finally {
-      setIsDeployingChain(false);
-    }
-  };
-
   const getStatusConfig = (status) => {
     const s = status?.toUpperCase() || 'UNKNOWN';
     if (s.includes('COMPLETED')) return { bg: '#ecfdf5', color: '#059669', label: 'COMPLETED' };
@@ -1219,180 +834,16 @@ export default function ReferralsPage() {
     return { bg: '#f8fafc', color: '#64748b', label: s };
   };
 
-
-  const handleSaveHospital = async (e) => {
-    e.preventDefault();
-    const targetHubId = viewingHubId || activeCenter?.id;
-    if (!targetHubId) return;
-
-    const payload = {
-      hospitalName: hospitalData.hospitalName,
-      hospitalAddress: hospitalData.hospitalAddress,
-      gstin: hospitalData.gstin,
-      registrationNumber: hospitalData.registrationNumber,
-      pan: hospitalData.pan,
-      nabhNumber: hospitalData.nabhNumber,
-      latitude: hospitalData.latitude,
-      longitude: hospitalData.longitude
-    };
-
-    if (!isOnline) {
-      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-      notifyToast({ title: 'Queued for sync', message: 'Centre metadata will sync when connection is restored.' }, 'info');
-      setIsHospitalDrawerOpen(false);
-      return;
-    }
-
-    try {
-      setSavingHospital(true);
-      setHospitalMessage({ type: '', text: '' });
-      
-      await apiClient.put(`/hospitals/${targetHubId}`, payload);
-      setHospitalMessage({ type: 'success', text: 'METADATA RE-SYNCED: Hub configuration updated successfully.' });
-      
-      // Refresh the registry and current view
-      fetchMappedHospitals();
-      fetchHospitalData(targetHubId);
-
-      setTimeout(() => {
-        setIsHospitalDrawerOpen(false);
-        setHospitalMessage({ type: '', text: '' });
-      }, 2000);
-    } catch (err) {
-      console.error('[HOSPITAL] Save failed', err);
-      if (!err.response) {
-        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-        notifyToast({ title: 'Network error', message: 'Centre configuration queued in offline outbox.' }, 'warning');
-        setIsHospitalDrawerOpen(false);
-      } else {
-        setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update institutional node metadata.' });
-      }
-    } finally {
-      setSavingHospital(false);
-    }
-  };
-
-  const handleToggleAutoBill = async () => {
-    const newAutoBill = !billingSettings.autoBill;
-    const targetHubId = activeCenter?.id;
-    if (!targetHubId) return;
-
-    const payload = {
-      hospitalName: hospitalData.hospitalName || activeCenter.name,
-      hospitalAddress: hospitalData.hospitalAddress || 'Metadata synchronization active.',
-      gstin: hospitalData.gstin || '',
-      registrationNumber: hospitalData.registrationNumber || '',
-      pan: hospitalData.pan || '',
-      nabhNumber: hospitalData.nabhNumber || '',
-      isAutoBillingEnabled: newAutoBill
-    };
-
-    if (!isOnline) {
-      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-      notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
-      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
-      return;
-    }
-
-    try {
-      await apiClient.put(`/hospitals/${targetHubId}`, payload);
-      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
-      setHospitalData(prev => ({ ...prev, isAutoBillingEnabled: newAutoBill }));
-      await refreshCenters();
-    } catch (err) {
-      console.error('[FINANCE] Protocol update failed', err);
-      if (!err.response) {
-        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-        notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
-        setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
-      } else {
-        notifyToast('Failed to save billing settings. Please check your connection.', 'error');
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (activeCenter?.id) {
-      const loadActiveCenterDetails = async () => {
-        try {
-          const res = await apiClient.get(`/hospitals/${activeCenter.id}`);
-          const data = {
-            hospitalName: res.data.hospitalName || res.data.HospitalName || '',
-            hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
-            gstin: res.data.gstin || res.data.GSTIN || '',
-            registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
-            pan: res.data.pan || res.data.PAN || '',
-            nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
-            isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
-          };
-          setHospitalData(data);
-          setBillingSettings(prev => ({
-            ...prev,
-            autoBill: data.isAutoBillingEnabled
-          }));
-        } catch (err) {
-          console.error('[HOSPITAL] Failed to fetch active center details', err);
-          setBillingSettings(prev => ({
-            ...prev,
-            autoBill: activeCenter.isAutoBillingEnabled || false
-          }));
-        }
-      };
-      loadActiveCenterDetails();
-    }
-  }, [activeCenter?.id]);
-
   // Handle window resize for responsive layout
   useEffect(() => {
     const handleResize = () => {
-      const newWidth = window.innerWidth;
-      setWindowWidth(newWidth);
-      setIsMobile(newWidth < 1024);
+      setIsMobile(window.innerWidth < 1024);
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-
-  const [systemProtocols, setSystemProtocols] = useState({ 
-    aiAssisted: true, 
-    cloudArchival: true, 
-    multiCenterSync: false,
-    auditLogging: true
-  });
-
-  const filteredPersonnel = useMemo(() => {
-    if (!personnelSearch.trim()) return personnel;
-    const query = personnelSearch.toLowerCase();
-    return personnel.filter(u => 
-      u.name.toLowerCase().includes(query) || 
-      u.email.toLowerCase().includes(query) || 
-      (u.roles && u.roles.some(r => r.toLowerCase().includes(query)))
-    );
-  }, [personnel, personnelSearch]);
-
-  // --- DERIVED DATA ---
-  const dynamicReferralStats = useMemo(() => {
-    let dailyEvents = REFERRAL_LOG.filter(log => log.date === selectedDateFilter);
-    if (referrerFilter !== 'ALL') {
-      dailyEvents = dailyEvents.filter(log => log.referredBy === referrerFilter);
-    }
-    const total = dailyEvents.length;
-    const aggregated = dailyEvents.reduce((acc, current) => {
-      acc[current.referredBy] = (acc[current.referredBy] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.entries(aggregated)
-      .map(([name, count]) => ({
-        name,
-        count,
-        percentage: total > 0 ? (count / total) * 100 : 0
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [selectedDateFilter, referrerFilter]);
-
-  const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
 
   // Referral Intelligence Logic (Moved to top-level to satisfy Rules of Hooks)
   // Every attended visit in range, across all sources (a server total - the summary has no rows).
@@ -1521,16 +972,6 @@ export default function ReferralsPage() {
     const node = (referralIntelligence || []).find(i => i.sourceKind === 'UNATTRIBUTED');
     return node ? { patientCount: node.totalPatients || 0, bookedPending: node.bookedPending || 0, noShows: node.noShows || 0, patients: node.patients || [] } : null;
   }, [referralIntelligence]);
-
-  const filteredCaseLedger = useMemo(() => {
-    if (!referralLogSearch) return caseLedgerList;
-    const searchLow = referralLogSearch.toLowerCase();
-    return caseLedgerList.filter(item => 
-      (item.name || '').toLowerCase().includes(searchLow) ||
-      (item.contact || '').toLowerCase().includes(searchLow) ||
-      (item.address || '').toLowerCase().includes(searchLow)
-    );
-  }, [caseLedgerList, referralLogSearch]);
 
   const referralAggregated = useMemo(() => {
     // Map the backend intelligence DTOs to the frontend's expected Matrix structure. Only real
@@ -1683,10 +1124,10 @@ export default function ReferralsPage() {
   const expandedNode = referralAggregated.find(r => r.referrerId === expandedReferrer);
   const expandedKey = expandedNode && !expandedNode.visitsInline && expandedNode.totalPatients > 0 ? expandedNode.sourceKey : null;
   useEffect(() => {
-    if (activeTab !== 'Referrals' || referralViewMode !== 'MATRIX' || !expandedKey) return;
+    if (referralViewMode !== 'MATRIX' || !expandedKey) return;
     const cached = peekVisits(expandedKey);
     loadSourceVisits(expandedKey, { silent: !!(cached && cached.rangeKey === rangeKey && cached.rows.length > 0) });
-  }, [activeTab, referralViewMode, expandedKey, referralUpdatedAt, rangeKey, loadSourceVisits, peekVisits]);
+  }, [referralViewMode, expandedKey, referralUpdatedAt, rangeKey, loadSourceVisits, peekVisits]);
 
   // The Volume Matrix is computed by the SERVER (/referrers/matrix): IST day / hour buckets, the same
   // attribution and "the patient arrived" rule as Source Analytics, merged duplicates rolled into their
@@ -1698,7 +1139,7 @@ export default function ReferralsPage() {
   const [channelData, setChannelData] = useState({ data: null, loading: false, error: null });
   const channelSeq = useRef(0);
   useEffect(() => {
-    if (activeTab !== 'Referrals' || referralViewMode !== 'CHANNELS') return;
+    if (referralViewMode !== 'CHANNELS') return;
     const seq = ++channelSeq.current;
     setChannelData(prev => ({ ...prev, loading: true, error: null }));
     const params = referralFilterMode === 'ALL'
@@ -1714,7 +1155,7 @@ export default function ReferralsPage() {
         console.error('[PATIENT SOURCES] Live fetch failed', err);
         setChannelData(prev => ({ ...prev, loading: false, error: 'Could not load this report - the figures below may be out of date.' }));
       });
-  }, [activeTab, referralViewMode, referralRange, referralFilterMode]);
+  }, [referralViewMode, referralRange, referralFilterMode]);
   const channelRangeLabel = referralFilterMode === 'ALL'
     ? 'all time'
     : (referralFilterMode === 'SINGLE' || referralRange.start === referralRange.end
@@ -1790,172 +1231,6 @@ export default function ReferralsPage() {
 
     return { cols, rows: visibleRows };
   }, [matrixServer, allReferrers, referralViewMode, referralLogSearch, personTypeFilter, hideZeroSources]);
-
-  const handleDeleteUser = async (id) => {
-    if (id === currentUser.id) {
-      notifyToast({ title: 'Action blocked', message: "You cannot remove your own account from this centre — it would lock you out." }, 'warning');
-      return;
-    }
-    if (window.confirm('Are you sure you want to remove this staff member from the current hub?')) {
-      if (!isOnline) {
-        await addToOutbox('PERSONNEL_DELETE', { id });
-        notifyToast({ title: 'Queued for sync', message: 'Personnel removal will sync when connection is restored.' }, 'info');
-        setPersonnel(prev => prev.filter(u => u.id !== id)); // Optimistic UI
-        return;
-      }
-
-      try {
-        await apiClient.delete(`/personnel/${id}`);
-        fetchPersonnel();
-      } catch (err) {
-        console.error('[PERSONNEL] Delete failed', err);
-        if (!err.response) {
-          await addToOutbox('PERSONNEL_DELETE', { id });
-          notifyToast({ title: 'Network error', message: 'Personnel removal queued in offline outbox.' }, 'warning');
-          setPersonnel(prev => prev.filter(u => u.id !== id)); // Optimistic UI
-        } else {
-          notifyToast(err.response?.data?.message || 'Failed to remove personnel.', 'error');
-        }
-      }
-    }
-  };
-
-  const handleCopyCredentials = (user) => {
-    const text = `1Rad Flow Clinical Hub Access\nLogin ID: ${user.email}\nSecurity Key: ${user.password || '[Hidden]'}\nHub URL: ${window.location.origin}`;
-    navigator.clipboard.writeText(text);
-    setCopyFeedback(user.id);
-    setTimeout(() => setCopyFeedback(''), 3000);
-  };
-
-  const handleWhatsAppShare = (user) => {
-    const message = `Hello ${user.name},\n\nYour 1Rad Flow Clinical Hub credentials have been initialized.\n\n🌐 Hub URL: ${window.location.origin}\n🔑 Login ID: ${user.email}\n🛡️ Security Key: ${user.password || '[Please use the reset link if unknown]'}\n\nPlease maintain strict confidentiality of these credentials.`;
-    const encoded = encodeURIComponent(message);
-    const mobile = user.mobile?.replace(/\D/g, ''); // Ensure only numbers
-    const finalMobile = mobile?.length === 10 ? `91${mobile}` : mobile; // Default to India if 10 digits
-    window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleOpenUserDrawer = (user = null) => {
-    setEditUser(user ? { ...user, roles: user.roles || [] } : { 
-      name: '', 
-      email: '', 
-      password: '', 
-      confirmPassword: '',
-      roles: [], 
-      status: 'active',
-      specialization: '',
-      degree: '',
-      licenseNo: '',
-      mobile: ''
-    });
-    setUserRegStep(1);
-    setIsUserDrawerOpen(true);
-  };
-
-  const handleSaveUser = async (e) => {
-    e.preventDefault();
-    
-    const isDoctorRole = editUser.roles.some(r => r.toLowerCase().includes('doctor'));
-    
-    // Surcharge check for NEW doctors
-    if (!editUser.id && isDoctorRole) {
-      const confirmSurcharge = window.confirm(
-        "PROTOCOL ALERT: Adding a new doctor seat will increase your monthly subscription overhead by ₹1,000.\n\nDo you want to authorize this expansion?"
-      );
-      if (!confirmSurcharge) return;
-    }
-
-    if (!editUser.roles || editUser.roles.length === 0) {
-      notifyToast('At least one clinical or administrative role must be assigned.', 'error');
-      return;
-    }
-
-    const payload = {
-      fullName: editUser.name,
-      email: editUser.email,
-      mobile: editUser.mobile,
-      password: editUser.password,
-      roleNames: editUser.roles, // Backend expects roleNames
-      specialization: editUser.specialization,
-      degree: editUser.degree,
-      licenseNo: editUser.licenseNo
-    };
-
-    if (!isOnline) {
-      const type = editUser.id ? 'PERSONNEL_UPDATE' : 'PERSONNEL_CREATE';
-      await addToOutbox(type, { id: editUser.id, ...payload });
-      notifyToast({ title: 'Queued for sync', message: `Personnel ${editUser.id ? 'update' : 'registration'} will sync when connection is restored.` }, 'info');
-      setIsUserDrawerOpen(false);
-      return;
-    }
-
-    try {
-      if (editUser.id) {
-        await apiClient.put(`/personnel/${editUser.id}`, payload);
-      } else {
-        await apiClient.post('/personnel', payload);
-      }
-
-      setIsUserDrawerOpen(false);
-      fetchPersonnel();
-    } catch (err) {
-      console.error('[PERSONNEL] Save failed', err);
-      if (!err.response) {
-        const type = editUser.id ? 'PERSONNEL_UPDATE' : 'PERSONNEL_CREATE';
-        await addToOutbox(type, { id: editUser.id, ...payload });
-        notifyToast({ title: 'Network error', message: 'Staff record queued in offline outbox.' }, 'warning');
-        setIsUserDrawerOpen(false);
-      } else {
-        notifyToast(err.response?.data?.message || 'Failed to save staff record.', 'error');
-      }
-    }
-  };
-
-  const handleOpenLayoutDrawer = (layout = null) => {
-    if (!layout) {
-      setEditLayout({ name: '', modality: 'X-RAY', type: '', active: true, selectedSections: ['findings', 'impression'] });
-    } else {
-      const allAvailable = [...SECTIONS_POOL, ...customSections];
-      const sectionIds = (layout.sections || []).map(name => allAvailable.find(p => p.name === name)?.id).filter(Boolean);
-      setEditLayout({ ...layout, selectedSections: sectionIds });
-    }
-    setIsLayoutDrawerOpen(true);
-  };
-
-  const handleSaveLayout = () => {
-    const allAvailable = [...SECTIONS_POOL, ...customSections];
-    const sectionNames = editLayout.selectedSections.map(sid => allAvailable.find(p => p.id === sid)?.name).filter(Boolean);
-    if (editLayout.id) {
-       setLayouts(layouts.map(l => l.id === editLayout.id ? { ...editLayout, sections: sectionNames } : l));
-    } else {
-       setLayouts([...layouts, { ...editLayout, id: `L${Date.now()}`, sections: sectionNames }]);
-    }
-    setIsLayoutDrawerOpen(false);
-  };
-
-  const handleAddCustomSection = () => {
-    if (!newSectionName.trim()) return;
-    const newId = `custom_${Date.now()}`;
-    const newSec = { id: newId, name: newSectionName.trim() };
-    setCustomSections([...customSections, newSec]);
-    setEditLayout(prev => ({ ...prev, selectedSections: [...prev.selectedSections, newId] }));
-    setNewSectionName('');
-  };
-
-  const handleDeleteLayout = (id) => {
-    if (window.confirm('Are you sure you want to permanently delete this reporting protocol? This action cannot be undone.')) {
-       setLayouts(layouts.filter(l => l.id !== id));
-    }
-  };
-
-  const toggleSection = (id) => {
-    setEditLayout(prev => {
-      const selected = prev.selectedSections.includes(id)
-        ? prev.selectedSections.filter(sid => sid !== id)
-        : [...prev.selectedSections, id];
-      return { ...prev, selectedSections: selected };
-    });
-  };
 
   return (
     <div className="page-wrapper board-padding" style={{ paddingTop: '30px' }}>
@@ -2182,460 +1457,6 @@ export default function ReferralsPage() {
           setIsPatientEditDrawerOpen={setIsPatientEditDrawerOpen}
         />
       )}
-      {isUserDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)' }}>
-           <div className="drawer-content" style={{ 
-             padding: 0, 
-             width: isMobile ? '100%' : '500px',
-             borderRadius: isMobile ? 0 : '24px 0 0 24px', 
-             background: '#fff',
-             boxShadow: '-20px 0 60px rgba(0,0,0,0.1)',
-             display: 'flex',
-             flexDirection: 'column'
-           }} onClick={e => e.stopPropagation()}>
-              
-              {/* Tactical Header */}
-              <div className="drawer-header" style={{ 
-                background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
-                color: 'white', 
-                padding: '40px 30px',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                 {/* Decorative HUD Lines */}
-                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                 <div style={{ position: 'absolute', top: '10px', left: '30px', width: '20px', height: '2px', background: 'var(--tactical-cyan)' }}></div>
-                 
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '3px', color: 'var(--tactical-cyan)', textTransform: 'uppercase' }}>Personnel Deployment</span>
-                        <h2 style={{ fontWeight: 950, fontSize: '24px', letterSpacing: '-0.5px' }}>{editUser?.id ? 'CONFIG_IDENTITY' : 'INIT_REGISTRATION'}</h2>
-                    </div>
-                    <button className="btn-close" style={{ color: 'white', opacity: 0.6, fontSize: '28px' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>&times;</button>
-                 </div>
-
-                 {/* Pulse Badge */}
-                 <div style={{ 
-                   marginTop: '20px',
-                   display: 'inline-flex',
-                   alignItems: 'center',
-                   gap: '8px',
-                   padding: '6px 14px',
-                   background: 'rgba(255,255,255,0.1)',
-                   borderRadius: '20px',
-                   border: '1px solid rgba(255,255,255,0.1)'
-                 }}>
-                    <div className="tactical-node-active" style={{ width: '6px', height: '6px' }}></div>
-                    <span style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0' }}>Step {userRegStep}: {(userRegStep === 1 ? 'Basic Info' : 'Credentials')}</span>
-                 </div>
-              </div>
-
-              <div style={{ flex: 1, overflowY: 'auto', padding: '40px 30px' }}>
-                 <form onSubmit={handleSaveUser}>
-                    {userRegStep === 1 && (
-                      <div className="wizard-step" style={{ animation: 'slideRight 0.4s ease' }}>
-                        
-                        {/* Validation HUD Summary */}
-                        {(!editUser.name || !editUser.email || editUser.roles.length === 0) && (
-                          <div style={{ 
-                            background: '#fff9f0', 
-                            border: '1px solid #ffe8cc', 
-                            padding: '16px', 
-                            borderRadius: '16px', 
-                            marginBottom: '30px',
-                            display: 'flex',
-                            gap: '12px',
-                            alignItems: 'center'
-                          }}>
-                            <span style={{ fontSize: '20px' }}>⚠️</span>
-                            <div>
-                              <div style={{ fontSize: '11px', fontWeight: 950, color: '#f39c12' }}>ACTION REQUIRED</div>
-                              <div style={{ fontSize: '10px', color: '#888' }}>Personnel profile core parameters missing or invalid.</div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Operational Alias (Full Name)</label>
-                           <input 
-                             type="text" 
-                             required 
-                             placeholder="Ex: John Doe"
-                             value={editUser?.name} 
-                             onChange={e => setEditUser({...editUser, name: e.target.value})} 
-                             style={{ 
-                               width: '100%', 
-                               border: 'none', 
-                               borderBottom: '2px solid #f0f0f0', 
-                               fontSize: '18px', 
-                               fontWeight: 800, 
-                               padding: '12px 0', 
-                               outline: 'none',
-                               color: '#1a1a2e',
-                               transition: 'border-color 0.3s ease'
-                             }} 
-                             onFocus={(e) => e.target.style.borderBottomColor = 'var(--tactical-cyan)'}
-                             onBlur={(e) => e.target.style.borderBottomColor = '#f0f0f0'}
-                           />
-                        </div>
-                        
-                        <div style={{ display: 'flex', gap: '30px', marginBottom: '35px' }}>
-                           <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>System UID (Email)</label>
-                               <input type="email" required value={editUser?.email} onChange={e => setEditUser({...editUser, email: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                           </div>
-                           <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Mobile Contact</label>
-                               <input type="tel" required placeholder="+91 000-000-0000" value={editUser?.mobile} onChange={e => setEditUser({...editUser, mobile: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                           </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '30px', marginBottom: '35px' }}>
-                           <div className="form-group" style={{ flex: 1, position: 'relative' }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Access Crypt (Password)</label>
-                               <input type={showPasswords ? "text" : "password"} required autoComplete="new-password" value={editUser?.password} onChange={e => setEditUser({...editUser, password: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                               <button 
-                                 type="button" 
-                                 onClick={() => setShowPasswords(!showPasswords)}
-                                 style={{ position: 'absolute', right: 0, bottom: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', opacity: 0.5 }}
-                               >
-                                 {showPasswords ? 'HIDE' : 'SHOW'}
-                               </button>
-                           </div>
-                           <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Confirm Crypt</label>
-                               <input type={showPasswords ? "text" : "password"} required autoComplete="new-password" value={editUser?.confirmPassword} onChange={e => setEditUser({...editUser, confirmPassword: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                               {editUser.password && editUser.confirmPassword && editUser.password !== editUser.confirmPassword && (
-                                 <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 900, marginTop: '4px' }}>MISMATCH DETECTED</div>
-                               )}
-                           </div>
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>Assigned Directives (Multi-Role Select)</label>
-                           
-                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                              {[
-                                { id: 'doctor',       label: 'Doctor',       desc: 'Precision Reporting',  color: '#0891b2', icon: '👨‍⚕️' },
-                                { id: 'technician',   label: 'Technician',   desc: 'Ops & Acquisition',    color: '#f39c12', icon: '🩻'  },
-                                { id: 'receptionist', label: 'Receptionist', desc: 'Patient Dispatch',      color: '#e84393', icon: '📋'  },
-                                { id: 'admin',        label: 'Admin',        desc: 'Governance Control',    color: '#0f52ba', icon: '🏢'  },
-                                { id: 'accountant',   label: 'Accountant',   desc: 'Financial Comptroller', color: '#059669', icon: '📊'  },
-                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: '#6366f1', icon: '⭐' }] : []),
-                                ...getCustomRoles(activeCenter?.id).map(cr => ({
-                                  id: cr.roleName,
-                                  label: cr.roleName,
-                                  desc: 'Custom Permission Set',
-                                  color: '#319795',
-                                  icon: '👤'
-                                }))
-                              ].map(role => {
-                                const isSelected = editUser.roles.includes(role.id);
-                                return (
-                                  <div 
-                                    key={role.id}
-                                    onClick={() => {
-                                      const newRoles = isSelected 
-                                        ? editUser.roles.filter(r => r !== role.id)
-                                        : [...editUser.roles, role.id];
-                                      setEditUser({ ...editUser, roles: newRoles });
-                                    }}
-                                    style={{ 
-                                      padding: '12px 16px',
-                                      borderRadius: '16px',
-                                      border: `1px solid ${isSelected ? role.color : '#eee'}`,
-                                      background: isSelected ? `${role.color}05` : 'white',
-                                      cursor: 'pointer',
-                                      transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '12px',
-                                      boxShadow: isSelected ? `0 4px 12px ${role.color}15` : 'none'
-                                    }}
-                                  >
-                                    <div style={{ 
-                                      width: '32px', height: '32px', borderRadius: '10px', 
-                                      background: isSelected ? role.color : '#f8f9fa',
-                                      color: isSelected ? 'white' : '#888',
-                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                      fontSize: '16px'
-                                    }}>
-                                      {role.icon}
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                      <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? role.color : '#1a1a2e' }}>{role.label.toUpperCase()}</div>
-                                      <div style={{ fontSize: '8px', color: '#aaa', fontWeight: 700 }}>{role.desc.toUpperCase()}</div>
-                                    </div>
-                                    {isSelected && <div style={{ color: role.color, fontSize: '10px' }}>[x]</div>}
-                                  </div>
-                                );
-                              })}
-                           </div>
-                        </div>
-
-                        {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) && (
-                          <div style={{ 
-                            background: 'rgba(15, 82, 186, 0.05)', 
-                            padding: '16px', 
-                            borderRadius: '16px', 
-                            border: '1px dashed #0f52ba', 
-                            marginTop: '20px',
-                            display: 'flex',
-                            gap: '12px'
-                          }}>
-                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, lineHeight: 1.4 }}>
-                                CLINICAL ACTIVATION DETECTED: <br/>
-                                <span style={{ opacity: 0.7 }}>Phase 2 will initiate clinical credential syncing for reporting authorization.</span>
-                             </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {userRegStep === 2 && (
-                      <div className="wizard-step" style={{ animation: 'slideLeft 0.4s ease' }}>
-                        <div style={{ 
-                          background: '#f0faff', 
-                          padding: '24px', 
-                          borderRadius: '20px', 
-                          marginBottom: '35px', 
-                          border: '1px solid #e0f2fe',
-                          position: 'relative',
-                          overflow: 'hidden'
-                        }}>
-                          <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>CLINICAL REGISTRY</p>
-                          <p style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, lineHeight: 1.5 }}>Authorized clinical reporting requires verified professional credentials and licensing data.</p>
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Core Specialization / Wing</label>
-                           <input type="text" placeholder="e.g. Neuroradiologist" value={editUser?.specialization} onChange={e => setEditUser({...editUser, specialization: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '15px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '30px', marginBottom: '30px' }}>
-                           <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Registration License #</label>
-                               <input type="text" placeholder="Ex: PMC-894-0" value={editUser?.licenseNo} onChange={e => setEditUser({...editUser, licenseNo: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                           </div>
-                           <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Primary Professional Degree</label>
-                               <input type="text" placeholder="MBBS, MD" value={editUser?.degree} onChange={e => setEditUser({...editUser, degree: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                           </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="drawer-footer" style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                      {userRegStep === 1 ? (
-                        <>
-                          <button type="button" className="btn-logout" style={{ flex: 1, padding: '18px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>ABORT</button>
-                          <button 
-                            type="submit" 
-                            className="btn-primary" 
-                            style={{ flex: 2, padding: '18px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px' }}
-                          >
-                            {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) ? 'NEXT: CREDENTIALS' : 'FINALIZE DEPLOYMENT'}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button type="button" className="btn-logout" style={{ flex: 1, padding: '18px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => setUserRegStep(1)}>REVERT</button>
-                          <button 
-                            type="submit" 
-                            className="btn-primary" 
-                            style={{ flex: 2, padding: '18px', borderRadius: '16px', background: 'var(--tactical-indigo)', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px' }}
-                          >
-                            COMPLETE DOCTOR SYNC
-                          </button>
-                        </>
-                      )}
-                    </div>
-                 </form>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Layout Builder Drawer (Original) */}
-      {isLayoutDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => setIsLayoutDrawerOpen(false)}>
-           <div className="drawer-content" style={{ width: isMobile ? '100%' : '500px', borderRadius: isMobile ? 0 : '24px 0 0 24px' }} onClick={e => e.stopPropagation()}>
-              <div className="drawer-header">
-                 <h2>{editLayout.id ? 'Edit Layout' : 'New Reporting Layout'}</h2>
-                 <button className="btn-close" onClick={() => setIsLayoutDrawerOpen(false)}>&times;</button>
-              </div>
-              <div className="drawer-body">
-                 <div className="form-group">
-                    <label>Layout Name</label>
-                    <input type="text" value={editLayout.name} onChange={e => setEditLayout({...editLayout, name: e.target.value})} />
-                 </div>
-                 <div style={{ display: 'flex', gap: '10px' }}>
-                    <div className="form-group" style={{ flex: 1 }}>
-                       <label>Modality</label>
-                       <select value={editLayout.modality} onChange={e => setEditLayout({...editLayout, modality: e.target.value})}>
-                          <option>X-RAY</option><option>MRI</option><option>CT</option><option>US</option>
-                       </select>
-                    </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                       <label>Study Type</label>
-                       <input type="text" placeholder="e.g. Chest" value={editLayout.type} onChange={e => setEditLayout({...editLayout, type: e.target.value})} />
-                    </div>
-                 </div>
-                 <div style={{ marginTop: '20px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '10px' }}>LAYOUT SECTIONS</label>
-                    
-                    {/* Custom Section Provider */}
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-                       <input 
-                          type="text" 
-                          placeholder="Ex: Technical Details" 
-                          value={newSectionName} 
-                          onChange={e => setNewSectionName(e.target.value)} 
-                          style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ddd' }}
-                       />
-                       <button 
-                          onClick={handleAddCustomSection}
-                          style={{ background: '#0f52ba', color: 'white', border: 'none', padding: '0 15px', borderRadius: '8px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}
-                       >
-                          + ADD CUSTOM
-                       </button>
-                    </div>
-
-                    <div className="builder-list">
-                       {[...SECTIONS_POOL, ...customSections].map((s) => {
-                          const isActive = editLayout.selectedSections.includes(s.id);
-                          const isCustom = s.id.startsWith('custom_');
-                          return (
-                            <div key={s.id} className="builder-item" style={{ opacity: isActive ? 1 : 0.5, borderLeft: isCustom ? '2px solid #0f52ba' : 'none' }}>
-                               <div className="builder-item-info">
-                                  <span>{s.name}</span>
-                                  {isCustom && <span style={{ fontSize: '7px', color: '#0f52ba', display: 'block', fontWeight: 900 }}>CUSTOM</span>}
-                               </div>
-                               <button className={`builder-btn ${isActive ? 'active' : ''}`} onClick={() => toggleSection(s.id)}>{isActive ? 'ON' : 'OFF'}</button>
-                            </div>
-                          );
-                       })}
-                    </div>
-                 </div>
-              </div>
-              <div className="drawer-footer">
-                 <button className="btn-logout" onClick={() => setIsLayoutDrawerOpen(false)}>Cancel</button>
-                 <button className="btn-primary" onClick={handleSaveLayout}>Save Configuration</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Import Status HUD Overlay */}
-      {importResult && (
-        <div className="modal-overlay" onClick={() => setImportResult(null)} style={{ zIndex: 10000 }}>
-          <div style={{ width: '450px', background: 'white', borderRadius: '24px', padding: '35px', boxShadow: '0 25px 70px rgba(0,0,0,0.3)', position: 'relative' }}>
-            <button onClick={() => setImportResult(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', opacity: 0.5 }}>✕</button>
-            
-            <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-              <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#e9f7ef', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#2ecc71', margin: '0 auto 15px', border: '1px solid #2ecc7130' }}>OK</div>
-              <h3 style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>IMPORT RECONNAISSANCE REPORT</h3>
-              <p style={{ fontSize: '11px', color: '#888', fontWeight: 700, marginTop: '4px' }}>Data synchronization cycle completed.</p>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
-              <div style={{ background: '#f0fdf4', padding: '15px', borderRadius: '16px', border: '1px solid #bcf0da', textAlign: 'center' }}>
-                <div style={{ fontSize: '24px', fontWeight: 950, color: '#166534' }}>{importResult.successCount}</div>
-                <div style={{ fontSize: '9px', fontWeight: 800, color: '#166534', letterSpacing: '1px' }}>SUCCESSFUL DEPLOYMENTS</div>
-              </div>
-              <div style={{ background: '#fef2f2', padding: '15px', borderRadius: '16px', border: '1px solid #fecaca', textAlign: 'center' }}>
-                <div style={{ fontSize: '24px', fontWeight: 950, color: '#991b1b' }}>{importResult.failureCount}</div>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: '#991b1b', letterSpacing: '0' }}>Errors</div>
-              </div>
-            </div>
-
-            {importResult.errors?.length > 0 && (
-              <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', marginBottom: '8px', letterSpacing: '1px' }}>FAILURE LOGS:</p>
-                {importResult.errors.map((err, i) => (
-                  <div key={i} style={{ fontSize: '10px', color: '#ef4444', fontWeight: 700, padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>
-                    • {err}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <button 
-              onClick={() => setImportResult(null)}
-              style={{ width: '100%', marginTop: '25px', padding: '16px', background: '#0f52ba', color: 'white', border: 'none', borderRadius: '14px', fontWeight: 950, fontSize: '11px', letterSpacing: '1px', cursor: 'pointer' }}
-            >
-              CLOSE REPORT
-            </button>
-          </div>
-        </div>
-      )}
-
-
     </div>
   );
-
-  function renderChainDrawer() {
-    return (
-      <div className="drawer-overlay" onClick={() => setIsChainDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-        <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '450px', borderRadius: isMobile ? 0 : '24px 0 0 24px', background: 'white', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-             <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Infrastructure Deployment</h2>
-             <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>REGISTER NEW CHAIN</div>
-             <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Spawning new institutional node and re-mapping administrative authority.</p>
-          </div>
-
-          <div style={{ padding: '35px' }}>
-            <form onSubmit={handleDeployChain} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-               <div className="input-group">
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CHAIN BRAND NAME</label>
-                  <input 
-                    type="text" 
-                    required 
-                    value={newChainData.chainName} 
-                    onChange={e => setNewChainData({...newChainData, chainName: e.target.value})} 
-                    placeholder="e.g. GLOBAL RADIOLOGY NETWORKS"
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
-                  />
-               </div>
-               <div className="input-group">
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CENTRE NAME</label>
-                  <input 
-                    type="text" 
-                    required 
-                    value={newChainData.hospitalName} 
-                    onChange={e => setNewChainData({...newChainData, hospitalName: e.target.value})} 
-                    placeholder="e.g. CITY DIAGNOSTIC HUB"
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
-                  />
-               </div>
-               <div className="input-group">
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>NODE LOCATION (ADDRESS)</label>
-                  <textarea 
-                    required 
-                    rows="3"
-                    value={newChainData.hospitalAddress} 
-                    onChange={e => setNewChainData({...newChainData, hospitalAddress: e.target.value})} 
-                    placeholder="FULL INSTITUTIONAL ADDRESS"
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
-                  />
-               </div>
-
-               <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
-                  <button type="button" onClick={() => setIsChainDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800 }}>ABORT</button>
-                  <button 
-                    type="submit" 
-                    disabled={isDeployingChain}
-                    style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, border: 'none', cursor: 'pointer' }}
-                  >
-                    {isDeployingChain ? 'DEPLOYING...' : 'INITIATE DEPLOYMENT →'}
-                  </button>
-               </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-
 }

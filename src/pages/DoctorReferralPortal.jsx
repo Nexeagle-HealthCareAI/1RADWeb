@@ -858,7 +858,10 @@ function BookingPanel({ id, token, centreName }) {
       setSaved(true);
       load();
     } catch (e) {
-      setErr(e?.response?.data?.error || e?.response?.data?.message || (!e?.response ? 'No connection — please try again.' : 'Could not submit this request. Please try again.'));
+      setErr(e?.response?.data?.error || e?.response?.data?.message
+        || (!e?.response ? 'No connection — please try again.'
+          : e.response.status === 429 ? 'Too many requests were sent from this link just now. Please try again in a while, or call the centre.'
+          : 'Could not submit this request. Please try again.'));
     } finally {
       setSaving(false);
     }
