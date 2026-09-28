@@ -130,8 +130,12 @@ export default function ReferralsPage() {
   }, []);
   const [bulkSend, setBulkSend] = useState(null); // null | { status:'sending'|'done', channel, sent, skipped, failed }
   const patientMasterSeq = useRef(0);
+  // A partner merged into another has no independent identity left — the Roster (caseLedgerList)
+  // already excludes them (!ref.mergedIntoId) so they don't show as a duplicate row there; Doctor
+  // Links must do the same, or a retired duplicate keeps appearing as a separate doctor you can
+  // still send a "new" link to (the API refuses that mint, but the tab shouldn't offer it).
   const doctorList = useMemo(
-    () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
+    () => (allReferrers || []).filter(r => r.isDoctor !== false && !r.mergedIntoId && (r.name || '').trim().toLowerCase() !== 'self'),
     [allReferrers]
   );
   const buildDoctorLink = async (referrerId) => {
