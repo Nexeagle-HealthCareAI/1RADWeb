@@ -56,7 +56,7 @@ export default function WaitingAreaBoard() {
   return (
     <div style={{ minHeight: '100vh', background: '#050510', color: 'white', fontFamily: 'Inter, sans-serif', overflow: 'hidden' }}>
       {/* Header Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '30px 60px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+      <div className="waiting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '30px 60px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div>
           <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba', letterSpacing: '4px', textTransform: 'uppercase' }}>1RAD_DIAGNOSTIC_HUB</div>
           <h1 style={{ fontSize: '36px', fontWeight: 950, margin: 0, letterSpacing: '-1px' }}>WAITING_AREA_COMMAND</h1>
@@ -72,8 +72,8 @@ export default function WaitingAreaBoard() {
         </div>
       </div>
 
-      <div style={{ padding: '40px 60px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+      <div className="waiting-body" style={{ padding: '40px 60px' }}>
+        <div className="waiting-grid-header" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
           {['TOKEN', 'PATIENT NAME', 'MODALITY', 'STATUS'].map(h => (
             <div key={h} style={{ fontSize: '12px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>{h}</div>
           ))}
@@ -81,7 +81,7 @@ export default function WaitingAreaBoard() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           {missions.map((m, idx) => (
-            <div key={m.appointmentId} style={{ 
+            <div key={m.appointmentId} className="waiting-card" style={{ 
               display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', alignItems: 'center',
               padding: '30px', background: 'rgba(255,255,255,0.02)', borderRadius: '24px', 
               border: '1px solid rgba(255,255,255,0.05)', animation: `slideIn 0.5s ease-out forwards`, animationDelay: `${idx * 0.1}s`,
@@ -112,6 +112,15 @@ export default function WaitingAreaBoard() {
       <style>{`
         @keyframes slideIn {
           to { transform: translateX(0); opacity: 1; }
+        }
+        @media (max-width: 768px) {
+          .waiting-header { flex-direction: column !important; align-items: flex-start !important; padding: 20px !important; gap: 15px; }
+          .waiting-header > div:last-child { text-align: left !important; }
+          .waiting-body { padding: 20px !important; }
+          .waiting-grid-header { display: none !important; }
+          .waiting-card { grid-template-columns: 1fr !important; gap: 10px !important; padding: 20px !important; }
+          .waiting-card > div:first-child { font-size: 28px !important; }
+          .waiting-card > div:nth-child(2) { font-size: 18px !important; }
         }
       `}</style>
     </div>

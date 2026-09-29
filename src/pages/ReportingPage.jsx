@@ -2802,11 +2802,24 @@ const ReportingPage = () => {
 
         /* iPhone and small tablet portrait - Hide toolbar only on small screens */
         @media (max-width: 768px) {
+          .reporting-app-container {
+            width: 100% !important;
+            margin-left: 0 !important;
+            margin-top: 0 !important;
+            height: 100vh !important;
+            padding-bottom: 74px !important; /* 64px bottom nav + 10px safe margin */
+            border-radius: 0 !important;
+          }
           .main-layout { flex-direction: column; }
           .panel-center { width: 100% !important; height: 50vh; display: flex; flex-direction: column; }
           .panel-center > div:first-child { display: none !important; } /* Hide left toolbar only on small mobile */
           .panel-right { width: 100% !important; height: auto; display: flex; border-left: none; padding: 0; overflow: hidden; }
           .resizer-handle { display: none; }
+          
+          /* Enforce 16px font rule for all text inputs to prevent iOS/Android zooming */
+          input, textarea, .ProseMirror {
+            font-size: 16px !important;
+          }
         }
 
         .resizer-handle {

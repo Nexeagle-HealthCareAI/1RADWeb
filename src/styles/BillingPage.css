@@ -1141,7 +1141,7 @@ button:active {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 16px 88px; /* 88px bottom = bottom nav (56px) + 32px safe gap */
+  padding: 16px 16px 130px; /* 130px bottom for bottom nav + FAB clearance */
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1323,11 +1323,10 @@ button:active {
   border: none;
   background: transparent;
   cursor: pointer;
-  padding: 6px 2px 4px;
+  padding: 6px 12px 4px;
   transition: background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   position: relative;
-  min-width: 0;
 }
 
 .billing-android-nav-item:active {
@@ -1492,4 +1491,36 @@ button:active {
     flex-direction: column;
     gap: 0;
   }
+}
+
+/* === Mobile 'More' Bottom Sheet === */
+.more-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.2s;
+}
+.more-sheet-item:hover {
+  background: #f8fafc;
+}
+.more-sheet-item.active {
+  background: #f0f4ff;
+  color: #0f52ba;
+}
+.more-sheet-icon {
+  font-size: 24px;
+}
+.more-sheet-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.more-sheet-item.active .more-sheet-label {
+  color: #0f52ba;
 }
