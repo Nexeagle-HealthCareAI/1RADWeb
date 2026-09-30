@@ -118,6 +118,7 @@ export default function BillingPage() {
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
   const [exportMode, setExportMode] = useState('ALL'); // 'ALL', 'RANGE'
   const [exportDates, setExportDates] = useState({ start: '', end: '' });
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   
   // Referral Payout State
   const [isPayoutDrawerOpen, setIsPayoutDrawerOpen] = useState(false);
@@ -1150,7 +1151,7 @@ export default function BillingPage() {
 
           {/* Fixed Bottom Navigation Bar */}
           <nav className="billing-android-bottomnav" aria-label="Billing navigation">
-            {BILLING_TABS.map(tab => (
+            {BILLING_TABS.slice(0, 4).map(tab => (
               <button
                 key={tab.id}
                 className={`billing-android-nav-item${billingViewMode === tab.id ? ' active' : ''}`}
@@ -1162,8 +1163,44 @@ export default function BillingPage() {
                 <span className="billing-android-nav-label">{tab.label}</span>
               </button>
             ))}
+            {/* More Menu Trigger */}
+            <button
+              className={`billing-android-nav-item${['FINANCE', 'ANALYTICS'].includes(billingViewMode) ? ' active' : ''}`}
+              onClick={() => setIsMoreMenuOpen(true)}
+              aria-label="More options"
+            >
+              <span className="billing-android-nav-icon">⋯</span>
+              <span className="billing-android-nav-label">More</span>
+            </button>
           </nav>
         </>
+      )}
+
+      {/* Android "More" Bottom Sheet */}
+      {isMobile && isMoreMenuOpen && (
+        <div className="drawer-overlay" onClick={() => setIsMoreMenuOpen(false)} style={{ zIndex: 10001 }}>
+          <div className="drawer-content" onClick={e => e.stopPropagation()} style={{ animation: 'slideUp 0.25s ease-out', borderRadius: '24px 24px 0 0', padding: 0 }}>
+            <div style={{ padding: '24px 24px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>More Options</h2>
+              <button onClick={() => setIsMoreMenuOpen(false)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>×</button>
+            </div>
+            <div style={{ padding: '0 16px 32px' }}>
+              {BILLING_TABS.slice(4).map(tab => (
+                <button
+                  key={tab.id}
+                  className={`more-sheet-item ${billingViewMode === tab.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setBillingViewMode(tab.id);
+                    setIsMoreMenuOpen(false);
+                  }}
+                >
+                  <span className="more-sheet-icon">{tab.icon}</span>
+                  <span className="more-sheet-label">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -136,10 +136,21 @@ export default function ViewerPage() {
   };
 
   return (
-    <div className="diagnostic-cockpit" style={{ height: '100vh', width: '100vw', background: '#000', color: '#fff', display: 'flex', overflow: 'hidden' }}>
+    <div className="diagnostic-cockpit" style={{ height: '100vh', minHeight: '100dvh', width: '100vw', background: '#000', color: '#fff', display: 'flex', overflow: 'hidden' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .diagnostic-cockpit { flex-direction: column !important; }
+          .left-sidebar { width: 100% !important; height: 100px !important; flex-direction: row !important; border-right: none !important; border-bottom: 1px solid #1a1a1a !important; overflow-x: auto; overflow-y: hidden; padding: 10px !important; }
+          .left-sidebar > div { display: inline-flex; flex-shrink: 0; }
+          .center-workstation { height: calc(100vh - 100px) !important; flex: none !important; }
+          .reporting-sidebar { width: 100% !important; position: absolute; bottom: 0; height: 60vh !important; z-index: 100; transform: translateY(0); box-shadow: 0 -10px 40px rgba(0,0,0,0.8); }
+          /* Ensure inputs don't auto-zoom on mobile */
+          textarea { font-size: 16px !important; }
+        }
+      `}</style>
       
       {/* SIDEBAR: Series Navigator */}
-      <div style={{ width: '100px', background: '#0a0a0a', borderRight: '1px solid #1a1a1a', padding: '20px 10px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div className="left-sidebar" style={{ width: '100px', background: '#0a0a0a', borderRight: '1px solid #1a1a1a', padding: '20px 10px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
          <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textAlign: 'center', letterSpacing: '2px' }}>EXPLORER</div>
          {[1, 2, 3].map(i => (
            <div key={i} onClick={() => setActiveSeries(i-1)} style={{ width: '80px', height: '80px', background: '#050505', border: activeSeries === i-1 ? '2px solid #0f52ba' : '1px solid #222', borderRadius: '15px', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -149,7 +160,7 @@ export default function ViewerPage() {
       </div>
 
       {/* CENTER: Rendering Workstation */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div className="center-workstation" style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
           
           {/* Header HUD */}
           <div style={{ padding: '20px 30px', background: 'rgba(5,5,5,0.9)', borderBottom: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -188,7 +199,7 @@ export default function ViewerPage() {
 
       {/* RIGHT SIDEBAR: Clinical Reporter (Phase 6) */}
       {isReportingOpen && (
-        <div style={{ width: '400px', background: '#0a0a0a', borderLeft: '1px solid #1a1a1a', padding: '30px', display: 'flex', flexDirection: 'column', gap: '25px' }}>
+        <div className="reporting-sidebar" style={{ width: '400px', background: '#0a0a0a', borderLeft: '1px solid #1a1a1a', padding: '30px', display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>CLINICAL_REPORTER</h3>
                <button onClick={() => setIsReportingOpen(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>✕</button>
