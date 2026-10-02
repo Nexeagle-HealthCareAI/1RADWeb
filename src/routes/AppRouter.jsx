@@ -25,7 +25,6 @@ const AdminBoard = lazy(() => import('../pages/AdminBoard'));
 const ReferralsPage = lazy(() => import('../pages/ReferralsPage'));
 const StaffPage = lazy(() => import('../pages/StaffPage'));
 const StaffDashboardPage = lazy(() => import('../pages/StaffDashboardPage'));
-const ViewerPage = lazy(() => import('../pages/ViewerPage'));
 const BillingPage = lazy(() => import('../pages/BillingPage'));
 const ReportingPage = lazy(() => import('../pages/ReportingPage'));
 const DicomViewerPage = lazy(() => import('../pages/DicomViewerPage'));
@@ -252,14 +251,6 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'accountant']} requiredModule="RIS">
               <BillingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/viewer"
-          element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']} requiredModule="PACS">
-              <ViewerPage />
             </ProtectedRoute>
           }
         />
