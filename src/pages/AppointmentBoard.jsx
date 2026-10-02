@@ -9700,6 +9700,9 @@ function DoctorRequestsPanel({ onClose, onBook, onPendingCountChange }) {
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{r.patientName}</span>
+          {[r.age, r.gender].filter(Boolean).length > 0 && (
+            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}>({[r.age, r.gender].filter(Boolean).join(' · ')})</span>
+          )}
           <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 950, background: (TONE[r.status] || TONE.PENDING).bg, color: (TONE[r.status] || TONE.PENDING).fg }}>{r.status}</span>
         </div>
         <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '3px' }}>

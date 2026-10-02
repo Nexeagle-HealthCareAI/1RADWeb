@@ -34,10 +34,11 @@ function forceLogout(reason) {
 
   if (typeof window !== 'undefined') {
     const path = window.location.pathname;
-    // TEMPORARY: while debugging custom-role access, do NOT bounce to /login
-    // from the access-denied screen — a background 401 (e.g. a sync poll) must
-    // not yank the user off the page they're inspecting. Remove this guard to
-    // restore the normal "expired session → login" behaviour everywhere.
+    // Do NOT bounce to /login from the access-denied screen: a background 401 (e.g. a sync
+    // poll) must not yank the user off the explanation they're reading, or off the one
+    // "Back to Login"/"Go to My Dashboard" choice AccessDenied.jsx itself offers. This was
+    // found while debugging a custom-role access issue, but the behaviour it fixes is general
+    // — any account can land here and deserves to read the page before anything moves it.
     if (path.startsWith('/access-denied')) return;
     // Public pages (registration, password reset) never bounce to /login: a
     // stale token from an old session firing a background 401 must not yank a
