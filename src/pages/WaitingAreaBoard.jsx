@@ -3,6 +3,11 @@ import useLiveAppointments from '../hooks/useLiveAppointments';
 
 const ACTIVE_STATUSES = ['confirmed', 'in_progress', 'scanned', 'reporting'];
 
+// This board is a shared, public screen (anyone in the waiting room reads it) - a patient's full
+// name has no business being broadcast there just so they can find their row. Initials + the token
+// number already on screen are enough for a patient to recognise themselves.
+const initialsOf = (name) => String(name || '').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + '.').join(' ') || '—';
+
 export default function WaitingAreaBoard() {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -88,7 +93,7 @@ export default function WaitingAreaBoard() {
               transform: 'translateX(-50px)', opacity: 0
             }}>
               <div style={{ fontSize: '42px', fontWeight: 950, color: '#0f52ba' }}>#{m.displayId || m.appointmentId}</div>
-              <div style={{ fontSize: '24px', fontWeight: 900 }}>{m.patientName?.toUpperCase()}</div>
+              <div style={{ fontSize: '24px', fontWeight: 900 }}>{initialsOf(m.patientName)}</div>
               <div style={{ fontSize: '18px', fontWeight: 700, color: '#60a5fa' }}>{m.modality} // {m.service}</div>
               <div>
                 <span style={{ 

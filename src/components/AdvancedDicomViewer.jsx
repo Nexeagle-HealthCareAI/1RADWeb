@@ -44,6 +44,11 @@ import {
   ScaleOverlayTool,
   Enums as toolsEnums,
   synchronizers,
+  // synchronizers only exposes the create*Synchronizer factories in this version — the lookup/
+  // registry functions (getSynchronizer, destroySynchronizer, ...) live on SynchronizerManager
+  // instead. `synchronizers.getSynchronizer` doesn't exist and was silently always undefined,
+  // so viewport sync (camera + scroll) never actually reused an existing group - see below.
+  SynchronizerManager,
   utilities,
   annotation
 } from '@cornerstonejs/tools';
@@ -2835,12 +2840,12 @@ const AdvancedDicomViewer = ({
           const CAMERA_SYNC_ID = 'CAMERA_SYNC_GROUP';
           const SCROLL_SYNC_ID = 'SCROLL_SYNC_GROUP';
           
-          let cameraSync = synchronizers.getSynchronizer(CAMERA_SYNC_ID);
+          let cameraSync = SynchronizerManager.getSynchronizer(CAMERA_SYNC_ID);
           if (!cameraSync) {
             cameraSync = synchronizers.createCameraPositionSynchronizer(CAMERA_SYNC_ID);
           }
           
-          let scrollSync = synchronizers.getSynchronizer(SCROLL_SYNC_ID);
+          let scrollSync = SynchronizerManager.getSynchronizer(SCROLL_SYNC_ID);
           if (!scrollSync) {
             scrollSync = synchronizers.createStackImageSynchronizer(SCROLL_SYNC_ID);
           }
@@ -2898,11 +2903,11 @@ const AdvancedDicomViewer = ({
         }
       }
       if (elementRef.current && elementRef.current._cameraSyncId) {
-        const sync = synchronizers.getSynchronizer(elementRef.current._cameraSyncId);
+        const sync = SynchronizerManager.getSynchronizer(elementRef.current._cameraSyncId);
         if (sync) sync.remove({ renderingEngineId: engineId, viewportId });
       }
       if (elementRef.current && elementRef.current._scrollSyncId) {
-        const sync = synchronizers.getSynchronizer(elementRef.current._scrollSyncId);
+        const sync = SynchronizerManager.getSynchronizer(elementRef.current._scrollSyncId);
         if (sync) sync.remove({ renderingEngineId: engineId, viewportId });
       }
 
