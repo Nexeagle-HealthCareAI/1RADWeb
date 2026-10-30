@@ -1500,6 +1500,7 @@ const DicomViewerPage = () => {
                 <AdvancedDicomViewer
                   files={displayFiles}
                   seriesName={displayName}
+                  annotationKey={urlStudyId ? `study:${urlStudyId}` : urlAppointmentId ? `appointment:${urlAppointmentId}` : null}
                   autoMpr={false}
                   compact={layoutMode === '2x2'}
                   placeholderUrl={displayThumbnail}

@@ -3693,6 +3693,7 @@ const ReportingPage = () => {
             isTablet={isTablet}
             isSyncEnabled={isSyncEnabled}
             isHistoricalMode={isHistoricalMode}
+            annotationKey={isHistoricalMode ? null : studyId ? `study:${studyId}` : appointmentId ? `appointment:${appointmentId}` : null}
             activeAppointment={activeAppointment}
             appointmentId={appointmentId}
             activeServiceId={activeServiceId}

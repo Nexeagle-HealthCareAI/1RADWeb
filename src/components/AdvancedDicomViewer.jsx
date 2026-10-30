@@ -58,6 +58,7 @@ import dicomParser from 'dicom-parser';
 import MprViewport from './MprViewport';
 import { isMprEligible } from '../utils/dicomVolume';
 import { DicomCache } from '../utils/DicomCache';
+import { useStudyAnnotationPersistence } from '../utils/studyAnnotationPersistence';
 
 // ============================================
 // ADVANCED DICOM VIEWER CONFIGURATION
@@ -801,6 +802,9 @@ const AdvancedDicomViewer = ({
   onFullscreenChange = null,
   // Series name for display
   seriesName = null,
+  // Saved measurements: "appointment:{id}" or "study:{id}". When set, annotations are
+  // loaded from and saved to the server (null = not persisted, e.g. shared links).
+  annotationKey = null,
   // Pre-parsed metadata to skip redundant parsing
   preParsedMetadata = null,
   // Whether an eligible volumetric series may AUTO-open the 4-up MPR on land.
@@ -3298,6 +3302,13 @@ const AdvancedDicomViewer = ({
     }
   }, [viewportId]);
 
+  // --- SAVED MEASUREMENTS (gap analysis P3-7) ---
+  useStudyAnnotationPersistence({
+    annotationKey, isReady, files, elementRef, renderingEngineRef, viewportId,
+    annotationApi: annotation, eventTarget: cornerstone.eventTarget,
+    events: toolsEnums?.Events, metaData: cornerstone.metaData,
+  });
+
   // --- EVENT LISTENERS FOR MEASUREMENTS ---
   useEffect(() => {
     if (!elementRef.current || !isReady) return;
@@ -3308,15 +3319,35 @@ const AdvancedDicomViewer = ({
     element.addEventListener('cornerstoneToolsMeasurementAdded', handleMeasurementAdded);
     element.addEventListener('cornerstoneToolsMeasurementModified', handleMeasurementAdded);
     
+    // Cornerstone3D (v1+) never fires the legacy 'cornerstoneToolsMeasurement*'
+    // names above, so the measurement list stayed empty. Feed it from the v4
+    // ANNOTATION_COMPLETED event for this viewport (shape mapped to the old one).
+    const onAnnotationCompleted = (evt) => {
+      const d = evt?.detail;
+      if (!d?.annotation) return;
+      // The event is global; keep only annotations drawn on this viewport's stack.
+      let ids = [];
+      try { ids = renderingEngineRef.current?.getViewport(viewportId)?.getImageIds?.() || []; } catch { /* noop */ }
+      if (!ids.includes(d.annotation.metadata?.referencedImageId)) return;
+      handleMeasurementAdded({ detail: {
+        annotationUID: d.annotation.annotationUID,
+        toolName: d.annotation.metadata?.toolName,
+        annotation: d.annotation,
+      } });
+    };
+    const completedEvent = toolsEnums?.Events?.ANNOTATION_COMPLETED;
+    if (completedEvent) cornerstone.eventTarget.addEventListener(completedEvent, onAnnotationCompleted);
+
     // Listen for probe events
     element.addEventListener('cornerstoneToolsProbeClick', handlePixelProbe);
     
     return () => {
+      if (completedEvent) cornerstone.eventTarget.removeEventListener(completedEvent, onAnnotationCompleted);
       element.removeEventListener('cornerstoneToolsMeasurementAdded', handleMeasurementAdded);
       element.removeEventListener('cornerstoneToolsMeasurementModified', handleMeasurementAdded);
       element.removeEventListener('cornerstoneToolsProbeClick', handlePixelProbe);
     };
-  }, [isReady, handleMeasurementAdded, handlePixelProbe]);
+  }, [isReady, handleMeasurementAdded, handlePixelProbe, viewportId]);
 
   // Calculate statistics only on demand, not automatically
   // Removed automatic calculation to improve performance

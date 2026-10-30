@@ -11,6 +11,7 @@ export default function ReportingDicomPanel({
   isTablet,
   isSyncEnabled,
   isHistoricalMode,
+  annotationKey = null,
   activeAppointment,
   appointmentId,
   activeServiceId,
@@ -259,6 +260,7 @@ export default function ReportingDicomPanel({
                 <AdvancedDicomViewer
                   key={`mobile-${activeAssetIndex}_${resetTrigger}`}
                   files={activeAsset.rawFiles}
+                  annotationKey={annotationKey}
                   placeholderUrl={activeAsset.thumbnailUrl}
                   preParsedMetadata={activeAsset.metadata}
                   activeTool={activeTool}
@@ -1181,6 +1183,7 @@ export default function ReportingDicomPanel({
                               // toolset would linger on screen.
                               key={`${activeServiceId || 'visit'}_${activeAssetIndex}_${idx}_${resetTrigger}`}
                               modality={activeServiceMod || undefined}
+                              annotationKey={annotationKey}
                               files={currentFiles || []}
                               placeholderUrl={currentSeries?.thumbnailUrl}
                               preParsedMetadata={currentSeries?.metadata}
