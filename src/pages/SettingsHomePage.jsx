@@ -75,6 +75,21 @@ export default function SettingsHomePage() {
       ),
       to: '/settings/audit',
     },
+    {
+      key: 'integrations',
+      adminOnly: true,
+      title: 'Integrations',
+      description: 'Keys for outside systems: DICOM viewers and PACS (DICOMweb), the modality worklist, and hospital systems (FHIR).',
+      cta: 'Manage keys',
+      accent: { from: '#0891b2', to: '#0e7490', glow: 'rgba(8,145,178,0.30)' },
+      icon: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        </svg>
+      ),
+      to: '/settings/integrations',
+    },
   ].filter(t => !t.adminOnly || (currentUser?.roles || []).some(r => r === 'admin' || r === 'admindoctor'));
 
   return (

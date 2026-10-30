@@ -35,6 +35,7 @@ const ActiveSessionsPage = lazy(() => import('../pages/ActiveSessionsPage'));
 const SecuritySettingsPage = lazy(() => import('../pages/SecuritySettingsPage'));
 const SyncStatusPage = lazy(() => import('../pages/SyncStatusPage'));
 const AuditLogPage = lazy(() => import('../pages/AuditLogPage'));
+const IntegrationsPage = lazy(() => import('../pages/IntegrationsPage'));
 const SettingsHomePage = lazy(() => import('../pages/SettingsHomePage'));
 const DicomBridgePage = lazy(() => import('../pages/DicomBridgePage'));
 const ConfigurationPage = lazy(() => import('../pages/ConfigurationPage'));
@@ -197,6 +198,15 @@ export default function AppRouter() {
           element={
             <ProtectedRoute authOnly={true}>
               <AuditLogPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Settings → Integrations: API keys for DICOMweb / worklist / FHIR (admins). */}
+        <Route
+          path="/settings/integrations"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <IntegrationsPage />
             </ProtectedRoute>
           }
         />
