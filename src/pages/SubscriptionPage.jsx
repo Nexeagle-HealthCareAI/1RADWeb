@@ -351,10 +351,37 @@ const SubscriptionPage = () => {
   }, []);
 
   const cycleName = billingCycle === 'yearly' ? 'Yearly' : 'Monthly';
-  // Filter plans based on cycle name mapped from CMS (assume CMS plans have DurationInDays correctly set or Name matching)
-  // Our backend map set DurationInDays = 365 for Yearly and 30 for Monthly.
+  // Plans now come from 1Rad's own catalogue (edition × tier × cycle, plus PAYG),
+  // the same table payment-request / estimate / approval price from.
   const cycleDays = billingCycle === 'yearly' ? 365 : 30;
-  const currentCyclePlans = plans.filter(p => p.durationInDays === cycleDays).sort((a, b) => a.price - b.price);
+  const editionFromModules = (() => {
+    const m = (subscription?.modules || []).map(x => String(x).toUpperCase());
+    if (m.includes('RIS') && m.includes('PACS')) return 'RIS+PACS';
+    if (m.includes('PACS')) return 'PACS';
+    if (m.includes('RIS')) return 'RIS';
+    return 'RIS+PACS';
+  })();
+  const [edition, setEdition] = useState(null);
+  const activeEdition = edition || editionFromModules;
+  const editionsOffered = ['RIS', 'PACS', 'RIS+PACS'].filter(e => plans.some(p => p.edition === e));
+  const isPayg = (p) => p.billingMode === 'PerStudy';
+  const currentCyclePlans = plans
+    .filter(p => !p.isCustom && p.edition === activeEdition)
+    // PAYG is billed monthly in arrears, so it only appears under Monthly.
+    .filter(p => isPayg(p) ? billingCycle === 'monthly' : p.durationInDays === cycleDays)
+    .sort((a, b) => (isPayg(a) - isPayg(b)) || (a.price - b.price));
+  const planTitle = (p) => isPayg(p) ? 'Pay as you go' : (p.tier || p.name);
+  const planFeatures = (p) => {
+    const f = [];
+    if (p.maxUsers) f.push(`Up to ${p.maxUsers} staff logins`); else f.push('Unlimited staff logins');
+    if (p.maxSites) f.push(p.maxSites === 1 ? '1 centre' : `Up to ${p.maxSites} centres`);
+    if (p.modules?.includes('PACS')) {
+      f.push(p.includedStorageGb ? `${p.includedStorageGb >= 1024 ? (p.includedStorageGb / 1024) + ' TB' : p.includedStorageGb + ' GB'} PACS storage included` : 'PACS storage billed by use');
+      if (p.perGbOveragePrice > 0) f.push(`Extra storage ₹${p.perGbOveragePrice}/GB`);
+    }
+    if (isPayg(p)) f.push(`₹${p.perStudyPrice} per finalised report, no base fee`);
+    return f;
+  };
   
   const defaultPlan = currentCyclePlans[0] || null;
   const activePlan = selectedPlanId 
@@ -523,7 +550,7 @@ const SubscriptionPage = () => {
 
       <PaymentRequestDrawer
         isOpen={!!paymentModal}
-        plan={{ name: activePlan?.name || '1Rad Flow Premium' }}
+        plan={{ name: activePlan ? `${activePlan.edition} ${planTitle(activePlan)} ${activePlan.name}` : '1Rad Flow' }}
         billingCycle={paymentModal || 'monthly'}
         planId={activePlan?.planId}
         estimate={estimate}
@@ -831,6 +858,15 @@ const SubscriptionPage = () => {
             <h3>Choose your plan</h3>
             <p>Simple pricing that scales with your centre. Pay offline, activated within 24 hours of review.</p>
             <div className="up-controls">
+              {editionsOffered.length > 1 && (
+                <div className="up-seg">
+                  {editionsOffered.map(e => (
+                    <button key={e} className={activeEdition === e ? 'on' : ''} onClick={() => { setEdition(e); setSelectedPlanId(null); }}>
+                      {e === 'RIS+PACS' ? 'RIS + PACS' : e}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="up-seg">
                 {[{ key: 'monthly', label: 'Monthly' }, { key: 'yearly', label: 'Yearly', badge: 'Save up to 10%' }].map(c => (
                   <button key={c.key} className={billingCycle === c.key ? 'on' : ''} onClick={() => handleBillingCycle(c.key)}>
@@ -855,11 +891,11 @@ const SubscriptionPage = () => {
               return (
                 <div key={p.planId} className={`up-tier${on ? ' on' : ''}${popular ? ' popular' : ''}`} onClick={() => setSelectedPlanId(p.planId)}>
                   {popular && <div className="up-ribbon">Special Offer</div>}
-                  <p className="up-tier-name">{p.name}</p>
-                  <p className="up-tagline">Complete radiology suite for your center.</p>
+                  <p className="up-tier-name">{planTitle(p)}</p>
+                  <p className="up-tagline">{activeEdition === 'RIS+PACS' ? 'RIS + Cloud PACS' : activeEdition} · {cycleName}</p>
                   <div className="up-price-row">
-                    <span className="up-price">{fmt(displayPrice)}</span>
-                    <span className="up-cycle">/ {cycleName === 'Yearly' ? 'year' : 'month'}</span>
+                    <span className="up-price">{isPayg(p) ? fmt(p.perStudyPrice) : fmt(displayPrice)}</span>
+                    <span className="up-cycle">/ {isPayg(p) ? 'report' : (cycleName === 'Yearly' ? 'year' : 'month')}</span>
                   </div>
                   <div className="up-price-note">
                     {p.discountPrice > 0 && p.price > p.discountPrice && (
@@ -867,7 +903,7 @@ const SubscriptionPage = () => {
                     )}
                   </div>
                   <div className="up-features">
-                    {premiumFeatures.slice(0, 5).map(f => (
+                    {planFeatures(p).map(f => (
                       <div key={f} className="up-feature">
                         <span className="up-tick"><Icons.Check /></span>
                         <span>{f}</span>
@@ -875,7 +911,7 @@ const SubscriptionPage = () => {
                     ))}
                   </div>
                   <button className={`up-cta${on ? ' on' : ''}`} onClick={(ev) => { ev.stopPropagation(); setSelectedPlanId(p.planId); }}>
-                    {on ? '✓ Selected' : `Choose ${p.name}`}
+                    {on ? '✓ Selected' : `Choose ${planTitle(p)}`}
                   </button>
                 </div>
               );
@@ -888,7 +924,7 @@ const SubscriptionPage = () => {
               <div>
                 <div className="up-summary-label">You selected</div>
                 <div className="up-summary-title">
-                  {activePlan.name} · {cycleName}
+                  {planTitle(activePlan)} · {activeEdition === 'RIS+PACS' ? 'RIS + PACS' : activeEdition} · {cycleName}
                 </div>
                 <div className="up-summary-sub">
                   ₹{Number(estimate?.total ?? (activePlan.discountPrice > 0 ? activePlan.discountPrice : activePlan.price)).toLocaleString('en-IN')} due
