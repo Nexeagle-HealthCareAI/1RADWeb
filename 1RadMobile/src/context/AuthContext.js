@@ -1,11 +1,10 @@
-import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/apiClient';
+import { API_BASE_URL } from '../api/config';
 
 const AuthContext = createContext(null);
 
-// API Configuration
-const API_BASE_URL = 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -138,7 +137,13 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (identifier, password) => {
     console.log(`[MOBILE AUTH] Login attempt for ${identifier}`);
     try {
-      const response = await apiClient.post('/auth/login', { identifier, password });
+      // deviceCategory lets the API apply its one-session-per-device-type rule.
+      const response = await apiClient.post('/auth/login', {
+        identifier,
+        password,
+        deviceCategory: 'MOBILE',
+        deviceName: '1Rad mobile app',
+      });
       
       console.log('[MOBILE AUTH] Raw response:', JSON.stringify(response.data, null, 2));
       
@@ -331,6 +336,51 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // --- Password recovery (same API flow as the web app) ---------------------
+  // forgot-password sends a code; verify-reset-code returns a 5-minute reset
+  // token, kept in memory only; reset-password uses it. ForgotPasswordScreen
+  // used to call the OTP *login* flow and a resetPassword that didn't exist.
+  const resetTokenRef = useRef(null);
+  const apiError = (e, fallback) =>
+    e?.response?.data?.error || e?.response?.data?.message || e?.response?.data?.detail || fallback;
+
+  const forgotPassword = useCallback(async (identifier) => {
+    try {
+      const response = await apiClient.post('/auth/forgot-password', { identifier });
+      return { success: true, message: response.data?.message };
+    } catch (e) {
+      return { success: false, error: apiError(e, 'Failed to send recovery code.') };
+    }
+  }, []);
+
+  const verifyResetCode = useCallback(async (identifier, code) => {
+    try {
+      const response = await apiClient.post('/auth/verify-reset-code', { identifier, code });
+      const data = response.data || {};
+      const ok = data.success ?? data.Success;
+      const resetToken = data.resetToken || data.ResetToken;
+      if (ok && resetToken) {
+        resetTokenRef.current = resetToken;
+        return { success: true };
+      }
+      return { success: false, error: data.error || data.Error || 'Verification failed.' };
+    } catch (e) {
+      return { success: false, error: apiError(e, 'Verification failed.') };
+    }
+  }, []);
+
+  const resetPassword = useCallback(async (_identifier, newPassword) => {
+    const resetToken = resetTokenRef.current;
+    if (!resetToken) return { success: false, error: 'Reset session expired. Please verify the code again.' };
+    try {
+      await apiClient.post('/auth/reset-password', { resetToken, newPassword });
+      resetTokenRef.current = null;
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: apiError(e, 'Password reset failed.') };
+    }
+  }, []);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -343,7 +393,10 @@ export function AuthProvider({ children }) {
       login, 
       logout,
       registerUser,
-      switchCenter
+      switchCenter,
+      forgotPassword,
+      verifyResetCode,
+      resetPassword
     }}>
       {children}
     </AuthContext.Provider>

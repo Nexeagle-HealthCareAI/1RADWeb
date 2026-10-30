@@ -4,6 +4,38 @@ import { useAuth } from './AuthContext';
 
 const AppointmentContext = createContext(null);
 
+// --- Status vocabulary (gap analysis P0-6) ----------------------------------
+// The API's appointment states are BOOKED → CONFIRMED → IN_PROGRESS → SCANNED →
+// REPORTING → REPORTED → DELIVERED (+ COMPLETED, CANCELLED), forward-only. The
+// screens use a simpler lower-case set; these maps translate both ways. The app
+// used to send 'pending' / 'scheduled', which the API rejects.
+const API_TO_UI = {
+  BOOKED: 'scheduled',
+  CONFIRMED: 'confirmed',
+  IN_PROGRESS: 'in_progress',
+  SCANNED: 'completed',
+  COMPLETED: 'completed',
+  REPORTING: 'completed',
+  REPORTED: 'completed',
+  DELIVERED: 'completed',
+  CANCELLED: 'cancelled',
+};
+const UI_TO_API = {
+  confirmed: 'CONFIRMED',
+  in_progress: 'IN_PROGRESS',
+  completed: 'COMPLETED',
+  cancelled: 'CANCELLED',
+};
+
+export const toUiStatus = (apiStatus) =>
+  API_TO_UI[String(apiStatus || '').toUpperCase()] || String(apiStatus || 'scheduled').toLowerCase();
+
+// Statuses a user can move an appointment TO from the app.
+export const SETTABLE_STATUSES = Object.keys(UI_TO_API);
+
+const apiErrorMessage = (error, fallback) =>
+  error?.response?.data?.error || error?.response?.data?.message || fallback;
+
 export function AppointmentProvider({ children }) {
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -76,30 +108,42 @@ export function AppointmentProvider({ children }) {
     }
   }, [fetchAppointments]);
 
+  // Only status changes are sent from the app; other edits need the web app.
   const updateAppointment = useCallback(async (appointmentId, updates) => {
+    if (!updates?.status) return { success: true };
+
+    const target = toUiStatus(updates.status);
+    const current = appointments.find(a => a.appointmentId === appointmentId);
+    if (current && toUiStatus(current.status) === target) return { success: true }; // no change
+
+    const apiStatus = UI_TO_API[target];
+    if (!apiStatus) {
+      return { success: false, error: 'An appointment cannot be moved back to that status.' };
+    }
     try {
-      // If status update
-      if (updates.status) {
-        await apiClient.patch(`/appointments/${appointmentId}/status`, `"${updates.status.toUpperCase()}"`, {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
+      await apiClient.patch(`/appointments/${appointmentId}/status`, JSON.stringify(apiStatus), {
+        headers: { 'Content-Type': 'application/json' }
+      });
       fetchAppointments();
       return { success: true };
     } catch (error) {
       console.error('[MOBILE APPOINTMENTS] Update failed:', error);
-      return { success: false };
+      return { success: false, error: apiErrorMessage(error, 'Failed to update appointment status.') };
     }
-  }, [fetchAppointments]);
+  }, [appointments, fetchAppointments]);
 
+  // There is no DELETE endpoint: appointments are cancelled, never deleted
+  // (paid ones need an approval in the web app, and the API says so).
   const deleteAppointment = useCallback(async (appointmentId) => {
     try {
-      await apiClient.delete(`/appointments/${appointmentId}`);
+      await apiClient.patch(`/appointments/${appointmentId}/status`, JSON.stringify('CANCELLED'), {
+        headers: { 'Content-Type': 'application/json' }
+      });
       fetchAppointments();
       return { success: true };
     } catch (error) {
-      console.error('[MOBILE APPOINTMENTS] Delete failed:', error);
-      return { success: false };
+      console.error('[MOBILE APPOINTMENTS] Cancel failed:', error);
+      return { success: false, error: apiErrorMessage(error, 'Failed to cancel appointment.') };
     }
   }, [fetchAppointments]);
 
@@ -142,4 +186,4 @@ export function useAppointments() {
     throw new Error('useAppointments must be used within an AppointmentProvider');
   }
   return context;
-}
+}
