@@ -12,6 +12,7 @@ const SCOPES = [
   { value: 'dicomweb.write', label: 'Send images in (DICOMweb STOW)', hint: 'Modalities or a PACS pushing studies to 1Rad' },
   { value: 'worklist.read', label: 'Modality worklist', hint: "The bridge reads today's bookings so the machine shows the patient list" },
   { value: 'fhir.read', label: 'Patients, orders and signed reports (FHIR)', hint: 'Hospital HIS, 1HMS, ABDM exchange' },
+  { value: 'fhir.write', label: 'Register patients and book scans (FHIR)', hint: 'Lets a hospital HIS send imaging orders straight into the 1Rad worklist' },
 ];
 const SCOPE_LABEL = Object.fromEntries(SCOPES.map(s => [s.value, s.label.split(' (')[0]]));
 const fmt = (s) => (s ? new Date(s).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
