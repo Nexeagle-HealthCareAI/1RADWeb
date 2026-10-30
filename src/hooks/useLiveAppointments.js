@@ -28,6 +28,7 @@
 // Returned `rows` is referentially stable until something actually changed, so
 // boards can use it directly in useMemo/useEffect dependencies.
 
+import { liveAwareInterval, onLive, LIVE_EVENTS } from '../live/liveUpdates';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import apiClient from '../api/apiClient';
 
@@ -288,13 +289,17 @@ export default function useLiveAppointments({
   // moment it becomes visible / the connection returns.
   useEffect(() => {
     if (!win || !pollMs) return undefined;
-    const id = setInterval(() => { if (!document.hidden) tick(); }, pollMs);
+    // Polls every pollMs, or only as a 5-minute safety net while the live channel
+    // is up — then a pushed 'appointments' change triggers the delta fetch instead.
+    const stopPoll = liveAwareInterval(() => { if (!document.hidden) tick(); }, pollMs);
+    const stopLive = onLive(LIVE_EVENTS.appointments, () => { if (!document.hidden) tick(); });
     const onVisible = () => { if (!document.hidden) tick(); };
     const onOnline = () => tick();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onOnline);
     return () => {
-      clearInterval(id);
+      stopPoll();
+      stopLive();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('online', onOnline);
     };

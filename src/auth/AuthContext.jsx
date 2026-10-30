@@ -1,3 +1,4 @@
+import { startLiveUpdates, stopLiveUpdates } from '../live/liveUpdates';
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import apiClient from '../api/apiClient';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
@@ -332,6 +333,7 @@ export function AuthProvider({ children }) {
     // is cleared.
     migrateLegacyOutbox();
     startSyncEngine();
+    startLiveUpdates();   // push updates; screens fall back to polling without it
     // Hospital changed mid-session → immediate sync (push then pull)
     // so any queued mutations from this hospital go up, and the board
     // doesn't show stale rows for 30s after the switch. Best-effort.
@@ -495,6 +497,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('1rad_refresh_token');
       } catch (_) { /* storage unavailable in private modes */ }
       stopSyncEngine();
+      stopLiveUpdates();
       try { await clearLocalDatabase({ preserveActiveOutbox: true }); } catch (_) { /* best effort */ }
     })();
     // NOTE: authDb (PIN registry) is intentionally NOT cleared here.

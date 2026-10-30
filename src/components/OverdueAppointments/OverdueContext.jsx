@@ -1,3 +1,4 @@
+import { liveAwareInterval, onLive, LIVE_EVENTS } from '../../live/liveUpdates';
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import apiClient from '../../api/apiClient';
 import useAuth from '../../auth/useAuth';
@@ -125,8 +126,10 @@ export function OverdueProvider({ children }) {
       return;
     }
     fetchOverdue();
-    const id = setInterval(fetchOverdue, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    // Live channel up → refresh on pushed visit changes; the 30 s poll becomes a safety net.
+    const stopPoll = liveAwareInterval(fetchOverdue, POLL_INTERVAL_MS);
+    const stopLive = onLive(LIVE_EVENTS.appointments, fetchOverdue);
+    return () => { stopPoll(); stopLive(); };
   }, [currentUser, risEnabled, fetchOverdue]);
 
   // O(1) lookups so per-row decorators don't scan the whole array on every

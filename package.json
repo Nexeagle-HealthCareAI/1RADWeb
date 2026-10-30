@@ -52,6 +52,7 @@
     "@cornerstonejs/dicom-image-loader": "^4.22.2",
     "@cornerstonejs/streaming-image-volume-loader": "^1.86.1",
     "@cornerstonejs/tools": "^4.22.2",
+    "@microsoft/signalr": "^8.0.7",
     "@tiptap/extension-character-count": "^3.23.1",
     "@tiptap/extension-color": "^3.23.1",
     "@tiptap/extension-highlight": "^3.23.1",

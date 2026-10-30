@@ -1,3 +1,4 @@
+import { liveAwareInterval } from '../live/liveUpdates';
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
@@ -307,7 +308,9 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
     // fine and cuts the cross-session lag (another user raising a request shows
     // on the admin's badge within ~12s instead of 30s). The '1rad_approvals_
     // changed' event still gives an INSTANT refresh for same-session actions.
-    const id = setInterval(load, 12000);
+    // While the live channel is up, pushed 'approvals' changes arrive as the
+    // '1rad_approvals_changed' event below and this poll becomes a safety net.
+    const stopPoll = liveAwareInterval(load, 12000);
     const onChanged = () => load();
     // visibilitychange is more reliable than focus for "user came back to this
     // tab" (focus doesn't fire on every tab switch), so a returning admin sees a
@@ -318,7 +321,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
-      clearInterval(id);
+      stopPoll();
       window.removeEventListener('focus', onChanged);
       window.removeEventListener('1rad_approvals_changed', onChanged);
       document.removeEventListener('visibilitychange', onVisible);
