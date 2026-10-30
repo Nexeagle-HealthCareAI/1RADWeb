@@ -6,7 +6,7 @@ import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
 import { Smartphone, Key, Lock, ArrowLeft, CheckCircle } from 'lucide-react-native';
 
 export default function ForgotPasswordScreen({ navigation }) {
-  const { resetPassword, sendOtp, verifyOtp } = useAuth();
+  const { resetPassword, forgotPassword, verifyResetCode } = useAuth();
   
   const [step, setStep] = useState(1); // 1: Identify, 2: Verification, 3: Reset
   const [identifier, setIdentifier] = useState('');
@@ -64,7 +64,7 @@ export default function ForgotPasswordScreen({ navigation }) {
     setError('');
     
     // Send OTP for password reset
-    const result = await sendOtp(identifier);
+    const result = await forgotPassword(identifier);
     setLoading(false);
     
     if (result.success) {
@@ -83,7 +83,7 @@ export default function ForgotPasswordScreen({ navigation }) {
     setLoading(true);
     setError('');
     
-    const result = await verifyOtp(identifier, code);
+    const result = await verifyResetCode(identifier, code);
     setLoading(false);
     
     if (result.success) {

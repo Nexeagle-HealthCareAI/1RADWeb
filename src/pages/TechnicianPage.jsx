@@ -1928,6 +1928,7 @@ export default function TechnicianPage() {
                         key={`${activeService?.id || 'visit'}_${activeAssetIndex}_${idx}`}
                         engineId={`tech-engine-${idx}`}
                         viewportId={`tech-viewport-${idx}`}
+                        annotationKey={(activeStudy?.appointmentId || activeStudy?.id) ? `appointment:${activeStudy.appointmentId || activeStudy.id}` : null}
                         modality={activeModality || undefined}
                         files={visibleUploadedFiles[(activeAssetIndex + idx) % visibleUploadedFiles.length]?.rawFiles}
                         preParsedMetadata={visibleUploadedFiles[(activeAssetIndex + idx) % visibleUploadedFiles.length]?.metadata}

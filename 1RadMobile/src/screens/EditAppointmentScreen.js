@@ -9,7 +9,7 @@ import {
   Alert,
   Modal
 } from 'react-native';
-import { useAppointments } from '../context/AppointmentContext';
+import { useAppointments, toUiStatus } from '../context/AppointmentContext';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
 import {
   ArrowLeft,
@@ -65,9 +65,10 @@ export default function EditAppointmentScreen({ navigation, route }) {
   ];
 
   const statuses = [
-    { value: 'scheduled', label: 'SCHEDULED', color: COLORS.cyan },
-    { value: 'confirmed', label: 'CONFIRMED', color: COLORS.success },
-    { value: 'pending', label: 'PENDING', color: COLORS.gold },
+    // Forward-only, matching the API (an appointment can't go back to scheduled).
+    { value: 'confirmed', label: 'CONFIRMED (ARRIVED)', color: COLORS.success },
+    { value: 'in_progress', label: 'IN PROGRESS', color: COLORS.gold },
+    { value: 'completed', label: 'COMPLETED', color: COLORS.indigo },
     { value: 'cancelled', label: 'CANCELLED', color: COLORS.error }
   ];
 
@@ -77,6 +78,7 @@ export default function EditAppointmentScreen({ navigation, route }) {
       const dt = new Date(appointment.dateTime);
       setFormData({
         ...appointment,
+        status: toUiStatus(appointment.status),
         date: dt.toISOString().split('T')[0],
         time: dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
       });
@@ -124,9 +126,11 @@ export default function EditAppointmentScreen({ navigation, route }) {
       if (result.success) {
         Alert.alert(
           'SUCCESS',
-          'Appointment updated successfully',
+          'Status saved. Other details (time, doctor, services) are edited in the 1Rad web app.',
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
+      } else {
+        Alert.alert('ERROR', result.error || 'Failed to update appointment');
       }
     } catch (error) {
       Alert.alert('ERROR', 'Failed to update appointment');
@@ -209,7 +213,7 @@ export default function EditAppointmentScreen({ navigation, route }) {
         <FormField label="STATUS">
           <SelectButton
             placeholder="Select status..."
-            value={formData.status ? statuses.find(s => s.value === formData.status)?.label : ''}
+            value={formData.status ? (statuses.find(s => s.value === formData.status)?.label || String(formData.status).toUpperCase()) : ''}
             onPress={() => setShowStatusPicker(true)}
             icon={AlertTriangle}
           />

@@ -1,3 +1,4 @@
+import { liveAwareInterval } from '../live/liveUpdates';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useSourceVisits from '../hooks/useSourceVisits';
@@ -787,9 +788,11 @@ export default function ReferralsPage() {
   // without a manual reload).
   useEffect(() => {
     const tick = () => { if (!document.hidden) fetchReferralIntelligence(null, null, false, { silent: true }); };
-    const id = setInterval(tick, 90_000);
+    // Live channel up → pushed finance changes bump financeRev (refetch above); this
+    // 90 s poll becomes a 5-minute safety net.
+    const stopPoll = liveAwareInterval(tick, 90_000);
     document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+    return () => { stopPoll(); document.removeEventListener('visibilitychange', tick); };
   }, [fetchReferralIntelligence]);
 
   // Doctor Links tab: show when each doctor's link was sent / expires / renews.

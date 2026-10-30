@@ -34,6 +34,7 @@ const PatientTimelinePage = lazy(() => import('../pages/PatientTimelinePage'));
 const ActiveSessionsPage = lazy(() => import('../pages/ActiveSessionsPage'));
 const SecuritySettingsPage = lazy(() => import('../pages/SecuritySettingsPage'));
 const SyncStatusPage = lazy(() => import('../pages/SyncStatusPage'));
+const AuditLogPage = lazy(() => import('../pages/AuditLogPage'));
 const SettingsHomePage = lazy(() => import('../pages/SettingsHomePage'));
 const DicomBridgePage = lazy(() => import('../pages/DicomBridgePage'));
 const ConfigurationPage = lazy(() => import('../pages/ConfigurationPage'));
@@ -190,6 +191,15 @@ export default function AppRouter() {
         {/* Settings → Sync & offline queue. Surfaces sync state, the
             outbox queue, and the telemetry tail. Useful for diagnosing
             flaky-network issues. */}
+        {/* Settings → Activity log (admins; the API enforces the role). */}
+        <Route
+          path="/settings/audit"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <AuditLogPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/settings/sync"
           element={

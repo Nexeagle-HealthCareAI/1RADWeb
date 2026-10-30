@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { COLORS } from '../theme/TacticalTheme';
+import { API_BASE_URL } from '../api/config';
 
 /**
  * DEBUG SCREEN - Use this to test API connectivity and login
@@ -24,7 +25,7 @@ export default function LoginDebugScreen() {
   const testConnectivity = async () => {
     addLog('Testing API connectivity...', 'info');
     try {
-      const response = await fetch('https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'OPTIONS'
       });
       addLog(`API reachable - Status: ${response.status}`, 'success');
@@ -43,7 +44,7 @@ export default function LoginDebugScreen() {
     addLog(`Testing direct login for: ${identifier}`, 'info');
     
     try {
-      const response = await fetch('https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -24,6 +24,7 @@
 //   • Storage quota awareness (Track 4).
 //   • Hard-offline boot via SW (out of scope per Track 6 deferral).
 
+import { isLiveConnected, onLive, LIVE_EVENTS } from '../live/liveUpdates';
 import apiClient from '../api/apiClient';
 import {
   applyServerDeltas as applyPatientDeltas,
@@ -452,6 +453,11 @@ async function runProgressivePulls() {
 // transiently retries on its own, automatically, without waiting for the user
 // to act or reconnect. pushCycle() respects each item's back-off gate, so a
 // down server isn't hammered every 30s. This is the heart of "auto sync".
+// While the live channel is up, the 30 s heartbeat still pushes queued mutations but
+// pulls only every 5 minutes; pushed 'patients' / 'reports' changes pull right away.
+const LIVE_PULL_SAFETY_NET_MS = 5 * 60_000;
+let lastFullPullAt = 0;
+
 async function autoSyncTick() {
   if (pulling) return;
   if (!navigator.onLine) return;
@@ -460,7 +466,9 @@ async function autoSyncTick() {
   const startedAt = Date.now();
   try {
     await pushCycle();
+    if (isLiveConnected() && Date.now() - lastFullPullAt < LIVE_PULL_SAFETY_NET_MS) return;
     await runAllPulls();
+    lastFullPullAt = Date.now();
     logEvent('pull.cycle', { ok: true, ms: Date.now() - startedAt });
   } catch (err) {
     console.warn('[SYNC] Auto-sync tick failed', err?.message || err);
@@ -523,6 +531,10 @@ export function startSyncEngine() {
   // Steady-state heartbeat: push (auto-retry) AND full delta pull.
   pollTimer = setInterval(autoSyncTick, PULL_INTERVAL_MS);
 
+  // Live push: pull just the entity that changed.
+  const stopLivePatients = onLive(LIVE_EVENTS.patients, () => { syncNow(['patients']); });
+  const stopLiveReports = onLive(LIVE_EVENTS.reports, () => { syncNow(['reports']); });
+
   // Reconnect: push queued mutations first, then pull.
   const onOnline = () => pushAndPullCycle();
   window.addEventListener('online', onOnline);
@@ -530,6 +542,8 @@ export function startSyncEngine() {
   startSyncEngine._cleanup = () => {
     started = false;
     if (pollTimer) clearInterval(pollTimer);
+    stopLivePatients();
+    stopLiveReports();
     window.removeEventListener('online', onOnline);
   };
 

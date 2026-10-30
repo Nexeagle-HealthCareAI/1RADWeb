@@ -32,6 +32,9 @@
 #
 # NGINX CONFIG  →  /etc/nginx/sites-available/easyrad
 # ─────────────────────────────────────────────────────────────────────────────
+#   # For live updates (WebSockets) — once, at http{} level (e.g. /etc/nginx/conf.d/upgrade.conf):
+#   map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+#
 #   server {
 #       listen 85;
 #       root /var/www/easyrad;
@@ -49,6 +52,10 @@
 #           proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
 #           proxy_set_header   X-Forwarded-Proto $scheme;
 #           proxy_set_header   X-Forwarded-Host  $host;
+#           # Live updates (/api/v1/live, SignalR over WebSockets — Oct 2026).
+#           # Without these two lines the app falls back to polling.
+#           proxy_set_header   Upgrade           $http_upgrade;
+#           proxy_set_header   Connection        $connection_upgrade;
 #           # DICOM ZIP uploads can reach the 500 MB Kestrel limit: allow large
 #           # bodies and stream them through without buffering.
 #           client_max_body_size    0;
