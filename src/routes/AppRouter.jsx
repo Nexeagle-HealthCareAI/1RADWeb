@@ -107,7 +107,7 @@ export default function AppRouter() {
     <Routes>
       {/* Public / Semi-Public */}
       <Route path="/track/:id" element={<StatusTracking />} />
-      {/* Public doctor referral portal — anonymous, signed token in ?t= (#3) */}
+      {/* Public doctor referral portal — anonymous, signed token in #t= (older links ?t=), sent as X-Referral-Token (#3, review R23) */}
       <Route path="/r/:id" element={<DoctorReferralPortal />} />
       {/* Public secure study share — anonymous, signed 24h token in the path. */}
       <Route path="/share/:token" element={<SharedStudyPage />} />

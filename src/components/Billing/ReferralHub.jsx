@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
 import { payCommissions, fetchCommissions } from '../../api/billing/payoutApi';
+import PayoutTaxPanel from './PayoutTaxPanel';
 
 const getIstDateStr = (iso) => {
   if (!iso) return null;
@@ -279,6 +280,8 @@ const ReferralHub = ({
     showReferrerDropdown: false,
   });
   const [payeeFormErrors, setPayeeFormErrors] = useState({});
+  // Review R10/R12: payout mode, reference and TDS.
+  const [payoutTax, setPayoutTax] = useState({ mode: 'CASH', reference: '', tdsCategory: 'COMMISSION', pan: '' });
   const [isPaying, setIsPaying] = useState(false);
 
   // Clear selections on filter adjustments
@@ -391,6 +394,7 @@ const ReferralHub = ({
       referrerSearchTerm: '',
       showReferrerDropdown: false,
     }));
+    setPayoutTax({ mode: 'CASH', reference: '', tdsCategory: 'COMMISSION', pan: (partnerRef?.pan || '').toUpperCase() });
     setPayeeFormErrors({});
     const partnerId = activePartnerId;
     setBulkConfirmModal({
@@ -444,12 +448,19 @@ const ReferralHub = ({
         payeeEmail: payeeForm.payeeEmail.trim(),
         payeeAddress: payeeForm.payeeAddress.trim(),
         netDeficits: !!bulkConfirmModal.netDeficits && (bulkConfirmModal.deficit || 0) > 0,
+        tdsCategory: payoutTax.tdsCategory,
+        payeePan: payoutTax.pan || null,
+        mode: payoutTax.mode,
+        reference: payoutTax.reference.trim() || null,
       });
       const paidCount = result?.paid?.length || 0;
       const skipped = (result?.skipped || []).filter(x => !/already paid/i.test(x.reason || ''));
       if (paidCount > 0) {
         const recovered = Number(result.deficitRecovered || 0);
-        notifyToast(recovered > 0
+        const tds = Number(result.tdsDeducted || 0);
+        const number = (result.payouts || []).map(x => x.payoutNumber).filter(Boolean).join(', ');
+        if (tds > 0) notifyToast(`Payout ${number} recorded: ₹${Number(result.totalPaid || 0).toLocaleString()} commission, ₹${tds.toLocaleString()} TDS deducted${recovered > 0 ? `, ₹${recovered.toLocaleString()} deficit recovered` : ''} — hand over ₹${Number(result.netPaid || 0).toLocaleString()}.`, 'success');
+        else notifyToast(recovered > 0
           ? `Payout recorded: ₹${Number(result.totalPaid || 0).toLocaleString()} settled, ₹${recovered.toLocaleString()} deficit recovered — hand over ₹${Number(result.netPaid || 0).toLocaleString()}.`
           : `Recorded payout of ₹${Number(result.totalPaid || 0).toLocaleString()} across ${paidCount} commission${paidCount === 1 ? '' : 's'}.`, 'success');
       }
@@ -469,6 +480,36 @@ const ReferralHub = ({
     handleToggleCommissionStatus(null, '__SKIP__');
     setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' });
     setDrawerSelectedIds(new Set());
+  };
+
+  // Review R10: the partner's payouts for a financial year with gross, TDS and net —
+  // for the centre's TDS return and to give the payee a statement.
+  const currentFy = () => {
+    const ist = new Date(Date.now() + 330 * 60000);
+    const y = ist.getUTCMonth() >= 3 ? ist.getUTCFullYear() : ist.getUTCFullYear() - 1;
+    return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
+  };
+  const handleTdsStatement = async () => {
+    if (!activePartnerId) return;
+    const fy = currentFy();
+    try {
+      const { data } = await apiClient.get(`/referrers/${activePartnerId}/tds-statement`, { params: { fy } });
+      const rows = (data.lines || []).map(l => ({
+        'Payout No': l.payoutNumber || '(before payout records)',
+        'Paid on': new Date(/[zZ]$/.test(l.paidAt) ? l.paidAt : `${l.paidAt}Z`).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
+        'Mode': l.mode, 'Reference': l.reference || '',
+        'Commission (₹)': l.gross, 'Deficit recovered (₹)': l.deficitRecovered,
+        'TDS category': l.tdsCategory, 'TDS rate (%)': l.tdsRate, 'TDS (₹)': l.tdsAmount, 'Net paid (₹)': l.net,
+      }));
+      rows.push({ 'Payout No': 'TOTAL', 'Commission (₹)': data.gross, 'TDS (₹)': data.tdsAmount, 'Net paid (₹)': data.net });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `TDS ${fy}`);
+      const safe = String(data.payeeName || 'partner').replace(/[^A-Za-z0-9]+/g, '_');
+      XLSX.writeFile(wb, `1RAD_TDS_${safe}_${fy}${data.pan ? `_${data.pan}` : ''}.xlsx`);
+    } catch (e) {
+      notifyToast(e?.response?.data?.message || 'Could not download the TDS statement.', 'error');
+    }
   };
 
   const handleBulkExport = () => {
@@ -1365,6 +1406,13 @@ const ReferralHub = ({
               >×</button>
             </div>
 
+            <div style={{ padding: '8px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={handleTdsStatement}
+                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', color: '#334155', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}>
+                🧾 TDS STATEMENT · FY {currentFy()}
+              </button>
+            </div>
+
             {/* Bulk action bar */}
             {drawerSelectedIds.size > 0 && (
               <div style={{ padding: '12px 28px', background: '#fff5f6', borderBottom: '1px solid #fecdd3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -1879,6 +1927,14 @@ const ReferralHub = ({
                   </div>
                 </div>
               </div>
+
+              <PayoutTaxPanel
+                commissionIds={bulkConfirmModal.eligibleIds}
+                netDeficits={!!bulkConfirmModal.netDeficits && (bulkConfirmModal.deficit || 0) > 0}
+                payeeName={payeeForm.payeeName}
+                value={payoutTax}
+                onChange={setPayoutTax}
+              />
 
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button

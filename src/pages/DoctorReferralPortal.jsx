@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 //  DoctorReferralPortal.jsx — public /r/:id page for a referring doctor.
 //
-//  Opened from a personal capability link (signed token in ?t=). No login. The
+//  Opened from a personal capability link (signed token in #t=, older links ?t=). No login. The
 //  doctor sees every patient they referred — full name, study status, the bill,
 //  the concession given, and their incentive (eligible / paid / outstanding) —
 //  plus advanced performance KPIs, a gamified view of future ("optimistic")
@@ -71,10 +71,45 @@ const COLS = [
   { key: 'unpaid', label: 'Unpaid', align: 'right', num: true },
 ];
 
+// Review R23: the link token lives in the URL fragment (#t=…), which browsers never
+// send to a server, and is sent to the API in a header — not in the query string,
+// where it ended up in server and proxy logs and Referer headers. On arrival it is
+// kept on this device and wiped from the address bar, so history, screenshots and a
+// home-screen shortcut don't carry it.
+const tokenKey = (id) => `1rad_ref_link_${id}`;
+const resolvePortalToken = (id, sp) => {
+  let fromUrl = null;
+  try {
+    const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    fromUrl = hash.get('t') || sp.get('t') || sp.get('token');
+  } catch { fromUrl = sp.get('t') || sp.get('token'); }
+  if (fromUrl) {
+    try { localStorage.setItem(tokenKey(id), fromUrl); } catch { /* private mode: keep it in memory */ }
+    return fromUrl;
+  }
+  try { return localStorage.getItem(tokenKey(id)); } catch { return null; }
+};
+const portalAuth = (token) => (token ? { headers: { 'X-Referral-Token': token } } : undefined);
+
 export default function DoctorReferralPortal() {
   const { id } = useParams();
   const [sp] = useSearchParams();
-  const token = sp.get('t') || sp.get('token');
+  const token = useMemo(() => resolvePortalToken(id, sp), [id, sp]);
+
+  // Strip the token from the address bar, and tell the browser never to send this
+  // page's URL as a Referer.
+  useEffect(() => {
+    try {
+      if (window.location.hash || sp.get('t') || sp.get('token')) {
+        window.history.replaceState(window.history.state, '', window.location.pathname);
+      }
+    } catch { /* ignore */ }
+    let meta = document.querySelector('meta[name="referrer"]');
+    const prev = meta?.getAttribute('content') ?? null;
+    if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name', 'referrer'); document.head.appendChild(meta); }
+    meta.setAttribute('content', 'no-referrer');
+    return () => { if (prev === null) meta.remove(); else meta.setAttribute('content', prev); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -103,7 +138,7 @@ export default function DoctorReferralPortal() {
     let active = true;
     (async () => {
       try {
-        const res = await apiClient.get(`/public/referral/${id}`, { params: token ? { token } : undefined });
+        const res = await apiClient.get(`/public/referral/${id}`, portalAuth(token));
         if (!active) return;
         const payload = res?.data?.data;
         if (!payload) { setError('This link is invalid or has expired.'); return; }
@@ -245,7 +280,7 @@ export default function DoctorReferralPortal() {
     if (renewal.status === 'sending') return;
     setRenewal({ status: 'sending', message: '' });
     try {
-      const res = await apiClient.post(`/public/referral/${id}/renew`, null, { params: token ? { token } : undefined });
+      const res = await apiClient.post(`/public/referral/${id}/renew`, null, portalAuth(token));
       const where = res?.data?.channel === 'email' ? 'email' : 'WhatsApp';
       setRenewal({ status: 'sent', message: `A fresh link is on its way to your ${where}${res?.data?.maskedTo ? ` (${res.data.maskedTo})` : ''}. It can take a minute to arrive.` });
     } catch (e) {
@@ -603,7 +638,7 @@ function ProfileButton({ id, token, data, setData }) {
       const res = await apiClient.put(`/public/referral/${id}/profile`, {
         name: form.name, contact: form.contact, email: form.email,
         location: form.location, specialty: form.specialty, degree: form.degree,
-      }, { params: token ? { token } : undefined });
+      }, portalAuth(token));
       // A new mobile or email is confirmed by the centre before it is used, so
       // the portal keeps showing the current ones until then. Blank fields
       // leave what the centre holds.
@@ -791,7 +826,7 @@ function InstallBanner({ centre }) {
 // Request an appointment + see the status of everything this doctor has asked for. Own state,
 // fetches its own service menu + request history — mirrors ProfileButton's self-contained shape.
 function BookingPanel({ id, token, centreName }) {
-  const params = token ? { token } : undefined;
+  const auth = portalAuth(token);
   const [services, setServices] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -809,8 +844,8 @@ function BookingPanel({ id, token, centreName }) {
   const load = useCallback(async () => {
     try {
       const [svcRes, reqRes] = await Promise.all([
-        apiClient.get(`/public/referral/${id}/services`, { params }),
-        apiClient.get(`/public/referral/${id}/booking-requests`, { params }),
+        apiClient.get(`/public/referral/${id}/services`, auth),
+        apiClient.get(`/public/referral/${id}/booking-requests`, auth),
       ]);
       setServices(svcRes?.data?.data || []);
       setRequests(reqRes?.data?.data || []);
@@ -831,8 +866,8 @@ function BookingPanel({ id, token, centreName }) {
     (async () => {
       try {
         const [svcRes, reqRes] = await Promise.all([
-          apiClient.get(`/public/referral/${id}/services`, { params }),
-          apiClient.get(`/public/referral/${id}/booking-requests`, { params }),
+          apiClient.get(`/public/referral/${id}/services`, auth),
+          apiClient.get(`/public/referral/${id}/booking-requests`, auth),
         ]);
         if (!active) return;
         setServices(svcRes?.data?.data || []);
@@ -864,7 +899,7 @@ function BookingPanel({ id, token, centreName }) {
         serviceName: form.service ? form.service.split(' — ')[1] : null,
         preferredDate: form.preferredDate || null,
         notes: form.notes.trim() || null,
-      }, { params });
+      }, auth);
       setSaved(true);
       load();
     } catch (e) {

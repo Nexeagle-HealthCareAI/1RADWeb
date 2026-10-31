@@ -789,6 +789,28 @@ const FinanceManager = ({
                     </div>
                   </div>
 
+                {/* Review B33: GST on this service. Prices are GST-inclusive; the bill
+                    splits the tax out. Diagnostic tests are normally exempt (SAC 9993, 0%). */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>GST rate</label>
+                    <select value={editPrice.gstRate ?? 0} onChange={e => setEditPrice({ ...editPrice, gstRate: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', background: 'white', boxSizing: 'border-box' }}>
+                      <option value={0}>Exempt (0%)</option>
+                      <option value={5}>5%</option>
+                      <option value={12}>12%</option>
+                      <option value={18}>18%</option>
+                      <option value={28}>28%</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>SAC / HSN</label>
+                    <input type="text" inputMode="numeric" maxLength={8} placeholder="9993"
+                      value={editPrice.sacCode ?? ''} onChange={e => setEditPrice({ ...editPrice, sacCode: e.target.value.replace(/\D/g, '') })}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ flex: 1, padding: '11px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', color: '#475569' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>Cancel</button>
                   <button type="submit" style={{ flex: 2, padding: '11px', borderRadius: '10px', border: 'none', background: `linear-gradient(135deg, #0a1628, #1e3a5f)`, color: 'white', fontWeight: 800, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(10,22,40,0.25)', transition: 'all 0.15s' }}>

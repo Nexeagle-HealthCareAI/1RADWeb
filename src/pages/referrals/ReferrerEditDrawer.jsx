@@ -1,4 +1,5 @@
 import React from 'react';
+import PortalActivity from './PortalActivity';
 import { getReferrerProfileCompletion, completionColor } from './referrerProfile';
 
 /**
@@ -104,6 +105,12 @@ export default function ReferrerEditDrawer({
                   <input type="email" placeholder="name@example.com" value={editingReferrer?.email || ''}
                     onChange={e => setEditingReferrer(prev => ({ ...prev, email: e.target.value }))} style={fieldStyle} />
                 </div>
+                {/* Review R10: PAN for TDS on payouts. */}
+                <div style={{ flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={labelStyle}>PAN (FOR TDS)</label>
+                  <input type="text" placeholder="ABCDE1234F" maxLength={10} value={editingReferrer?.pan || ''}
+                    onChange={e => setEditingReferrer(prev => ({ ...prev, pan: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))} style={fieldStyle} />
+                </div>
               </div>
 
               {/* Conditional: doctor → speciality + degree; other → supported by doctor */}
@@ -188,6 +195,7 @@ export default function ReferrerEditDrawer({
                      Merge into another partner...
                    </button>
                  )}
+                 <PortalActivity referrerId={editingReferrer?.referrerId} />
               </div>
             </form>
       </div>

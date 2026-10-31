@@ -36,6 +36,7 @@ import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
+import DayBookHub from '../components/Billing/DayBookHub';
 import FinanceManager from '../components/FinanceManager';
 import Pagination from '../components/Pagination';
 import PaymentSuccessModal from '../components/Billing/PaymentSuccessModal';
@@ -603,7 +604,29 @@ export default function BillingPage() {
   });
   
   // ── Print handlers (extracted pure utils) ───────────────────────────────────
-  const printCtx = { activeCenter, ownerDetails, notify };
+  // Review B10: the centre's tax identity (GSTIN, PAN, address, public contact) for
+  // printed bills and receipts, from Admin → Centre details.
+  const [taxProfile, setTaxProfile] = useState(null);
+  useEffect(() => {
+    const id = activeCenter?.id;
+    if (!id) return undefined;
+    let alive = true;
+    apiClient.get(`/hospitals/${id}`).then(res => {
+      if (!alive) return;
+      const d = res?.data || {};
+      setTaxProfile({
+        gstin: (d.gstin || d.GSTIN || '').toUpperCase(),
+        pan: (d.pan || d.PAN || '').toUpperCase(),
+        hospitalAddress: d.hospitalAddress || '',
+        registrationNumber: d.registrationNumber || '',
+        nabhNumber: d.nabhNumber || d.NABHNumber || '',
+        publicContact: d.publicContact || '',
+        publicEmail: d.publicEmail || '',
+      });
+    }).catch(() => { /* print falls back to the centre name and address only */ });
+    return () => { alive = false; };
+  }, [activeCenter?.id]);
+  const printCtx = { activeCenter, ownerDetails, notify, taxProfile };
   const handlePrintThermal = async (invInput = null) => {
     await printThermalSlip(invInput || selectedInvoice, printCtx);
   };
@@ -724,6 +747,7 @@ export default function BillingPage() {
     { id: 'INVOICES',      label: 'Revenue',     icon: '💰' },
     { id: 'REFERRAL_CUTS', label: 'Incentives',  icon: '🤝' },
     { id: 'EXPENSES',      label: 'Expenses',    icon: '📋' },
+    { id: 'DAYBOOK',       label: 'Day book',    icon: '🧾' },
     { id: 'SERVICES',      label: 'Services',    icon: '📊' },
     { id: 'FINANCE',       label: 'Pricing',     icon: '⚙️' },
     { id: 'ANALYTICS',     label: 'Analytics',   icon: '📈' },
@@ -946,6 +970,10 @@ export default function BillingPage() {
           appointments={appointments}
           forceSection="SERVICES"
         />
+      )}
+
+      {billingViewMode === 'DAYBOOK' && (
+        <DayBookHub isMobile={isMobile} isOnline={isOnline} />
       )}
 
       {billingViewMode === 'ANALYTICS' && matrix && (
