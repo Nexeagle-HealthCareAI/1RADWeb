@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { navLabel, useLang, t } from '../i18n';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
@@ -47,6 +48,7 @@ const ROUTE_THEMES = {
 const PACS_ONLY_ROUTES = new Set(['/admin-board', '/configuration', '/studies', '/dicom-bridge']);
 
 export default function MobileMenuSheet({ isOpen, onClose }) {
+  useLang();
   const { currentUser, logout, activeCenter, hasModule, modules } = useAuth();
   const { isOnline, isSyncing, pendingCount } = useOffline();
   const navigate = useNavigate();
@@ -145,7 +147,7 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
                   </div>
                 </div>
                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', textAlign: 'center', lineHeight: 1.25 }}>
-                  {item.label}
+                  {navLabel(item)}
                 </span>
               </button>
             );
@@ -248,10 +250,7 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
             }} />
             <div style={{ overflow: 'hidden' }}>
               <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                {isOnline ? (pendingCount > 0 ? `${pendingCount} item(s) pending sync` : 'Online · PWA High-Speed') : 'Offline Mode Active'}
-              </div>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                {isOnline ? 'Low-bandwidth architecture enabled' : 'Instant 1-click offline operation'}
+                {isOnline ? (pendingCount > 0 ? `${pendingCount} saving…` : t('hdr.online')) : t('hdr.offline')}
               </div>
             </div>
           </div>
@@ -311,11 +310,11 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
                 <path fillRule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0v2z"/>
                 <path fillRule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
               </svg>
-              Sign Out
+              {t('nav.signout')}
             </button>
           </div>
           <div style={{ textAlign: 'center', fontSize: '10px', color: '#94a3b8', marginTop: '14px', fontWeight: 600, letterSpacing: '0.3px' }}>
-            1Rad Flow Mobile · Android-PWA v2.4 · Offline Ready
+            1Rad Flow
           </div>
         </div>
       </div>

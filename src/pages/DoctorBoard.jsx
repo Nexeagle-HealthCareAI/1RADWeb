@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
+import { t as tr } from '../i18n';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
@@ -351,9 +352,9 @@ export default function DoctorBoard() {
       <div className="board-header" style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Reporting Worklist</h1>
+              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>{tr('page.reports')}</h1>
            </div>
-           <p style={{ fontSize: '9.5px', color: '#6b7280' }}>Review and write radiology reports for today's studies</p>
+           <p style={{ fontSize: '9.5px', color: '#6b7280' }}>{tr('page.reportsSub')}</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -370,13 +371,13 @@ export default function DoctorBoard() {
               fontWeight: 600, background: view === 'QUEUE' ? 'white' : 'transparent',
               color: view === 'QUEUE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: view === 'QUEUE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-            }}>Today's Queue</button>
+            }}>{tr('filter.today')}</button>
             <button onClick={() => setView('HISTORY')} style={{
               padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '10.5px',
               fontWeight: 600, background: view === 'HISTORY' ? 'white' : 'transparent',
               color: view === 'HISTORY' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: view === 'HISTORY' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-            }}>Archive</button>
+            }}>{tr('filter.past')}</button>
         </div>
       </div>
 
@@ -384,11 +385,11 @@ export default function DoctorBoard() {
         {view === 'QUEUE' ? (
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'nowrap' }}>
             {[
-              { label: 'Needs Report',    value: stats.pendingReports, sub: 'Awaiting',           c: '#dc2626', g1: '#fef2f2', g2: '#fee2e2', bd: '#fecaca' },
-              { label: 'In Progress',     value: stats.drafts,         sub: 'Drafts',             c: '#d97706', g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a' },
-              { label: 'Finalized Today', value: stats.finalizedToday, sub: 'Reports',            c: '#16a34a', g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0' },
-              { label: 'Incoming',        value: stats.upcoming,       sub: 'Studies',            c: '#1d4ed8', g1: '#eff6ff', g2: '#dbeafe', bd: '#bfdbfe' },
-              { label: 'Delivered',       value: stats.delivered,      sub: 'Handed to patient',  c: '#15803d', g1: '#ecfdf5', g2: '#d1fae5', bd: '#a7f3d0' },
+              { label: tr('stage.waitingReport'), value: stats.pendingReports, sub: '',           c: '#dc2626', g1: '#fef2f2', g2: '#fee2e2', bd: '#fecaca' },
+              { label: tr('stage.drafting'), value: stats.drafts,         sub: '',             c: '#d97706', g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a' },
+              { label: tr('stage.signedToday'), value: stats.finalizedToday, sub: '',            c: '#16a34a', g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0' },
+              { label: tr('stage.waitingScan'), value: stats.upcoming,       sub: '',            c: '#1d4ed8', g1: '#eff6ff', g2: '#dbeafe', bd: '#bfdbfe' },
+              { label: tr('stage.given'), value: stats.delivered,      sub: '',  c: '#15803d', g1: '#ecfdf5', g2: '#d1fae5', bd: '#a7f3d0' },
             ].map((k) => (
               <div key={k.label} className="summary-card" style={{ flex: '1 1 0', minWidth: 0, background: `linear-gradient(135deg, ${k.g1} 0%, ${k.g2} 100%)`, border: `1px solid ${k.bd}`, padding: '14px 16px', borderRadius: '18px', boxShadow: '0 8px 24px -10px rgba(15,23,42,0.18)' }}>
                 <div style={{ fontSize: '9px', fontWeight: 900, color: k.c, letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</div>

@@ -103,7 +103,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .filter-matrix input[type="date"] {
-    font-size: 10px;
+    font-size: 12px;
   }
 }
 
@@ -196,7 +196,7 @@
   }
 
   .kpi-card p {
-    font-size: 10px !important;
+    font-size: 12px !important;
     margin-bottom: 12px !important;
   }
 
@@ -388,7 +388,7 @@
 
 .content-main th {
   padding: 15px 10px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 950;
   color: #94a3b8;
   letter-spacing: 1px;
@@ -427,17 +427,17 @@
 
   .content-main th {
     padding: 12px 8px;
-    font-size: 9px;
+    font-size: 12px;
   }
 
   .content-main td {
     padding: 16px 8px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .content-main td button {
     padding: 6px 12px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -513,7 +513,7 @@
   }
 
   .drawer-content > div:first-child h2 {
-    font-size: 10px !important;
+    font-size: 12px !important;
   }
 
   .drawer-content > div:first-child > div > div:first-child {
@@ -581,7 +581,7 @@
   padding: 12px 15px 12px 42px;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -662,11 +662,11 @@ button:active {
   }
 
   .patient-search-result-item > div:first-child {
-    font-size: 11px !important;
+    font-size: 13px !important;
   }
 
   .patient-search-result-item > div:last-child span {
-    font-size: 8px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -685,7 +685,7 @@ button:active {
   border-radius: 8px;
   border: 1px solid #e2e8f0;
   background: white;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
   transition: all 0.2s;
@@ -704,7 +704,7 @@ button:active {
 
   .service-chip {
     padding: 8px 10px;
-    font-size: 9px;
+    font-size: 12px;
   }
 }
 
@@ -782,7 +782,7 @@ button:active {
   border-radius: 12px;
   border: 1px solid #e2e8f0;
   background: white;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 950;
   cursor: pointer;
   transition: all 0.2s;
@@ -802,7 +802,7 @@ button:active {
 
   .payment-method-btn {
     padding: 14px;
-    font-size: 11px;
+    font-size: 13px;
   }
 }
 
@@ -846,7 +846,7 @@ button:active {
   }
 
   .export-mode-card > div:nth-child(2) {
-    font-size: 10px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -905,11 +905,11 @@ button:active {
   }
 
   .info-box > div:last-child > div:first-child {
-    font-size: 10px !important;
+    font-size: 12px !important;
   }
 
   .info-box > div:last-child > div:last-child {
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -928,7 +928,7 @@ button:active {
 @media (max-width: 639px) {
   .empty-state {
     padding: 60px 16px;
-    font-size: 11px;
+    font-size: 13px;
   }
 }
 
@@ -1067,7 +1067,7 @@ button:active {
 }
 
 .billing-android-topbar-subtitle {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.65);
   letter-spacing: 0.6px;
@@ -1111,7 +1111,7 @@ button:active {
   gap: 3px;
   padding: 2px 7px;
   border-radius: 20px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -1178,7 +1178,7 @@ button:active {
   }
 
   .billing-android-kpi-card .kpi-label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 900;
     color: #94a3b8;
     letter-spacing: 0.8px;
@@ -1214,7 +1214,7 @@ button:active {
   }
 
   .billing-android-filter-label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 900;
     color: #64748b;
     letter-spacing: 0.8px;
@@ -1241,7 +1241,7 @@ button:active {
     background: #f1f5f9;
     border: 1.5px solid #e2e8f0;
     color: #334155;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 800;
     white-space: nowrap;
     cursor: pointer;
@@ -1282,7 +1282,7 @@ button:active {
   }
 
   .billing-android-section-title {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 900;
     color: #0f52ba;
     text-transform: uppercase;
@@ -1360,7 +1360,7 @@ button:active {
 }
 
 .billing-android-nav-label {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -1425,7 +1425,7 @@ button:active {
     color: #78350f;
     border-radius: 12px;
     padding: 10px 14px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     line-height: 1.5;
     display: flex;
@@ -1461,7 +1461,7 @@ button:active {
   }
 
   .billing-android-body .kpi-card p {
-    font-size: 9px !important;
+    font-size: 12px !important;
     margin-bottom: 8px !important;
   }
 

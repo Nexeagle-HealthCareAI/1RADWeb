@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { t } from '../i18n';
+import { visitStage, stageLabel, STAGE_COLORS } from '../utils/visitStage';
 import * as XLSX from 'xlsx-js-style';
 import { useIstToday } from '../utils/istClock';
 import apiClient from '../api/apiClient';
@@ -474,27 +476,11 @@ export default function OperationsBoard() {
   };
 
   // Standard 1Rad clinical stage badge mapping
-  const getCoreStatusStyle = (status) => {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'booked':
-      case 'scheduled':
-        return { label: 'BOOKED 📅', style: T.slate };
-      case 'confirmed':
-      case 'arrived':
-        return { label: 'ARRIVED 📍', style: T.blue };
-      case 'in_progress':
-        return { label: 'SCANNING 🌀', style: T.amber };
-      case 'scanned':
-        return { label: 'ACQUIRED 📡', style: T.amber };
-      case 'reporting':
-        return { label: 'ANALYZING 📝', style: T.blue };
-      case 'reported':
-      case 'completed':
-        return { label: 'FINALIZED ✅', style: T.emerald };
-      default:
-        return { label: String(status).toUpperCase(), style: T.slate };
-    }
+  // One set of stage words on every screen (utils/visitStage).
+  const getCoreStatusStyle = (status, arrivedAt) => {
+    const stage = visitStage(status, arrivedAt);
+    const c = STAGE_COLORS[stage];
+    return { label: stageLabel(stage), style: { background: c.bg, color: c.fg, border: `1px solid ${c.bg}` } };
   };
 
   // Professional pagination matching AppointmentBoard
@@ -1079,8 +1065,8 @@ export default function OperationsBoard() {
       <div className="appt-page-top">
         <div className="appt-page-header">
           <div className="appt-page-title-block">
-            <h1 className="appt-page-title">Clinical Operations Board</h1>
-            <p className="appt-page-subtitle">Manual Workflow Override · Delivery Updates · Delay Tracking</p>
+            <h1 className="appt-page-title">{t('page.operations')}</h1>
+            <p className="appt-page-subtitle">{t('page.operationsSub')}</p>
           </div>
 
           <div className="appt-page-actions">
@@ -1094,16 +1080,16 @@ export default function OperationsBoard() {
                 style={{ background: 'none', border: 'none', color: '#0f172a', fontSize: '12px', fontWeight: 950, outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
               />
               <button onClick={() => shiftDate(1)} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontWeight: 950, fontSize: '12px' }}>▶</button>
-              <button onClick={() => setSelectedDate(istToday)} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', fontSize: '10px', fontWeight: 950, padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', letterSpacing: '0.5px' }}>TODAY</button>
+              <button onClick={() => setSelectedDate(istToday)} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', fontSize: '10px', fontWeight: 950, padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', letterSpacing: '0.5px' }}>{t('filter.today')}</button>
             </div>
-            <button className="appt-new-mission-btn" onClick={fetchAppointments}>↺ Refresh</button>
+            <button className="appt-new-mission-btn" onClick={fetchAppointments}>{t('act.refresh')}</button>
             <button
               className="appt-new-mission-btn"
               onClick={exportToExcel}
               disabled={!filteredAppointments.length || exporting}
               style={{ background: '#15803d', borderColor: '#15803d', opacity: exporting ? 0.6 : 1 }}
               title="Export visible records (with full comment trail) to Excel"
-            >{exporting ? '⏳ Exporting…' : '⬇ Export Excel'}</button>
+            >{exporting ? '…' : t('act.export')}</button>
           </div>
         </div>
       </div>
@@ -1112,7 +1098,7 @@ export default function OperationsBoard() {
       <div className="intel-cards-grid" style={{ gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(155px, 1fr))' }}>
 
         <div className="intel-card dark">
-          <span className="intel-label">Total Today</span>
+          <span className="intel-label">{t('stage.total')}</span>
           <div className="intel-value">{metrics.total}</div>
           <div className="intel-trend" style={{ color: '#10b981' }}>
             {/* Show patient count vs scan count side by side when they
@@ -1120,32 +1106,28 @@ export default function OperationsBoard() {
                 multiple scans without inflating the patient count. */}
             {metrics.totalLines > metrics.total
               ? `${metrics.totalLines} scan${metrics.totalLines === 1 ? '' : 's'}`
-              : 'Active Queue'}
+              : t('filter.today')}
           </div>
         </div>
 
         <div className="intel-card" style={{ background: 'white' }}>
-          <span className="intel-label">⚪ Not Started</span>
+          <span className="intel-label">{t('stage.waitingScan')}</span>
           <div className="intel-value" style={{ color: '#475569' }}>{metrics.notStarted}</div>
-          <div className="intel-trend" style={{ color: '#94a3b8' }}>Awaiting Scan</div>
         </div>
 
         <div className="intel-card" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <span className="intel-label" style={{ color: '#b45309' }}>🟠 Scanned</span>
+          <span className="intel-label" style={{ color: '#9A3412' }}>{t('stage.waitingReport')}</span>
           <div className="intel-value" style={{ color: '#b45309' }}>{metrics.scanned}</div>
-          <div className="intel-trend" style={{ color: '#b45309' }}>Awaiting Report</div>
         </div>
 
         <div className="intel-card" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-          <span className="intel-label" style={{ color: '#0f52ba' }}>🔵 Reported</span>
+          <span className="intel-label" style={{ color: '#166534' }}>{t('stage.reportReady')}</span>
           <div className="intel-value" style={{ color: '#0f52ba' }}>{metrics.reported}</div>
-          <div className="intel-trend" style={{ color: '#0f52ba' }}>Awaiting Delivery</div>
         </div>
 
         <div className="intel-card" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-          <span className="intel-label" style={{ color: '#15803d' }}>🟢 Delivered</span>
+          <span className="intel-label" style={{ color: '#334155' }}>{t('stage.given')}</span>
           <div className="intel-value" style={{ color: '#14532d' }}>{metrics.delivered}</div>
-          <div className="intel-trend" style={{ color: '#15803d' }}>Handed to Patient</div>
         </div>
 
       </div>
@@ -1281,7 +1263,7 @@ export default function OperationsBoard() {
               }}>
                 {paginatedAppointments.map((appt) => {
                   const progress = getProgressBadge(appt.reportProgressStatus);
-                  const coreStatus = getCoreStatusStyle(appt.status);
+                  const coreStatus = getCoreStatusStyle(appt.status, appt.arrivedAt);
                   const isApptOverdue = isOverdue(appt.appointmentId);
                   // STAT + overdue share the same red heartbeat. URGENT gets
                   // the softer amber. Matches AppointmentBoard / Tech / Doctor.
@@ -1338,8 +1320,8 @@ export default function OperationsBoard() {
                           >{appt.priority}</span>
                         )}
                       </div>
-                      {appt.patientId && (
-                        <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, marginTop: '2px', fontFamily: 'monospace' }}>PID: {appt.patientId}</div>
+                      {appt.patientIdentifier && (
+                        <div style={{ fontSize: '12px', color: '#3730A3', fontWeight: 700, marginTop: '2px' }}>ID: {appt.patientIdentifier}</div>
                       )}
                       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
                         {appt.patientAge}y · {appt.patientGender} · {appt.mobile}
@@ -1681,7 +1663,7 @@ export default function OperationsBoard() {
                 </div>
                 {paginatedAppointments.map((appt) => {
                   const progress = getProgressBadge(appt.reportProgressStatus);
-                  const coreStatus = getCoreStatusStyle(appt.status);
+                  const coreStatus = getCoreStatusStyle(appt.status, appt.arrivedAt);
                   const isApptOverdue = isOverdue(appt.appointmentId);
                   const overdueTrClass = (isApptOverdue || appt.priority === 'STAT') ? 'priority-tr-stat'
                     : appt.priority === 'URGENT' ? 'priority-tr-urgent'
@@ -1766,8 +1748,8 @@ export default function OperationsBoard() {
                               marginTop: '4px', flexWrap: 'wrap',
                               fontSize: '10px', fontWeight: 700, color: '#64748b',
                             }}>
-                              {appt.patientId && (
-                                <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#475569' }}>#{appt.patientId}</span>
+                              {appt.patientIdentifier && (
+                                <span style={{ fontWeight: 700, color: '#475569' }}>ID: {appt.patientIdentifier}</span>
                               )}
                               <span style={{ opacity: 0.4 }}>·</span>
                               <span>{appt.patientAge}y · {appt.patientGender}</span>

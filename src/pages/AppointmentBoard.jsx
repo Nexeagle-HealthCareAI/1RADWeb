@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
+import { t as tr } from '../i18n';
 import { istTodayYmd, useIstToday } from '../utils/istClock';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -60,17 +61,17 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '🕒' },
-  scheduled:   { label: 'EXPECTED', color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
-  booked:      { label: 'EXPECTED', color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
-  confirmed:   { label: 'ARRIVED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '✅' },
-  in_progress: { label: 'SCANNING', color: '#d97706', bg: '#fffbe6', glow: 'rgba(217,119,6,0.15)', icon: '⚙️' },
-  completed:   { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
-  scanned:     { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
-  reporting:   { label: 'REPORTING', color: '#7c3aed', bg: '#f5f3ff', glow: 'rgba(124,58,237,0.15)', icon: '📝' },
-  reported:    { label: 'REPORTED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '📄' },
-  delivered:   { label: 'DELIVERED', color: '#0369a1', bg: '#e0f2fe', glow: 'rgba(3,105,161,0.15)', icon: '📬' },
-  cancelled:   { label: 'CANCELLED', color: '#dc2626', bg: '#fef2f2', glow: 'rgba(220,38,38,0.15)', icon: '❌' },
+  future:      { get label() { return tr('stage.future'); }, color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '🕒' },
+  scheduled:   { get label() { return tr('stage.notArrived'); }, color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
+  booked:      { get label() { return tr('stage.notArrived'); }, color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
+  confirmed:   { get label() { return tr('stage.arrived'); }, color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '✅' },
+  in_progress: { get label() { return tr('stage.inScan'); }, color: '#d97706', bg: '#fffbe6', glow: 'rgba(217,119,6,0.15)', icon: '⚙️' },
+  completed:   { get label() { return tr('stage.waitingReport'); }, color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
+  scanned:     { get label() { return tr('stage.waitingReport'); }, color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
+  reporting:   { get label() { return tr('stage.waitingReport'); }, color: '#7c3aed', bg: '#f5f3ff', glow: 'rgba(124,58,237,0.15)', icon: '📝' },
+  reported:    { get label() { return tr('stage.reportReady'); }, color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '📄' },
+  delivered:   { get label() { return tr('stage.given'); }, color: '#0369a1', bg: '#e0f2fe', glow: 'rgba(3,105,161,0.15)', icon: '📬' },
+  cancelled:   { get label() { return tr('stage.cancelled'); }, color: '#dc2626', bg: '#fef2f2', glow: 'rgba(220,38,38,0.15)', icon: '❌' },
   unknown:     { label: 'UNKNOWN', color: '#64748b', bg: '#f8fafc', glow: 'rgba(100,116,139,0.1)', icon: '❓' }
 };
 
@@ -623,6 +624,14 @@ export default function AppointmentBoard() {
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
   const [serviceRegistry, setServiceRegistry] = useState([]);
+  // Test types this centre actually offers (its price list), not every modality
+  // there is — falls back to the full list until the price list has loaded.
+  const offeredModalities = useMemo(() => {
+    const have = new Set((serviceRegistry || []).map(r => String(r.modality || r.Modality || '').trim().toUpperCase()).filter(Boolean));
+    if (have.size === 0) return MODALITIES;
+    return [...MODALITIES.filter(m => have.has(m)), ...[...have].filter(m => !MODALITIES.includes(m))];
+  }, [serviceRegistry]);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showBookingValidation, setShowBookingValidation] = useState(false);
   const drawerBodyRef = useRef(null);
 
@@ -8242,7 +8251,7 @@ export default function AppointmentBoard() {
           <div className="mobile-app-bar">
             <div className="mobile-app-bar-top">
               <div className="mobile-app-title">
-                <span className="title-icon">📅</span> APPOINTMENTS
+                {tr('page.appointments')}
               </div>
               <button 
                 type="button"
@@ -8254,7 +8263,7 @@ export default function AppointmentBoard() {
                   {!isOnline ? '📴' : ((counts?.pending > 0) ? '🔄' : '🟢')}
                 </span>
                 <span>
-                  {!isOnline ? 'Offline' : ((counts?.pending > 0) ? `${counts.pending} Outbox` : (mobileSyncing ? 'Syncing...' : 'Live Sync'))}
+                  {!isOnline ? 'Offline' : ((counts?.pending > 0) ? `${counts.pending} Outbox` : (mobileSyncing ? 'Syncing…' : tr('hdr.online')))}
                 </span>
               </button>
             </div>
@@ -8265,19 +8274,19 @@ export default function AppointmentBoard() {
                   className={`mobile-tab-pill ${activeTab === 'TODAY' ? 'active' : ''}`}
                   onClick={() => setActiveTab('TODAY')}
                 >
-                  Today <span className="tab-badge">{stats.total || 0}</span>
+                  {tr('filter.today')} <span className="tab-badge">{stats.total || 0}</span>
                 </button>
                 <button 
                   className={`mobile-tab-pill ${activeTab === 'PAST' ? 'active' : ''}`}
                   onClick={() => setActiveTab('PAST')}
                 >
-                  Past <span className="tab-badge">{stats.noShow || 0}</span>
+                  {tr('filter.past')}
                 </button>
                 <button 
                   className={`mobile-tab-pill ${activeTab === 'FUTURE' ? 'active' : ''}`}
                   onClick={() => setActiveTab('FUTURE')}
                 >
-                  Future <span className="tab-badge">{stats.expected || 0}</span>
+                  {tr('filter.future')}
                 </button>
               </div>
               {doctorRequestsPendingCount > 0 && (
@@ -8289,7 +8298,7 @@ export default function AppointmentBoard() {
                 className="mobile-fab-btn"
                 onClick={() => { resetBooking(); setIsBookingOpen(true); }}
               >
-                <span>+</span> New
+                <span>+</span> {tr('act.new')}
               </button>
             </div>
           </div>
@@ -8297,46 +8306,36 @@ export default function AppointmentBoard() {
           {/* 2. Horizontal Thumb-Scroll Stats Carousel */}
           <div className="mobile-stats-carousel">
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #0f52ba' }}>
-              <span className="stat-label">TOTAL VOLUME</span>
+              <span className="stat-label">{tr('stage.total')}</span>
               <div className="stat-value">{stats.total || 0}</div>
-              <span className="stat-sub" style={{ color: '#10b981' }}>↑ {activeRate}% Active</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #64748b' }}>
-              <span className="stat-label">{activeTab === 'PAST' ? 'NO SHOW' : 'EXPECTED'}</span>
+              <span className="stat-label">{activeTab === 'PAST' ? tr('stage.noShow') : tr('stage.notArrived')}</span>
               <div className="stat-value" style={{ color: activeTab === 'PAST' ? '#dc2626' : '#475569' }}>
                 {activeTab === 'PAST' ? (stats.noShow || 0) : (stats.expected || 0)}
               </div>
-              <span className="stat-sub">{activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting in Queue'}</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #059669' }}>
-              <span className="stat-label">ARRIVED</span>
+              <span className="stat-label">{tr('stage.arrived')}</span>
               <div className="stat-value" style={{ color: '#059669' }}>{stats.arrived || 0}</div>
-              <span className="stat-sub">Waiting in Clinic</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #d97706' }}>
-              <span className="stat-label">SCANNING</span>
-              <div className="stat-value" style={{ color: '#d97706' }}>
-                {stats.scanning || 0} <span style={{ fontSize: '13px', color: '#cbd5e1' }}>/</span> {stats.scanned || 0}
-              </div>
-              <span className="stat-sub">In Progress / Scanned</span>
+              <span className="stat-label">{tr('stage.inScan')}</span>
+              <div className="stat-value" style={{ color: '#5B21B6' }}>{stats.scanning || 0}</div>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #7c3aed' }}>
-              <span className="stat-label">REPORTING</span>
-              <div className="stat-value" style={{ color: '#7c3aed' }}>
-                {stats.reporting || 0} <span style={{ fontSize: '13px', color: '#cbd5e1' }}>/</span> {stats.finalized || 0}
-              </div>
-              <span className="stat-sub">Drafting / Ready</span>
+              <span className="stat-label">{tr('stage.waitingReport')}</span>
+              <div className="stat-value" style={{ color: '#9A3412' }}>{(stats.scanned || 0) + (stats.reporting || 0)}</div>
+              <span className="stat-sub">{stats.finalized || 0} {tr('stage.reportReady')}</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #0284c7' }}>
-              <span className="stat-label">DELIVERED</span>
-              <div className="stat-value" style={{ color: '#0284c7' }}>{stats.delivered || 0}</div>
-              <span className="stat-sub">Handed to Patient</span>
+              <span className="stat-label">{tr('stage.given')}</span>
+              <div className="stat-value" style={{ color: '#334155' }}>{stats.delivered || 0}</div>
             </div>
             {activeTab !== 'FUTURE' && (
               <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #e11d48' }}>
-                <span className="stat-label">CANCELLED</span>
-                <div className="stat-value" style={{ color: '#e11d48' }}>{stats.cancelled || 0}</div>
-                <span className="stat-sub">Voided</span>
+                <span className="stat-label">{tr('stage.cancelled')}</span>
+                <div className="stat-value" style={{ color: '#be123c' }}>{stats.cancelled || 0}</div>
               </div>
             )}
           </div>
@@ -8349,7 +8348,7 @@ export default function AppointmentBoard() {
                 <span className="mobile-search-icon">🔍</span>
                 <input
                   type="text"
-                  placeholder="Search patient, mobile, referrer..."
+                  placeholder={tr('act.search')}
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                 />
@@ -8369,7 +8368,7 @@ export default function AppointmentBoard() {
                     title="Toggle Not Arrived Patients"
                   >
                     <span className="toggle-icon">🕒</span>
-                    <span className="toggle-text">Not Arrived</span>
+                    <span className="toggle-text">{tr('filter.notArrived')}</span>
                     <span className="toggle-badge">{stats.expected || 0}</span>
                   </button>
                 );
@@ -8390,9 +8389,23 @@ export default function AppointmentBoard() {
               )}
             </div>
 
+            {/* UI review: on a phone the patients come first — test type and doctor
+                filters open from this button instead of always taking half the screen. */}
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(v => !v)}
+              aria-expanded={showMobileFilters}
+              style={{ alignSelf: 'flex-start', height: '44px', padding: '0 16px', borderRadius: '999px', border: '1.5px solid #CBD5E1', background: (filters.modality !== 'ALL' || filters.doctor !== 'ALL') ? '#EEF2FF' : 'white', color: '#1E293B', fontSize: '15px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+              {showMobileFilters ? tr('filter.hide') : tr('filter.show')}
+              {(filters.modality !== 'ALL' || filters.doctor !== 'ALL') && <span style={{ width: 8, height: 8, borderRadius: 999, background: '#3730A3' }} />}
+            </button>
+
+            {showMobileFilters && (<>
             {/* Middle Row: Modality Quick-Tap Pills */}
             <div className="mobile-modality-bar">
-              <span className="modality-bar-label">MODALITY:</span>
+              <span className="modality-bar-label">{tr('filter.testType')}</span>
               <div className="modality-pills-scroll">
                 <button
                   type="button"
@@ -8401,7 +8414,7 @@ export default function AppointmentBoard() {
                 >
                   All
                 </button>
-                {MODALITIES.map(m => (
+                {offeredModalities.map(m => (
                   <button
                     key={m}
                     type="button"
@@ -8437,6 +8450,8 @@ export default function AppointmentBoard() {
                 ))}
               </div>
             </div>
+
+            </>)}
 
             {/* Archive Filter Row (Only for PAST tab) */}
             {activeTab === 'PAST' && (
@@ -8553,11 +8568,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Appointments</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.total')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', fontFamily: 'monospace' }}>{stats.total}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#10b981', fontWeight: 800 }}>
-            ↑ {activeRate}% Active
-          </div>
         </div>
 
         {/* Card 2: Expected */}
@@ -8572,11 +8584,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? 'No Show' : 'Expected Today'}</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? tr('stage.noShow') : tr('stage.notArrived')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: activeTab === 'PAST' ? '#dc2626' : '#475569', fontFamily: 'monospace' }}>{activeTab === 'PAST' ? stats.noShow : stats.expected}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>
-            {activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting to Check-in'}
-          </div>
         </div>
 
         {/* Card 3: Arrived */}
@@ -8591,11 +8600,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>Arrived In Hall</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.arrived')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#059669', fontFamily: 'monospace' }}>{stats.arrived}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#059669', fontWeight: 800 }}>
-            Waiting in Clinic
-          </div>
         </div>
 
         {/* Card 4: Clinical */}
@@ -8610,12 +8616,9 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', letterSpacing: '1px', textTransform: 'uppercase' }}>Scanning / Scanned</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.inScan')}</span>
           <div className="intel-value" style={{ fontSize: '22px', fontWeight: 950, margin: '10px 0', color: '#d97706', fontFamily: 'monospace' }}>
-            {stats.scanning} <span style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: 800 }}>/</span> {stats.scanned}
-          </div>
-          <div className="intel-trend" style={{ fontSize: '9px', color: '#b45309', fontWeight: 800 }}>
-            In Progress / Complete
+            {stats.scanning || 0}
           </div>
         </div>
 
@@ -8631,12 +8634,12 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#6d28d9', letterSpacing: '1px', textTransform: 'uppercase' }}>Reporting / Reported</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#6d28d9', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.waitingReport')}</span>
           <div className="intel-value" style={{ fontSize: '22px', fontWeight: 950, margin: '10px 0', color: '#7c3aed', fontFamily: 'monospace' }}>
-            {stats.reporting} <span style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: 800 }}>/</span> {stats.finalized}
+            {(stats.scanned || 0) + (stats.reporting || 0)}
           </div>
-          <div className="intel-trend" style={{ fontSize: '9px', color: '#6d28d9', fontWeight: 800 }}>
-            Drafting / Finalized
+          <div className="intel-trend" style={{ fontSize: '13px', color: '#166534', fontWeight: 700 }}>
+            {stats.finalized || 0} {tr('stage.reportReady')}
           </div>
         </div>
 
@@ -8652,11 +8655,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>Delivered Reports</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.given')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#0284c7', fontFamily: 'monospace' }}>{stats.delivered}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>
-            Handed to Patient
-          </div>
         </div>
 
         {/* Card 7: Cancelled — Today & Past only */}
@@ -8672,11 +8672,8 @@ export default function AppointmentBoard() {
             justifyContent: 'space-between',
             minHeight: '100px'
           }}>
-            <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>Cancelled</span>
+            <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.cancelled')}</span>
             <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#e11d48', fontFamily: 'monospace' }}>{stats.cancelled}</div>
-            <div className="intel-trend" style={{ fontSize: '10px', color: '#be123c', fontWeight: 800 }}>
-              Cancelled Appointments
-            </div>
           </div>
         )}
       </div>
@@ -8736,8 +8733,8 @@ export default function AppointmentBoard() {
             value={filters.modality}
             onChange={e => setFilters({...filters, modality: e.target.value})}
           >
-            <option value="ALL">All Modalities</option>
-            {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+            <option value="ALL">All test types</option>
+            {offeredModalities.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
           <select

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef, useContext } from 'react';
+import { t as tr } from '../i18n';
 import { istTodayYmd } from '../utils/istClock';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
@@ -919,9 +920,9 @@ export default function TechnicianPage() {
       <div className="board-header" style={{ padding: '12px 30px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
-              <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Scanning Worklist</h1>
+              <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>{tr('page.scanRoom')}</h1>
            </div>
-           <p style={{ fontSize: '12px', color: '#6b7280', marginLeft: '2px' }}>Manage today's studies and upload DICOM files</p>
+           <p style={{ fontSize: '12px', color: '#6b7280', marginLeft: '2px' }}>{tr('page.scanRoomSub')}</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -938,13 +939,13 @@ export default function TechnicianPage() {
               fontWeight: 600, background: hubTab === 'ACTIVE' ? 'white' : 'transparent',
               color: hubTab === 'ACTIVE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: hubTab === 'ACTIVE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-            }}>Active Queue</button>
+            }}>{tr('filter.today')}</button>
             <button onClick={() => setHubTab('ARCHIVE')} style={{
               padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
               fontWeight: 600, background: hubTab === 'ARCHIVE' ? 'white' : 'transparent',
               color: hubTab === 'ARCHIVE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: hubTab === 'ARCHIVE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-            }}>Archive</button>
+            }}>{tr('filter.past')}</button>
         </div>
       </div>
 
@@ -952,42 +953,37 @@ export default function TechnicianPage() {
         {hubTab === 'ACTIVE' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '15px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Today's Studies</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>{tr('stage.total')}</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b' }}>{stats.total}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>In Progress</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>{tr('stage.inScan')}</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{stats.inProgress}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#f59e0b' }}>Scanning</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Arrived</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>{tr('stage.arrived')}</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#2ecc71' }}>{stats.pending}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#2ecc71' }}>Ready</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Scheduled</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>{tr('stage.notArrived')}</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#1d4ed8' }}>{stats.expected}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Pending</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Delivered</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>{tr('stage.given')}</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#15803d' }}>{stats.delivered}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#15803d' }}>Handed to Patient</span>
               </div>
             </div>
           </div>

@@ -46,7 +46,7 @@
 
   .board-view-container .board-header > div:first-child p {
     margin-left: 0 !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -74,7 +74,7 @@
   .admin-tabs button {
     flex: 1;
     padding: 10px 12px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -124,7 +124,7 @@
   }
 
   .summary-card span {
-    font-size: 8px !important;
+    font-size: 12px !important;
     letter-spacing: 1px !important;
   }
 
@@ -181,7 +181,7 @@
   .board-padding > div:nth-child(2) select {
     flex: 1 1 calc(50% - 8px) !important;
     min-width: 0 !important;
-    font-size: 11px !important;
+    font-size: 13px !important;
     /* Consistent iOS rendering */
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -221,7 +221,7 @@
 
   .board-padding > div:nth-child(3) th {
     padding: 12px 10px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 
   .board-padding > div:nth-child(3) td {
@@ -231,7 +231,7 @@
   /* Action buttons in table — smaller on mobile */
   .board-padding > div:nth-child(3) td:last-child button {
     padding: 8px 10px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -295,7 +295,7 @@
   /* DEPLOY STUDY button */
   .workspace-view > div:first-child .gamified-btn {
     padding: 8px 16px !important;
-    font-size: 10px !important;
+    font-size: 12px !important;
     white-space: nowrap;
   }
 }

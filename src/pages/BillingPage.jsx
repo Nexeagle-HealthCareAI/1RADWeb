@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { t as tr } from '../i18n';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
@@ -750,14 +751,14 @@ export default function BillingPage() {
 
   // Android billing tab definitions (used in both bottom nav and content switcher)
   const BILLING_TABS = [
-    { id: 'INVOICES',      label: 'Revenue',     icon: '💰' },
-    { id: 'REFERRAL_CUTS', label: 'Incentives',  icon: '🤝' },
-    { id: 'EXPENSES',      label: 'Expenses',    icon: '📋' },
-    { id: 'DAYBOOK',       label: 'Day book',    icon: '🧾' },
-    { id: 'CREDIT_NOTES',  label: 'Credit notes', icon: '↩️' },
-    { id: 'SERVICES',      label: 'Services',    icon: '📊' },
-    { id: 'FINANCE',       label: 'Pricing',     icon: '⚙️' },
-    { id: 'ANALYTICS',     label: 'Analytics',   icon: '📈' },
+    { id: 'INVOICES',      label: tr('tab.bills') },
+    { id: 'REFERRAL_CUTS', label: tr('tab.partners') },
+    { id: 'EXPENSES',      label: tr('tab.expenses') },
+    { id: 'DAYBOOK',       label: tr('tab.daybook') },
+    { id: 'CREDIT_NOTES',  label: tr('tab.creditNotes') },
+    { id: 'SERVICES',      label: tr('tab.services') },
+    { id: 'FINANCE',       label: tr('tab.pricing') },
+    { id: 'ANALYTICS',     label: tr('tab.analytics') },
   ];
 
   return (
@@ -770,7 +771,7 @@ export default function BillingPage() {
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💳</div>
           </div>
           <div className="billing-android-topbar-title">
-            <h1>Finance</h1>
+            <h1>{tr('page.finance')}</h1>
             <span className="billing-android-topbar-subtitle">
               {activeCenter?.name || 'Current Facility'}
             </span>
@@ -784,19 +785,36 @@ export default function BillingPage() {
         </div>
       )}
 
+      {/* UI review: billing used to add a second bottom bar under the app's own.
+          On phones its sections are now a scrolling row of tabs under the title. */}
+      {isMobile && (
+        <nav aria-label="Billing sections" style={{ position: 'sticky', top: 56, zIndex: 400, display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', scrollbarWidth: 'none' }}>
+          {BILLING_TABS.map(tab => {
+            const on = billingViewMode === tab.id;
+            return (
+              <button key={tab.id} type="button" onClick={() => setBillingViewMode(tab.id)} aria-current={on ? 'page' : undefined}
+                style={{ flexShrink: 0, height: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap',
+                  border: on ? 'none' : '1.5px solid #CBD5E1', background: on ? '#111827' : 'white', color: on ? 'white' : '#334155' }}>
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
+
       {/* ── DESKTOP HEADER (non-mobile only) ───────────────────────────── */}
       {!isMobile && (
         <>
           <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
             <div>
-              <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Finance</h1>
+              <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>{tr('page.finance')}</h1>
               <div className="billing-tabs" style={{ display: 'flex', marginTop: '20px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 <style>{`.billing-tabs::-webkit-scrollbar { display: none; }`}</style>
                 {BILLING_TABS.map(tab => {
                   const active = billingViewMode === tab.id;
                   return (
                     <button key={tab.id} onClick={() => setBillingViewMode(tab.id)}
-                      style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent', fontSize: '13px', fontWeight: active ? 800 : 600, cursor: 'pointer', color: active ? '#0f52ba' : '#64748b', transition: 'color 0.2s, border-color 0.2s', whiteSpace: 'nowrap', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                      style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent', fontSize: '15px', fontWeight: active ? 700 : 600, cursor: 'pointer', color: active ? '#0f52ba' : '#475569', transition: 'color 0.2s, border-color 0.2s', whiteSpace: 'nowrap', flexShrink: 0 }}
                     >{tab.label}</button>
                   );
                 })}
@@ -1148,30 +1166,6 @@ export default function BillingPage() {
             </button>
           )}
 
-          {/* Fixed Bottom Navigation Bar */}
-          <nav className="billing-android-bottomnav" aria-label="Billing navigation">
-            {BILLING_TABS.slice(0, 4).map(tab => (
-              <button
-                key={tab.id}
-                className={`billing-android-nav-item${billingViewMode === tab.id ? ' active' : ''}`}
-                onClick={() => setBillingViewMode(tab.id)}
-                aria-label={tab.label}
-                aria-current={billingViewMode === tab.id ? 'page' : undefined}
-              >
-                <span className="billing-android-nav-icon">{tab.icon}</span>
-                <span className="billing-android-nav-label">{tab.label}</span>
-              </button>
-            ))}
-            {/* More Menu Trigger */}
-            <button
-              className={`billing-android-nav-item${['FINANCE', 'ANALYTICS'].includes(billingViewMode) ? ' active' : ''}`}
-              onClick={() => setIsMoreMenuOpen(true)}
-              aria-label="More options"
-            >
-              <span className="billing-android-nav-icon">⋯</span>
-              <span className="billing-android-nav-label">More</span>
-            </button>
-          </nav>
         </>
       )}
 
