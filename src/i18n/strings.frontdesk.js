@@ -2,6 +2,14 @@
 // {name}, {amount}, {date}, {mode}, {pct} are filled in at run time.
 
 export const en = {
+  'fd.reports': 'Reports', 'fd.printReport': 'Print report', 'fd.reportNotReady': 'not ready yet', 'fd.whatsapp': 'Send on WhatsApp', 'fd.copyLink': 'Copy tracking link', 'fd.linkCopied': 'Tracking link copied',
+  'fd.printBill': 'Print bill (A4)', 'fd.printReceipt': 'Print receipt', 'fd.printSlip': 'Print small slip', 'fd.noBillPrint': 'No bill yet to print', 'fd.share': 'Share and print',
+  'fd.overdue': 'Waiting too long', 'fd.noted': 'Noted', 'fd.filters': 'Filters', 'fd.modality': 'Scan type', 'fd.doctorF': 'Doctor', 'fd.clear': 'Clear filters',
+  'fd.requests': 'Doctor requests', 'fd.showMore': 'Show more', 'fd.of': 'Showing {shown} of {total}',
+  'rq.title': 'Booking requests from doctors', 'rq.none': 'No requests waiting', 'rq.wants': 'Wants {date}', 'rq.book': 'Book', 'rq.decline': 'Decline', 'rq.reason': 'Reason (the doctor will see it)',
+  'rq.declined': 'Declined', 'rq.scheduled': 'Booked', 'rq.pending': 'Waiting', 'rq.loadFailed': 'Could not load the requests. Check the internet and try again.', 'rq.sentBy': 'Sent by {name}', 'rq.earlier': 'Earlier requests', 'rq.fromRequest': 'From a doctor’s request',
+  'day.range': 'Several days', 'day.from': 'From', 'day.to': 'To',
+  'wa.msg': '{clinic}\n\nNamaste {name}, your visit is booked.\nToken: {token}\nPatient ID: {pid}\nDate: {date}\nTests: {tests}\n\nSee your report status here:\n{link}\n\nThank you.', 'wa.onArrival': 'given when you arrive',
   'ed.edit': 'Edit visit', 'ed.loading': 'Loading the visit…', 'ed.loadFailed': 'Could not load this visit. Check the internet and try again.',
   'ed.patient': 'Patient', 'ed.tests': 'Tests', 'ed.price': 'Price', 'ed.remove': 'Remove', 'ed.addTest': 'Add a test', 'ed.date': 'Date',
   'ed.save': 'Save changes', 'ed.saving': 'Saving…', 'ed.saved': 'Changes saved', 'ed.noChanges': 'Nothing was changed',
@@ -56,6 +64,14 @@ export const en = {
 };
 
 export const hi = {
+  'fd.reports': 'रिपोर्ट', 'fd.printReport': 'रिपोर्ट छापें', 'fd.reportNotReady': 'अभी तैयार नहीं', 'fd.whatsapp': 'व्हाट्सऐप पर भेजें', 'fd.copyLink': 'ट्रैकिंग लिंक कॉपी करें', 'fd.linkCopied': 'ट्रैकिंग लिंक कॉपी हो गया',
+  'fd.printBill': 'बिल छापें (A4)', 'fd.printReceipt': 'रसीद छापें', 'fd.printSlip': 'छोटी पर्ची छापें', 'fd.noBillPrint': 'छापने के लिए अभी बिल नहीं है', 'fd.share': 'भेजें और छापें',
+  'fd.overdue': 'बहुत देर से इंतज़ार', 'fd.noted': 'देख लिया', 'fd.filters': 'छाँटें', 'fd.modality': 'स्कैन का प्रकार', 'fd.doctorF': 'डॉक्टर', 'fd.clear': 'छँटाई हटाएँ',
+  'fd.requests': 'डॉक्टरों के अनुरोध', 'fd.showMore': 'और दिखाएँ', 'fd.of': '{total} में से {shown}',
+  'rq.title': 'डॉक्टरों से आए बुकिंग अनुरोध', 'rq.none': 'कोई अनुरोध बाकी नहीं', 'rq.wants': '{date} चाहते हैं', 'rq.book': 'बुक करें', 'rq.decline': 'मना करें', 'rq.reason': 'कारण (डॉक्टर को दिखेगा)',
+  'rq.declined': 'मना किया', 'rq.scheduled': 'बुक हुआ', 'rq.pending': 'बाकी', 'rq.loadFailed': 'अनुरोध नहीं खुले। इंटरनेट देखकर फिर करें।', 'rq.sentBy': '{name} ने भेजा', 'rq.earlier': 'पहले के अनुरोध', 'rq.fromRequest': 'डॉक्टर के अनुरोध से',
+  'day.range': 'कई दिन', 'day.from': 'से', 'day.to': 'तक',
+  'wa.msg': '{clinic}\n\nनमस्ते {name}, आपकी विज़िट बुक हो गई है।\nटोकन: {token}\nमरीज़ आईडी: {pid}\nतारीख: {date}\nजाँचें: {tests}\n\nअपनी रिपोर्ट की स्थिति यहाँ देखें:\n{link}\n\nधन्यवाद।', 'wa.onArrival': 'आने पर मिलेगा',
   'ed.edit': 'विज़िट बदलें', 'ed.loading': 'विज़िट खुल रही है…', 'ed.loadFailed': 'यह विज़िट नहीं खुली। इंटरनेट देखकर फिर करें।',
   'ed.patient': 'मरीज़', 'ed.tests': 'जाँचें', 'ed.price': 'दाम', 'ed.remove': 'हटाएँ', 'ed.addTest': 'जाँच जोड़ें', 'ed.date': 'तारीख',
   'ed.save': 'बदलाव सेव करें', 'ed.saving': 'सेव हो रहा है…', 'ed.saved': 'बदलाव सेव हो गए', 'ed.noChanges': 'कुछ नहीं बदला',
@@ -110,6 +126,14 @@ export const hi = {
 };
 
 export const bn = {
+  'fd.reports': 'রিপোর্ট', 'fd.printReport': 'রিপোর্ট ছাপুন', 'fd.reportNotReady': 'এখনও তৈরি নয়', 'fd.whatsapp': 'হোয়াটসঅ্যাপে পাঠান', 'fd.copyLink': 'ট্র্যাকিং লিংক কপি করুন', 'fd.linkCopied': 'ট্র্যাকিং লিংক কপি হয়েছে',
+  'fd.printBill': 'বিল ছাপুন (A4)', 'fd.printReceipt': 'রসিদ ছাপুন', 'fd.printSlip': 'ছোট স্লিপ ছাপুন', 'fd.noBillPrint': 'ছাপার জন্য এখনও বিল নেই', 'fd.share': 'পাঠান ও ছাপুন',
+  'fd.overdue': 'অনেকক্ষণ অপেক্ষায়', 'fd.noted': 'দেখেছি', 'fd.filters': 'বাছাই', 'fd.modality': 'স্ক্যানের ধরন', 'fd.doctorF': 'ডাক্তার', 'fd.clear': 'বাছাই সরান',
+  'fd.requests': 'ডাক্তারদের অনুরোধ', 'fd.showMore': 'আরও দেখান', 'fd.of': '{total}-এর মধ্যে {shown}',
+  'rq.title': 'ডাক্তারদের বুকিং অনুরোধ', 'rq.none': 'কোনো অনুরোধ বাকি নেই', 'rq.wants': '{date} চান', 'rq.book': 'বুক করুন', 'rq.decline': 'না বলুন', 'rq.reason': 'কারণ (ডাক্তার দেখতে পাবেন)',
+  'rq.declined': 'না বলা হয়েছে', 'rq.scheduled': 'বুক হয়েছে', 'rq.pending': 'বাকি', 'rq.loadFailed': 'অনুরোধগুলো খোলা গেল না। ইন্টারনেট দেখে আবার চেষ্টা করুন।', 'rq.sentBy': '{name} পাঠিয়েছেন', 'rq.earlier': 'আগের অনুরোধ', 'rq.fromRequest': 'ডাক্তারের অনুরোধ থেকে',
+  'day.range': 'কয়েক দিন', 'day.from': 'থেকে', 'day.to': 'পর্যন্ত',
+  'wa.msg': '{clinic}\n\nনমস্কার {name}, আপনার ভিজিট বুক হয়েছে।\nটোকেন: {token}\nরোগী আইডি: {pid}\nতারিখ: {date}\nপরীক্ষা: {tests}\n\nআপনার রিপোর্টের অবস্থা এখানে দেখুন:\n{link}\n\nধন্যবাদ।', 'wa.onArrival': 'এলে দেওয়া হবে',
   'ed.edit': 'ভিজিট বদলান', 'ed.loading': 'ভিজিট খুলছে…', 'ed.loadFailed': 'ভিজিটটি খোলা গেল না। ইন্টারনেট দেখে আবার চেষ্টা করুন।',
   'ed.patient': 'রোগী', 'ed.tests': 'পরীক্ষা', 'ed.price': 'দাম', 'ed.remove': 'সরান', 'ed.addTest': 'পরীক্ষা যোগ করুন', 'ed.date': 'তারিখ',
   'ed.save': 'বদল সেভ করুন', 'ed.saving': 'সেভ হচ্ছে…', 'ed.saved': 'বদল সেভ হয়েছে', 'ed.noChanges': 'কিছু বদলায়নি',

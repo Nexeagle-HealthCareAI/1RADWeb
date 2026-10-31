@@ -48,28 +48,43 @@ function Err({ children }) {
   return <div role="alert" style={{ background: C.dangerSoft, color: C.danger, borderRadius: 12, padding: '10px 14px', fontSize: 15, fontWeight: 700 }}>{children}</div>;
 }
 
-export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnline }) {
+// A doctor-portal request pre-fills the form: { requestId, mobile, name, age, gender,
+// referrerName, referrerContact, modality, date, notes }.
+const fromRequest = (r) => {
+  if (!r) return null;
+  const m = String(r.mobile || '').replace(/\D/g, '').slice(-10);
+  const age = String(r.age || '').match(/\d+/)?.[0] || '';
+  const unit = /m/i.test(String(r.age || '')) && !/y/i.test(String(r.age || '')) ? 'M' : 'Y';
+  return { requestId: r.id, mobile: m, name: r.patientName || '', age, unit, gender: ['Male', 'Female', 'Other'].includes(r.gender) ? r.gender : 'Female',
+    referrerName: r.referrerName || '', referrerContact: r.referrerContact || '', modality: String(r.modality || '').toUpperCase(),
+    date: String(r.preferredDate || '').slice(0, 10), notes: [r.serviceName ? `Requested: ${r.serviceName}` : '', r.notes].filter(Boolean).join(' — ') };
+};
+
+export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnline, request }) {
+  const pre = React.useMemo(() => fromRequest(request), [request]);
   const [step, setStep] = React.useState(1);
-  const [mobile, setMobile] = React.useState('');
+  const [mobile, setMobile] = React.useState(pre?.mobile || '');
   const [found, setFound] = React.useState(null); // null = not searched, [] = none
-  const [searching, setSearching] = React.useState(false);
+  const [searching, setSearching] = React.useState(pre?.mobile?.length === 10);
   const [patient, setPatient] = React.useState(null); // chosen existing patient
-  const [adding, setAdding] = React.useState(false);
-  const [np, setNp] = React.useState(EMPTY_NEW);
+  const [adding, setAdding] = React.useState(!!pre && pre.mobile.length !== 10);
+  const [np, setNp] = React.useState(pre ? { name: pre.name, age: pre.age, unit: pre.unit, gender: pre.gender } : EMPTY_NEW);
   const [registry, setRegistry] = React.useState([]);
   const [doctors, setDoctors] = React.useState([]);
   const [partners, setPartners] = React.useState([]);
-  const [mod, setMod] = React.useState('ALL');
+  const [mod, setMod] = React.useState(pre?.modality || 'ALL');
   const [q, setQ] = React.useState('');
   const [tests, setTests] = React.useState([]); // registry rows
-  const [sentBy, setSentBy] = React.useState({ kind: 'self' }); // self | partner{p} | other{name,isDoctor,advisedBy}
+  const [sentBy, setSentBy] = React.useState(pre?.referrerName ? { kind: 'other', name: pre.referrerName, isDoctor: true, advisedBy: '', contact: pre.referrerContact } : { kind: 'self' }); // self | partner{p} | other{name,isDoctor,advisedBy}
   const [doctor, setDoctor] = React.useState('');
   const [priority, setPriority] = React.useState('ROUTINE');
-  const [day, setDay] = React.useState('today');
-  const [otherDate, setOtherDate] = React.useState('');
+  const preLater = pre?.date && pre.date > istTodayYmd();
+  const [day, setDay] = React.useState(preLater ? 'other' : 'today');
+  const [otherDate, setOtherDate] = React.useState(preLater ? pre.date : '');
   const [err, setErr] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [booked, setBooked] = React.useState(null);
+  const searchSeq = React.useRef(0);
   const keys = React.useRef({ patient: crypto.randomUUID(), booking: crypto.randomUUID() });
 
   // The parent mounts this sheet fresh for each booking, so the form starts empty.
@@ -90,28 +105,39 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
       const list = (Array.isArray(r.data) ? r.data : r.data?.items || [])
         .filter(p => !p.mergedIntoId && (p.name || '').trim() && (p.name || '').trim().toLowerCase() !== 'self');
       setPartners(list);
+      // A request names its doctor: pick that partner when we know them.
+      const want = String(pre?.referrerName || '').trim().toLowerCase().replace(/^dr\.?\s+/, '');
+      const hit = want && list.find(p => String(p.name || '').trim().toLowerCase().replace(/^dr\.?\s+/, '') === want);
+      if (hit) setSentBy({ kind: 'partner', p: hit });
     }).catch(() => {});
     return () => { alive = false; };
-  }, [open]);
+  }, [open, pre]);
 
-  // Search as soon as 10 digits are in (latest number wins).
-  const searchSeq = React.useRef(0);
-  const onMobile = (raw) => {
-    const m = raw.replace(/\D/g, '').slice(-10);
-    setMobile(m); setPatient(null); setFound(null); setAdding(false);
-    const seq = ++searchSeq.current;
-    if (m.length !== 10) { setSearching(false); return; }
-    setSearching(true);
+  const runSearch = React.useCallback((m, seq) => {
     apiClient.get('/patients', { params: { search: m }, suppressErrorToast: true })
       .then(r => {
         if (seq !== searchSeq.current) return;
         const list = (Array.isArray(r.data) ? r.data : r.data?.data || r.data?.items || [])
           .filter(p => String(p.mobile || '').replace(/\D/g, '').endsWith(m));
         setFound(list.slice(0, 8));
-        setAdding(list.length === 0);
+        setAdding(list.length === 0 || !!pre);
       })
       .catch(() => { if (seq === searchSeq.current) { setFound([]); setAdding(true); } })
       .finally(() => { if (seq === searchSeq.current) setSearching(false); });
+  }, [pre]);
+  // A request with a mobile number looks the patient up straight away.
+  React.useEffect(() => {
+    if (pre?.mobile?.length === 10) runSearch(pre.mobile, ++searchSeq.current);
+  }, [pre, runSearch]);
+
+  // Search as soon as 10 digits are in (latest number wins).
+  const onMobile = (raw) => {
+    const m = raw.replace(/\D/g, '').slice(-10);
+    setMobile(m); setPatient(null); setFound(null); setAdding(false);
+    const seq = ++searchSeq.current;
+    if (m.length !== 10) { setSearching(false); return; }
+    setSearching(true);
+    runSearch(m, seq);
   };
 
   const modalities = React.useMemo(() => [...new Set(registry.map(r => String(r.modality || '').toUpperCase()).filter(Boolean))], [registry]);
@@ -164,7 +190,7 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
 
       const ref = sentBy.kind === 'self' ? { name: 'Self', isDoctor: true, contact: '' }
         : sentBy.kind === 'partner' ? { name: sentBy.p.name, isDoctor: sentBy.p.isDoctor !== false, contact: sentBy.p.contact || '', address: sentBy.p.address || '', advisedBy: sentBy.p.supportedByDoctor || '' }
-          : { name: sentBy.name.trim(), isDoctor: sentBy.isDoctor !== false, contact: '', advisedBy: sentBy.advisedBy || '' };
+          : { name: sentBy.name.trim(), isDoctor: sentBy.isDoctor !== false, contact: sentBy.contact || '', advisedBy: sentBy.advisedBy || '' };
       const lines = tests.map(r => ({ serviceName: r.serviceName, modality: String(r.modality || '').toUpperCase(), amount: Number(r.amount) || 0, referralCutValue: Number(r.referralCutValue) || 0, serviceChargeId: r.id }));
       const payload = {
         patientId,
@@ -178,8 +204,10 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
         referredAddress: ref.address || '',
         referrerIsDoctor: ref.isDoctor,
         referrerSupportedByDoctor: ref.isDoctor ? '' : (ref.advisedBy || ''),
-        notes: '',
+        notes: pre?.notes || '',
         priority,
+        // Fulfilling a doctor's portal request: the server marks it booked.
+        bookingRequestId: pre?.requestId || undefined,
       };
       const res = await apiClient.post('/appointments', payload, { headers: { 'Idempotency-Key': keys.current.booking }, suppressErrorToast: true });
       const appointmentId = res?.data?.appointmentId;
@@ -238,6 +266,7 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Steps step={step} />
+          {pre && <div style={{ background: C.primarySoft, color: C.primaryDark, borderRadius: 12, padding: '10px 14px', fontSize: 15, fontWeight: 700 }}>{t('rq.fromRequest')}{pre.notes ? ` · ${pre.notes}` : ''}</div>}
 
           {step === 1 && (<>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
