@@ -31,12 +31,3 @@ export const applyDiscount = async (invoiceId, request) => {
   return res.data;
 };
 
-/**
- * Apply a post-payment financial adjustment to a settled invoice.
- * @param {object} command  ApplyExtraDiscountCommand payload
- * @returns {{ success: boolean }}
- */
-export const applyAdjustment = async (command) => {
-  const res = await apiClient.post('/finance/adjust', command);
-  return res.data;
-};

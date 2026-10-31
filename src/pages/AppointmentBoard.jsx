@@ -2972,16 +2972,21 @@ export default function AppointmentBoard() {
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
                 title="Print Token"
               >🖨️</button>
+              {/* A cancelled visit can't be edited; a delivered one can't be cancelled (the API refuses both). */}
+              {String(app.status || '').toUpperCase() !== 'CANCELLED' && (
               <button
                 onClick={() => startEditingAppointment(app)}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
                 title="Edit"
               >✏️</button>
+              )}
+              {!['CANCELLED', 'DELIVERED', 'REPORTED', 'REPORTING'].includes(String(app.status || '').toUpperCase()) && (
               <button
                 onClick={() => setCancelConfirmModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName })}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
                 title="Cancel"
               >✕</button>
+              )}
               {app.referredBy && String(app.referredBy).trim() && (
                 <button
                   onClick={() => openChangeRef(app)}

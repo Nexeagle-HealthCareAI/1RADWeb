@@ -14,6 +14,13 @@
 
 import { printThermalReceipt } from '../thermalPrint';
 
+// Review B11: patient names, item descriptions, referrer names and remarks are typed by
+// staff (or arrive over FHIR/HL7) and were pasted into the print HTML raw, so a name like
+// "<img onerror=…>" ran script in the print window. Everything free-text goes through esc().
+const esc = (v) => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,10 +107,10 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
       <tr style="border-bottom: 1px solid #f1f5f9;">
         <td style="padding: 14px 0; text-align: center;">
           ${mod
-            ? `<span style="display: inline-block; font-size: 9px; font-weight: 900; letter-spacing: 0.4px; color: ${tint.text}; background: ${tint.bg}; border: 1px solid ${tint.border}; padding: 2px 8px; border-radius: 6px; text-transform: uppercase;">${mod}</span>`
+            ? `<span style="display: inline-block; font-size: 9px; font-weight: 900; letter-spacing: 0.4px; color: ${tint.text}; background: ${tint.bg}; border: 1px solid ${tint.border}; padding: 2px 8px; border-radius: 6px; text-transform: uppercase;">${esc(mod)}</span>`
             : `<span style="color: #cbd5e1; font-size: 10px;">—</span>`}
         </td>
-        <td style="padding: 14px 10px 14px 0; font-size: 11px; font-weight: 600; color: #1e293b;">${(it.description || '').toUpperCase()}</td>
+        <td style="padding: 14px 10px 14px 0; font-size: 11px; font-weight: 600; color: #1e293b;">${esc((it.description || '').toUpperCase())}</td>
         <td style="padding: 14px 0; text-align: center; font-size: 11px; font-weight: 500; color: #64748b;">${it.quantity}</td>
         <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 500; color: #64748b;">₹${(it.amount || 0).toLocaleString()}</td>
         <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 700; color: #0f52ba;">₹${sub.toLocaleString()}</td>
@@ -133,20 +140,20 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
   ` : '';
 
   const headerModalityHtml = modRows.length > 1
-    ? `<span class="meta-label">Modalities:</span><span class="meta-value">${modRows.length} modalities (${modRows.map(r => r.modality).join(', ')})</span>`
-    : `<span class="meta-label">Modality:</span><span class="meta-value">${(modRows[0]?.modality || inv.modality || 'N/A')}</span>`;
+    ? `<span class="meta-label">Modalities:</span><span class="meta-value">${modRows.length} modalities (${esc(modRows.map(r => r.modality).join(', '))})</span>`
+    : `<span class="meta-label">Modality:</span><span class="meta-value">${esc((modRows[0]?.modality || inv.modality || 'N/A'))}</span>`;
 
   const additionalChargesHtml = (inv.additionalCharges || 0) > 0 ? (
     (Array.isArray(inv.extraCharges) && inv.extraCharges.length > 0)
       ? inv.extraCharges.filter(c => Number(c.amount) > 0).map(c => `
           <div class="summary-row" style="color: #0f52ba;">
-            <span class="summary-label">Additional Charge${c.reason ? ` (${c.reason})` : ''}</span>
+            <span class="summary-label">Additional Charge${c.reason ? ` (${esc(c.reason)})` : ''}</span>
             <span class="summary-value">+ ₹${(Number(c.amount) || 0).toLocaleString()}</span>
           </div>
         `).join('')
       : `
           <div class="summary-row" style="color: #0f52ba;">
-            <span class="summary-label">Additional Charge${inv.additionalChargesReason ? ` (${inv.additionalChargesReason})` : ''}</span>
+            <span class="summary-label">Additional Charge${inv.additionalChargesReason ? ` (${esc(inv.additionalChargesReason)})` : ''}</span>
             <span class="summary-value">+ ₹${(inv.additionalCharges || 0).toLocaleString()}</span>
           </div>
         `
@@ -193,19 +200,19 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
       </head>
       <body>
         <div class="container">
-          <div class="status-stamp">${(inv.status || 'PAID')}</div>
+          <div class="status-stamp">${esc((inv.status || 'PAID'))}</div>
           <div class="header">
             <div class="hospital-info">
               <div class="hospital-logo">1R</div>
-              <h1>${(activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</h1>
-              <p>${activeCenter?.address || 'Strategic Clinical Node'}</p>
-              <p>CONTACT: ${ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: ${ownerDetails?.email || 'contact@1rad.health'}</p>
-              <p style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-top: 2px;">REPRESENTATIVE: ${ownerDetails?.name || 'ADMINISTRATOR'}</p>
+              <h1>${esc((activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase())}</h1>
+              <p>${esc(activeCenter?.address || 'Strategic Clinical Node')}</p>
+              <p>CONTACT: ${esc(ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX')} | EMAIL: ${esc(ownerDetails?.email || 'contact@1rad.health')}</p>
+              <p style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-top: 2px;">REPRESENTATIVE: ${esc(ownerDetails?.name || 'ADMINISTRATOR')}</p>
             </div>
             <div class="invoice-meta">
               <div class="invoice-title">Tax Invoice</div>
               <div class="meta-grid">
-                <span class="meta-label">Invoice ID:</span><span class="meta-value">${inv.displayId}</span>
+                <span class="meta-label">Invoice ID:</span><span class="meta-value">${esc(inv.displayId)}</span>
                 <span class="meta-label">Date:</span><span class="meta-value">${new Date(inv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
                 ${headerModalityHtml}
               </div>
@@ -215,9 +222,9 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
           <div class="billing-matrix">
             <div class="billing-box">
               <div class="box-title">Bill To Patient</div>
-              <div class="patient-name">${(inv.patientName || 'UNKNOWN PATIENT').toUpperCase()}</div>
-              <p class="patient-meta">Patient ID: ${inv.patientIdentifier || inv.patientId || 'N/A'}</p>
-              <p class="patient-meta">Ref. No (Referred By): ${inv.referrerName || inv.referenceNumber || 'N/A'}</p>
+              <div class="patient-name">${esc((inv.patientName || 'UNKNOWN PATIENT').toUpperCase())}</div>
+              <p class="patient-meta">Patient ID: ${esc(inv.patientIdentifier || inv.patientId || 'N/A')}</p>
+              <p class="patient-meta">Ref. No (Referred By): ${esc(inv.referrerName || inv.referenceNumber || 'N/A')}</p>
             </div>
             <div class="billing-box">
               <div class="box-title">Center Policy</div>
@@ -257,7 +264,7 @@ export const printA4Invoice = (inv, { activeCenter, ownerDetails } = {}) => {
                 <span class="summary-value total-amount">₹${(inv.totalAmount || 0).toLocaleString()}</span>
               </div>
               <div style="margin-top: 15px; font-size: 9px; font-weight: 800; color: #10b981; text-align: right; text-transform: uppercase;">
-                Transaction Status: ${(inv.status || 'PAID')}
+                Transaction Status: ${esc((inv.status || 'PAID'))}
               </div>
             </div>
           </div>
@@ -333,15 +340,15 @@ export const printReceiptSlip = (inv, { activeCenter, ownerDetails } = {}) => {
           <div class="header">
             <div class="hospital-info">
               <div class="hospital-logo">1R</div>
-              <h1>${(activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</h1>
-              <p>${activeCenter?.address || 'Strategic Clinical Node'}</p>
-              <p>CONTACT: ${ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: ${ownerDetails?.email || 'contact@1rad.health'}</p>
-              <p style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-top: 2px;">REPRESENTATIVE: ${ownerDetails?.name || 'ADMINISTRATOR'}</p>
+              <h1>${esc((activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase())}</h1>
+              <p>${esc(activeCenter?.address || 'Strategic Clinical Node')}</p>
+              <p>CONTACT: ${esc(ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX')} | EMAIL: ${esc(ownerDetails?.email || 'contact@1rad.health')}</p>
+              <p style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-top: 2px;">REPRESENTATIVE: ${esc(ownerDetails?.name || 'ADMINISTRATOR')}</p>
             </div>
             <div class="invoice-meta">
               <div class="invoice-title">RECEIPT</div>
               <div class="meta-grid">
-                <span class="meta-label">Receipt No:</span><span class="meta-value">REC/${inv.displayId}</span>
+                <span class="meta-label">Receipt No:</span><span class="meta-value">REC/${esc(inv.displayId)}</span>
                 <span class="meta-label">Settlement Date:</span><span class="meta-value">${new Date(inv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
               </div>
             </div>
@@ -351,29 +358,29 @@ export const printReceiptSlip = (inv, { activeCenter, ownerDetails } = {}) => {
             <div class="receipt-title-box">Payment Receipt Acknowledgement</div>
             <div class="content-row">
               <span class="label">Received With Thanks From:</span>
-              <span class="value">${(inv.patientName || 'VALUED PATIENT').toUpperCase()}</span>
+              <span class="value">${esc((inv.patientName || 'VALUED PATIENT').toUpperCase())}</span>
             </div>
             <div class="content-row">
               <span class="label">Patient ID:</span>
-              <span class="value">${inv.patientIdentifier || inv.patientId || 'N/A'}</span>
+              <span class="value">${esc(inv.patientIdentifier || inv.patientId || 'N/A')}</span>
             </div>
             <div class="content-row">
               <span class="label">Ref. No / Referred By:</span>
-              <span class="value">${inv.referrerName || inv.referenceNumber || 'N/A'}</span>
+              <span class="value">${esc(inv.referrerName || inv.referenceNumber || 'N/A')}</span>
             </div>
             <div class="content-row">
               <span class="label">Reference Invoice:</span>
-              <span class="value">${inv.displayId}</span>
+              <span class="value">${esc(inv.displayId)}</span>
             </div>
             <div class="content-row">
               <span class="label">Services Billed:</span>
               <span class="value" style="font-size: 11px; font-weight: 800; white-space: normal; line-height: 1.4; color: #334155;">
-                ${(inv.items || []).map(it => it.description || '').filter(Boolean).join(', ')}
+                ${esc((inv.items || []).map(it => it.description || '').filter(Boolean).join(', '))}
               </span>
             </div>
             <div class="content-row">
               <span class="label">Payment Instrument:</span>
-              <span class="value">${inv.paymentMethod || 'CASH'} / ID: ${inv.invoiceId.substring(0, 8).toUpperCase()}</span>
+              <span class="value">${esc(inv.paymentMethod || 'CASH')} / ID: ${inv.invoiceId.substring(0, 8).toUpperCase()}</span>
             </div>
             ${discountHtml}
             <div class="payment-card">
@@ -467,10 +474,10 @@ export const printThermalSlip = async (inv, { activeCenter, ownerDetails, notify
     const code   = shortMod(it.modality || it.Modality);
     const sub    = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
     const prefix = code ? `[${code}] ` : '';
-    const desc   = `${prefix}${(it.description || '').substring(0, 22 - prefix.length)}`;
+    const desc   = `${prefix}${esc((it.description || '').substring(0, 22 - prefix.length))}`;
     return `
       <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; font-family: monospace;">
-        <span>${desc} x${it.quantity}</span>
+        <span>${esc(desc)} x${esc(it.quantity)}</span>
         <span>₹${sub.toLocaleString()}</span>
       </div>
     `;
@@ -512,18 +519,18 @@ export const printThermalSlip = async (inv, { activeCenter, ownerDetails, notify
       </head>
       <body>
         <div class="center">
-          <div class="header-text">${(activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
-          <div class="sub-text">${activeCenter?.address || ''}</div>
-          <div class="sub-text">TEL: ${ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: ${ownerDetails?.email || 'contact@1rad.health'}</div>
-          <div class="sub-text" style="font-weight: bold; margin-top: 2px;">REPRESENTATIVE: ${ownerDetails?.name || 'ADMINISTRATOR'}</div>
+          <div class="header-text">${esc((activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase())}</div>
+          <div class="sub-text">${esc(activeCenter?.address || '')}</div>
+          <div class="sub-text">TEL: ${esc(ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX')} | EMAIL: ${esc(ownerDetails?.email || 'contact@1rad.health')}</div>
+          <div class="sub-text" style="font-weight: bold; margin-top: 2px;">REPRESENTATIVE: ${esc(ownerDetails?.name || 'ADMINISTRATOR')}</div>
         </div>
         <div class="divider"></div>
         <div style="font-size: 11px;">
-          <div>INV: ${inv.displayId}</div>
+          <div>INV: ${esc(inv.displayId)}</div>
           <div>DATE: ${new Date().toLocaleDateString()}</div>
-          <div class="bold">PATIENT: ${(inv.patientName || 'N/A').toUpperCase()}</div>
-          <div>PATIENT ID: ${inv.patientIdentifier || inv.patientId || 'N/A'}</div>
-          <div>REF. NO: ${inv.referrerName || inv.referenceNumber || 'N/A'}</div>
+          <div class="bold">PATIENT: ${esc((inv.patientName || 'N/A').toUpperCase())}</div>
+          <div>PATIENT ID: ${esc(inv.patientIdentifier || inv.patientId || 'N/A')}</div>
+          <div>REF. NO: ${esc(inv.referrerName || inv.referenceNumber || 'N/A')}</div>
         </div>
         <div class="divider"></div>
         <div class="center" style="font-size: 10px; font-weight: bold; margin-bottom: 4px;">SERVICES BILLED</div>

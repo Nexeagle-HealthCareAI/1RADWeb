@@ -23,7 +23,7 @@ const isSelfReferrer = (name) => String(name || '').trim().toLowerCase() === 'se
 const eligibilityLabel = (cut) => {
   if (cut?.status === 'PAID') return 'Settled';
   if ((Number(cut?.amount) || 0) <= 0) return 'Deficit';
-  return (cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL') ? 'Eligible' : 'Non-eligible';
+  return cut?.patientPaymentStatus === 'PAID' ? 'Eligible' : 'Non-eligible';
 };
 
 // A cancelled commission is not part of any payout figure. Appointment-lifecycle
@@ -63,7 +63,7 @@ const groupCutsByPartner = (cuts) => {
     } else {
       g.unpaid += amt;
       if (amt > 0) {
-        const patientPaid = cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL';
+        const patientPaid = cut?.patientPaymentStatus === 'PAID';
         if (patientPaid) g.eligible += amt; else g.awaiting += amt;
       }
     }
@@ -200,25 +200,21 @@ const ReferralHub = ({
   // refreshes whenever the page reloads its finance data (e.g. after a payout).
   const referralStats = useMemo(() => {
     const cuts = (presentCuts || []).filter(c => !isCancelledCut(c));
-    // A commission is ELIGIBLE to pay out once the patient has paid anything
-    // (full PAID or part PARTIAL); otherwise it's AWAITING the patient's payment
-    // and not yet payable. Carried deficits (amount ≤ 0) aren't a payable.
-    const received = (c) => c?.patientPaymentStatus === 'PAID' || c?.patientPaymentStatus === 'PARTIAL';
-    let total = 0, paid = 0, unpaid = 0, eligibleToPay = 0, awaitingPatient = 0, eligiblePartial = 0;
+    // A commission is ELIGIBLE to pay out once the patient has paid in full;
+    // otherwise (nothing or part paid) it's AWAITING the patient's payment.
+    // Carried deficits (amount ≤ 0) aren't a payable.
+    const received = (c) => c?.patientPaymentStatus === 'PAID';
+    let total = 0, paid = 0, unpaid = 0, eligibleToPay = 0, awaitingPatient = 0;
     cuts.forEach(c => {
       const amt = Number(c?.amount) || 0;
       total += amt;
       if (c.status === 'PAID') { paid += amt; return; }
       unpaid += amt;
       if (amt <= 0) return;
-      if (received(c)) {
-        eligibleToPay += amt;
-        if (c?.patientPaymentStatus === 'PARTIAL') eligiblePartial += amt;
-      } else {
-        awaitingPatient += amt;
-      }
+      if (received(c)) eligibleToPay += amt;
+      else awaitingPatient += amt;
     });
-    return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
+    return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient };
   }, [presentCuts]);
 
   const [settlementFilter, setSettlementFilter] = useState(['ALL']);
@@ -350,12 +346,10 @@ const ReferralHub = ({
     });
   };
 
-  // A referrer commission becomes payable as soon as the patient has paid
-  // ANYTHING towards their invoice — full (PAID) or part (PARTIAL). We only keep
-  // the block when no payment has been received yet, so collecting at the
-  // Revenue Hub immediately unblocks the payout here.
-  const isPatientPaymentReceived = (cut) =>
-    cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL';
+  // A referrer commission becomes payable once the patient has paid the bill in
+  // full (the server enforces the same rule). Settling the bill at the Revenue Hub
+  // unblocks the payout here.
+  const isPatientPaymentReceived = (cut) => cut?.patientPaymentStatus === 'PAID';
 
   // Only cuts that are genuinely eligible for bulk mark-as-paid drive "Select All".
   // Criteria must mirror openBulkPaidConfirm exactly so count/total in the popup
@@ -1077,7 +1071,7 @@ const ReferralHub = ({
              <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>READY TO PAY</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e3a8a' }}>₹{referralStats.eligibleToPay.toLocaleString()}</div>
              <div style={{ fontSize: '9px', fontWeight: 700, color: '#60a5fa', marginTop: '6px', lineHeight: 1.4 }}>
-               Patient has paid{referralStats.eligiblePartial > 0 ? ` · includes ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
+               Patient has paid in full
              </div>
           </div>
 
