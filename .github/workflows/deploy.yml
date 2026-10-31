@@ -4,7 +4,7 @@
 #
 # STAGES:
 #   Stage 1 — Build          npm ci + vite build → uploads dist/ artifact
-#   Stage 2 — Deploy Dev     scp dist/ to VM + nginx reload  (develop branch)
+#   Stage 2 — Deploy Dev     scp dist/ to VM + Caddy container on :85  (develop branch)
 #   Stage 3 — Electron       builds Windows .exe installer   (develop + main)
 #   Stage 4 — Deploy Prod    scp dist/ to Prod VM            (main + approval)
 #
@@ -209,7 +209,10 @@ jobs:
           target: "/var/www/easyrad"
           strip_components: 1
 
-      - name: Reload nginx
+      # Nothing on the VM ever served /var/www/easyrad (no nginx site), so :85 refused connections.
+      # A Caddy container on the host network serves it instead, same rules as the Prod image's Caddyfile;
+      # admin is off because the VM's own Caddy already holds localhost:2019.
+      - name: Serve on :85 (Caddy container)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEV_SSH_HOST }}
@@ -218,14 +221,51 @@ jobs:
           port: 22
           command_timeout: 10m
           script: |
-            nginx -s reload 2>/dev/null || systemctl reload nginx 2>/dev/null || true
+            set -e
+            mkdir -p /opt/easyrad
+            cat > /opt/easyrad/Caddyfile <<'CADDY'
+            {
+                admin off
+            }
+            :85 {
+                root * /usr/share/caddy
+                handle /api/* {
+                    reverse_proxy http://127.0.0.1:5000 {
+                        flush_interval -1
+                    }
+                }
+                handle {
+                    try_files {path} /index.html
+                    file_server
+                }
+                header {
+                    Cross-Origin-Embedder-Policy "require-corp"
+                    Cross-Origin-Opener-Policy "same-origin"
+                    X-Frame-Options "SAMEORIGIN"
+                    X-Content-Type-Options "nosniff"
+                }
+                @static {
+                    file
+                    path *.js *.css *.png *.jpg *.ico *.woff2 *.svg
+                }
+                header @static Cache-Control "public, immutable, max-age=31536000"
+            }
+            CADDY
+            docker rm -f easyrad-web-dev 2>/dev/null || true
+            docker run -d --name easyrad-web-dev --restart unless-stopped --network host \
+              -v /var/www/easyrad:/usr/share/caddy:ro \
+              -v /opt/easyrad/Caddyfile:/etc/caddy/Caddyfile:ro \
+              caddy:2-alpine
 
       - name: Health check
         run: |
-          sleep 3
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.DEV_SSH_HOST }}:85/ 2>/dev/null || echo "000")
+          for i in 1 2 3 4 5 6; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.DEV_SSH_HOST }}:85/ || true)
+            [ "$STATUS" = "200" ] && break
+            sleep 5
+          done
           echo "Health check: HTTP $STATUS"
-          [ "$STATUS" = "200" ] && echo "✅ EasyRad is up" || echo "⚠️  Got HTTP $STATUS — check nginx on the VM"
+          [ "$STATUS" = "200" ] && echo "✅ EasyRad is up" || { echo "❌ Got HTTP $STATUS on :85"; exit 1; }
 
       - name: Write deploy summary
         if: always()
