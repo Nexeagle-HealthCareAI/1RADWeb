@@ -37,6 +37,7 @@ import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
 import DayBookHub from '../components/Billing/DayBookHub';
+import CreditNotesHub from '../components/Billing/CreditNotesHub';
 import FinanceManager from '../components/FinanceManager';
 import Pagination from '../components/Pagination';
 import PaymentSuccessModal from '../components/Billing/PaymentSuccessModal';
@@ -748,6 +749,7 @@ export default function BillingPage() {
     { id: 'REFERRAL_CUTS', label: 'Incentives',  icon: '🤝' },
     { id: 'EXPENSES',      label: 'Expenses',    icon: '📋' },
     { id: 'DAYBOOK',       label: 'Day book',    icon: '🧾' },
+    { id: 'CREDIT_NOTES',  label: 'Credit notes', icon: '↩️' },
     { id: 'SERVICES',      label: 'Services',    icon: '📊' },
     { id: 'FINANCE',       label: 'Pricing',     icon: '⚙️' },
     { id: 'ANALYTICS',     label: 'Analytics',   icon: '📈' },
@@ -974,6 +976,10 @@ export default function BillingPage() {
 
       {billingViewMode === 'DAYBOOK' && (
         <DayBookHub isMobile={isMobile} isOnline={isOnline} />
+      )}
+
+      {billingViewMode === 'CREDIT_NOTES' && (
+        <CreditNotesHub isMobile={isMobile} isOnline={isOnline} activeCenter={activeCenter} taxProfile={taxProfile} />
       )}
 
       {billingViewMode === 'ANALYTICS' && matrix && (

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
+import { istTodayYmd, useIstToday } from '../utils/istClock';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import apiClient from '../api/apiClient';
@@ -35,16 +36,9 @@ import { syncNow } from '../sync/SyncEngine';
 // --- CONSTANTS ---
 
 const MODALITIES = ['ULTRASOUND', 'X-RAY', 'CT', 'MRI', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
-// TODAY is now calculated dynamically within the component if needed, 
-// but we'll keep a base constant for initial state.
-const getTodayString = () => new Date().toLocaleDateString('en-CA');
-const TODAY = getTodayString();
-const getYesterdayString = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toLocaleDateString('en-CA');
-};
-const YESTERDAY = getYesterdayString();
+// Today in India (not the browser's zone). TODAY / YESTERDAY themselves live in
+// the component (useIstToday) so a board left open overnight rolls to the new day.
+const getTodayString = () => istTodayYmd();
 // Pure YYYY-MM-DD arithmetic (no clock), used to window the paid-invoice lookup.
 const shiftIsoDate = (isoDate, days) => {
   const d = new Date(`${isoDate}T00:00:00Z`);
@@ -118,6 +112,7 @@ export default function AppointmentBoard() {
   // shared OverdueProvider so the row pulse mirrors the bell exactly.
   useTickClock();
   const { isOverdue } = useOverdue();
+  const { today: TODAY, yesterday: YESTERDAY } = useIstToday();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 768;
   const isTablet = windowWidth >= 768 && windowWidth < 1024;
@@ -180,6 +175,16 @@ export default function AppointmentBoard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
   const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL', notArrived: false });
+  // Midnight in India: anything still pointing at the old today / yesterday moves on.
+  const prevTodayRef = useRef(TODAY);
+  useEffect(() => {
+    const prev = prevTodayRef.current;
+    if (prev === TODAY) return;
+    prevTodayRef.current = TODAY;
+    const prevYesterday = shiftIsoDate(prev, -1);
+    setFilters(f => (f.date === prev ? { ...f, date: TODAY } : f));
+    setPastDateRange(r => (r.start === prevYesterday && r.end === prevYesterday ? { start: YESTERDAY, end: YESTERDAY } : r));
+  }, [TODAY, YESTERDAY]);
   const [expandedRow, setExpandedRow] = useState(null);
 
 
@@ -785,7 +790,7 @@ export default function AppointmentBoard() {
       range = { startIso: pastDateRange.start, endIso: pastDateRange.end };
     }
     return { mode: 'past', ...range, status: filters.status };
-  }, [activeTab, filters.date, filters.status, archiveFilterMode, pastDateRange.start, pastDateRange.end]);
+  }, [activeTab, filters.date, filters.status, archiveFilterMode, pastDateRange.start, pastDateRange.end, YESTERDAY]);
 
   const {
     rows: liveRows,
@@ -944,7 +949,7 @@ export default function AppointmentBoard() {
         return true;
       }
     });
-  }, [appointments, activeTab, pastDateRange, archiveFilterMode]);
+  }, [appointments, activeTab, pastDateRange, archiveFilterMode, TODAY, YESTERDAY]);
 
   const filteredAppointments = useMemo(() => {
     return appointmentsForTab.filter(app => {

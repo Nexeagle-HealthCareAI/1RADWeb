@@ -29,6 +29,7 @@
 // boards can use it directly in useMemo/useEffect dependencies.
 
 import { liveAwareInterval, onLive, LIVE_EVENTS } from '../live/liveUpdates';
+import { utcMs, visitMs } from '../utils/istClock';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import apiClient from '../api/apiClient';
 
@@ -54,14 +55,9 @@ const addDaysYmd = (ymd, days) => {
   return d.toISOString().slice(0, 10);
 };
 const istDayStartMs = (ymd) => new Date(`${ymd}T00:00:00+05:30`).getTime();
-// Server timestamps arrive without a zone designator; they are UTC instants.
-const toMs = (iso) => {
-  if (!iso) return 0;
-  const s = String(iso);
-  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s);
-  const t = new Date(hasTz ? s : `${s}Z`).getTime();
-  return Number.isNaN(t) ? 0 : t;
-};
+// Audit stamps (updatedAt…) arrive without a zone designator and are UTC
+// instants; visit times (dateTime) are India clock time (review A2).
+const toMs = utcMs;
 
 // Server query params for a mode + the matching client-side membership test
 // (kept so rows merged in from elsewhere, or that age out between full
@@ -76,7 +72,7 @@ function buildWindow({ mode, dateIso, startIso, endIso }) {
     const hi = lo + 86_400_000;
     return {
       params: { startDate: dateIso, endDate: dateIso },
-      includes: (r) => { const t = toMs(r.dateTime); return t >= lo && t < hi; },
+      includes: (r) => { const t = visitMs(r.dateTime); return t >= lo && t < hi; },
     };
   }
   if (mode === 'future') {
@@ -84,7 +80,7 @@ function buildWindow({ mode, dateIso, startIso, endIso }) {
     const lo = istDayStartMs(tomorrow);
     return {
       params: { startDate: tomorrow },
-      includes: (r) => toMs(r.dateTime) >= lo,
+      includes: (r) => visitMs(r.dateTime) >= lo,
     };
   }
   if (mode === 'past') {
@@ -94,7 +90,7 @@ function buildWindow({ mode, dateIso, startIso, endIso }) {
     const hi = istDayStartMs(endYmd) + 86_400_000;
     return {
       params: { startDate: startYmd, endDate: endYmd },
-      includes: (r) => { const t = toMs(r.dateTime); return t >= lo && t < hi; },
+      includes: (r) => { const t = visitMs(r.dateTime); return t >= lo && t < hi; },
     };
   }
   // 'all'
@@ -102,7 +98,7 @@ function buildWindow({ mode, dateIso, startIso, endIso }) {
   const recentFrom = istDayStartMs(recentFromYmd);
   return {
     params: { activeSince: recentFromYmd },
-    includes: (r) => toMs(r.dateTime) >= recentFrom
+    includes: (r) => visitMs(r.dateTime) >= recentFrom
       || !FINALIZED_STATUSES.has(String(r.status || '').toUpperCase()),
   };
 }
@@ -322,7 +318,7 @@ export default function useLiveAppointments({
       const tA = a.tokenNo || 0;
       const tB = b.tokenNo || 0;
       if (tA !== tB) return tB - tA;
-      return toMs(b.dateTime) - toMs(a.dateTime);
+      return visitMs(b.dateTime) - visitMs(a.dateTime);
     });
     return out;
     // `version` is the change signal for the ref-held map.

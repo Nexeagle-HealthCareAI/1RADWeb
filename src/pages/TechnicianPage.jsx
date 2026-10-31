@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef, useContext } from 'react';
+import { istTodayYmd } from '../utils/istClock';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
@@ -40,7 +41,7 @@ const PRIORITY_META = {
 // sort so the queue looks the same wherever it shows up.
 const PRIORITY_RANK = { 'STAT': 0, 'URGENT': 1, 'ROUTINE': 2 };
 
-const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local time
+const TODAY = istTodayYmd(); // today in India (YYYY-MM-DD)
 
 export default function TechnicianPage() {
   const { activeCenter } = useContext(AuthContext);
@@ -131,7 +132,7 @@ export default function TechnicianPage() {
       // Real priority comes from the record; fall back to EMERGENCY-type for
       // legacy rows that pre-date the Priority column.
       priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
-      isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
+      isToday: a.dateTime ? String(a.dateTime).slice(0, 10) === TODAY : false, // dateTime is India clock time
     })), [liveRows]);
 
   // Manual refresh (toolbar button + post-upload nudge): pull what changed now.

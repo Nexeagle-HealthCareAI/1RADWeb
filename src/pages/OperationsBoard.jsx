@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx-js-style';
+import { useIstToday } from '../utils/istClock';
 import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
 import { isPatientArrived } from '../utils/arrival';
@@ -89,7 +90,17 @@ export default function OperationsBoard() {
   const [toasts, setToasts] = useState([]);
 
   // Selected date matrix - defaults to today
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  // Today in India, rolling over at IST midnight (review A3) — a UTC date read as
+  // "yesterday" until 5:30 am.
+  const { today: istToday } = useIstToday();
+  const [selectedDate, setSelectedDate] = useState(istToday);
+  const prevIstTodayRef = React.useRef(istToday);
+  useEffect(() => {
+    const prev = prevIstTodayRef.current;
+    if (prev === istToday) return;
+    prevIstTodayRef.current = istToday;
+    setSelectedDate(d => (d === prev ? istToday : d));
+  }, [istToday]);
 
   // Modal override states
   const [selectedItem, setSelectedItem] = useState(null);
@@ -1083,7 +1094,7 @@ export default function OperationsBoard() {
                 style={{ background: 'none', border: 'none', color: '#0f172a', fontSize: '12px', fontWeight: 950, outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
               />
               <button onClick={() => shiftDate(1)} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontWeight: 950, fontSize: '12px' }}>▶</button>
-              <button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', fontSize: '10px', fontWeight: 950, padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', letterSpacing: '0.5px' }}>TODAY</button>
+              <button onClick={() => setSelectedDate(istToday)} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', fontSize: '10px', fontWeight: 950, padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', letterSpacing: '0.5px' }}>TODAY</button>
             </div>
             <button className="appt-new-mission-btn" onClick={fetchAppointments}>↺ Refresh</button>
             <button

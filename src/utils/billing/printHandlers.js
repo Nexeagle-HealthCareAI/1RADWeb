@@ -595,3 +595,76 @@ export const printThermalSlip = async (inv, { activeCenter, ownerDetails, notify
     </html>
   `);
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Credit note / refund voucher (review B6/B10) — A4
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Prints a credit note (bill value lowered after payment) or a refund voucher
+ * (money returned, bill unchanged). `cn` is a row from GET /finance/credit-notes.
+ */
+export const printCreditNote = (cn, { activeCenter, taxProfile } = {}) => {
+  const isCn = cn.kind === 'CREDIT_NOTE';
+  const title = isCn ? 'Credit Note' : 'Refund Voucher';
+  const centre = (activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase();
+  const tax = Number(cn.taxAmount) || 0;
+  const half = Math.round((tax / 2) * 100) / 100;
+  const row = (label, value, strong = false) =>
+    `<tr><td style="padding:8px 0;color:#475569;">${esc(label)}</td><td style="padding:8px 0;text-align:right;${strong ? 'font-weight:900;font-size:15px;color:#0f172a;' : 'font-weight:700;'}">${value}</td></tr>`;
+  ghostPrint(`
+    <html><head><title>${esc(title)} ${esc(cn.number)}</title>
+      <style>
+        @page { size: A4; margin: 18mm; }
+        body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; font-size: 12px; }
+        h1 { font-size: 20px; margin: 0; letter-spacing: .5px; }
+        .doc { font-size: 13px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #0f52ba; }
+        table { width: 100%; border-collapse: collapse; }
+        .box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin-top: 16px; }
+        .muted { color: #64748b; }
+      </style></head>
+      <body>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:12px;">
+          <div>
+            <h1>${esc(centre)}</h1>
+            <p class="muted" style="margin:4px 0;">${esc(taxProfile?.hospitalAddress || activeCenter?.address || '')}</p>
+            ${taxHeaderHtml(taxProfile)}
+          </div>
+          <div style="text-align:right;">
+            <div class="doc">${esc(title)}</div>
+            <div style="font-size:15px;font-weight:900;margin-top:6px;">${esc(cn.number)}</div>
+            <div class="muted">Date: ${esc(istDate(cn.createdAt))}</div>
+          </div>
+        </div>
+
+        <div class="box">
+          <table>
+            ${row('Patient', esc(cn.patientName || '—'))}
+            ${row('Against bill', `${esc(cn.invoiceNumber)} dated ${esc(istDate(cn.invoiceDate))}`)}
+            ${isCn ? row('Bill value', `${rupees(cn.billTotalBefore)} → ${rupees(cn.billTotalAfter)}`) : ''}
+            ${row('Reason', esc(cn.reason))}
+          </table>
+        </div>
+
+        <div class="box">
+          <table>
+            ${isCn && tax > 0 ? row('Taxable value', rupees(cn.taxableValue)) : ''}
+            ${isCn && tax > 0 ? row('CGST', rupees(half)) : ''}
+            ${isCn && tax > 0 ? row('SGST', rupees(tax - half)) : ''}
+            ${row(isCn ? 'Credit note value' : 'Amount returned', rupees(cn.amount), true)}
+            ${isCn ? row('Money returned', Number(cn.refundedAmount) > 0 ? `${rupees(cn.refundedAmount)}${cn.refundModes ? ` (${esc(cn.refundModes)})` : ''}` : 'None — lowered the balance due') : ''}
+            ${!isCn && cn.refundModes ? row('Returned by', esc(cn.refundModes)) : ''}
+          </table>
+          <p class="muted" style="margin:10px 0 0;">${esc(amountInWords(cn.amount))}</p>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;margin-top:48px;">
+          <div class="muted">${cn.issuedBy ? `Issued by ${esc(cn.issuedBy)}` : ''}</div>
+          <div style="text-align:center;"><div style="border-top:1px solid #94a3b8;width:180px;padding-top:6px;" class="muted">Authorised signatory</div></div>
+        </div>
+        <p class="muted" style="margin-top:30px;font-size:10px;">${isCn
+          ? 'Issued under section 34 of the CGST Act for the reduction in value of the bill named above.'
+          : 'Money returned on the bill named above; the bill’s value is unchanged.'}</p>
+      </body></html>
+  `);
+};
