@@ -595,20 +595,26 @@ function ProfileButton({ id, token, data, setData }) {
     setErr(''); setSaved(false); setOpen(true);
   };
 
+  const [contactPending, setContactPending] = useState(false);
+
   const save = async () => {
     setSaving(true); setErr('');
     try {
-      await apiClient.put(`/public/referral/${id}/profile`, {
+      const res = await apiClient.put(`/public/referral/${id}/profile`, {
         name: form.name, contact: form.contact, email: form.email,
         location: form.location, specialty: form.specialty, degree: form.degree,
       }, { params: token ? { token } : undefined });
+      // A new mobile or email is confirmed by the centre before it is used, so
+      // the portal keeps showing the current ones until then. Blank fields
+      // leave what the centre holds.
+      const contactPending = !!res?.data?.contactChangePending;
       setData(prev => ({
         ...prev,
-        doctorName: form.name.trim() || prev.doctorName, // never blank the name
-        doctorContact: form.contact.replace(/\D/g, '') || null,
-        doctorEmail: form.email.trim() || null,
-        location: form.location.trim() || null, specialty: form.specialty.trim() || null, degree: form.degree.trim() || null,
+        location: form.location.trim() || prev.location,
+        specialty: form.specialty.trim() || prev.specialty,
+        degree: form.degree.trim() || prev.degree,
       }));
+      setContactPending(contactPending);
       setSaved(true);
     } catch (e) {
       setErr(e?.response?.data?.error || 'Could not save. Please try again.');
@@ -673,7 +679,11 @@ function ProfileButton({ id, token, data, setData }) {
                 <div className="nxpf-success">
                   <div className="nxpf-check">✓</div>
                   <div className="nxpf-success-t">Profile updated</div>
-                  <div className="nxpf-success-s">Your details are now up to date.</div>
+                  <div className="nxpf-success-s">
+                    {contactPending
+                      ? `Your new mobile or email will be used once ${data.centreName || 'the centre'} confirms it. Until then, links keep going to your current one.`
+                      : 'Your details are now up to date.'}
+                  </div>
                   <button onClick={() => setOpen(false)} className="nxpf-btn-primary" style={{ flex: 'unset', marginTop: '18px', minWidth: '150px' }}>Done</button>
                 </div>
               ) : (

@@ -21,7 +21,7 @@
  * surfaces an error immediately instead of being queued for later.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import apiClient from '../../api/apiClient'; // Retained for /approvals
 import { applyDiscount, collectPayment } from '../../api/billing/paymentApi';
 import { generateInvoice, deleteInvoice as apiDeleteInvoice, fetchInvoices, fetchPendingBillables } from '../../api/billing/invoiceApi';
@@ -83,6 +83,9 @@ export const useInvoiceActions = ({
   newInvoiceData,
   setNewInvoiceData,
 }) => {
+  // Review B1: one payment attempt per drawer opening — the idempotency key and the
+  // bill version are taken when the drawer opens, not on each click.
+  const openSessionRef = useRef(null);
   const { verifyFresh } = useVerifiedBeforeSubmit(isOnline);
 
   // Shared by every money-affecting invoice submit below: re-verify against
@@ -133,6 +136,7 @@ export const useInvoiceActions = ({
 
   // ── Open invoice drawer ──────────────────────────────────────────────────────
   const handleOpenInvoice = useCallback((inv) => {
+    openSessionRef.current = { invoiceId: inv?.invoiceId, key: crypto.randomUUID() };
     setSelectedInvoice({ ...inv });
     setIsInvoiceDrawerOpen(true);
   }, [setSelectedInvoice, setIsInvoiceDrawerOpen]);
@@ -178,6 +182,9 @@ export const useInvoiceActions = ({
       deficitReason:       meta.deficitReason || '',
       absorbExcessToCentre: !!meta.absorbToCentre,
       extraCharges:        meta.additionalChargesReason ? JSON.parse(meta.additionalChargesReason) : [],
+      // Review B1: the version of the bill just re-verified above. The server
+      // refuses the payment if the bill changed in between.
+      rowVersion:          invoice.rowVersion ?? null,
     };
 
     if (!isOnline) {
@@ -185,7 +192,12 @@ export const useInvoiceActions = ({
       return;
     }
 
-    const idemKey = crypto.randomUUID();
+    // Review B1: one idempotency key per drawer opening, not per click, so a
+    // double-click or a network retry is recognised as the same payment.
+    if (openSessionRef.current?.invoiceId !== invoice.invoiceId) {
+      openSessionRef.current = { invoiceId: invoice.invoiceId, key: crypto.randomUUID() };
+    }
+    const idemKey = openSessionRef.current.key;
     try {
       console.log('[FINANCE] Committing settlement:', payload);
 
@@ -195,8 +207,12 @@ export const useInvoiceActions = ({
       notifyFinanceChanged();
       refreshAllFinancialData();
       setPaymentSuccess({ amount: paymentAmount, method: paymentMethod, patientName: invoice.patientName, invoiceId: invoice.displayId, offline: false });
+      openSessionRef.current = null;
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
+      // The server answered (refused): the next attempt is a new request. With no
+      // answer at all, keep the key so a retry can't record the payment twice.
+      if (err.response) openSessionRef.current = { invoiceId: invoice.invoiceId, key: crypto.randomUUID() };
       // A real server rejection (e.g. "already settled", a stale invoice
       // total) used to be swallowed here — the drawer just sat there with
       // no feedback, which reads as "nothing happened" and invites a

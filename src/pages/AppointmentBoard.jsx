@@ -2005,6 +2005,10 @@ export default function AppointmentBoard() {
         block: editingAppointment.block || '',
         district: editingAppointment.district || '',
         sourceOfInfo: editingAppointment.sourceOfInfo || '',
+        // Review A7: the version of the visit this form was opened on. The server
+        // refuses the edit (409) if someone changed the visit in the meantime,
+        // instead of silently undoing their change.
+        rowVersion: editingAppointment.rowVersion || null,
     };
     try {
       const editResp = await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, editBody);
@@ -2094,6 +2098,11 @@ export default function AppointmentBoard() {
         || error?.response?.data?.message
         || (typeof error?.response?.data === 'string' ? error.response.data : null)
         || error?.message;
+      if (error?.response?.status === 409) {
+        showNotif('error', 'VISIT CHANGED', detail
+          || 'Someone else changed this visit after you opened it. Close and reopen it to see their changes, then make yours again.');
+        return;
+      }
       showNotif('error', 'UPDATE FAILED', detail
         ? `Could not update the appointment: ${detail}`
         : 'Could not update the appointment. Please check your connection and try again.');

@@ -25,7 +25,18 @@ const TYPE_META = {
   MARK_FREE:          { label: 'Free test',               icon: '🎁', color: '#0d9488', bg: '#f0fdfa' },
   UNPAY_COMMISSION:   { label: 'Revert paid commission',  icon: '↩️', color: '#7c3aed', bg: '#f5f3ff' },
   EDIT_SERVICES:      { label: 'Edit services (paid)',    icon: '🩺', color: '#b45309', bg: '#fffbeb' },
+  EDIT_COMMISSION:    { label: 'Edit commission',         icon: '🧾', color: '#7c3aed', bg: '#f5f3ff' },
+  REFERRER_CONTACT:   { label: 'Referrer contact change', icon: '📇', color: '#0369a1', bg: '#f0f9ff' },
 };
+
+// Approvals that can return money to the patient (review B6). The approver says how.
+const REFUNDING_TYPES = new Set(['CANCEL_APPOINTMENT', 'MARK_FREE', 'EDIT_PAYMENT', 'EDIT_SERVICES']);
+const REFUND_MODES = [
+  { id: 'ADVANCE', label: "Patient's advance" },
+  { id: 'CASH', label: 'Cash' },
+  { id: 'UPI', label: 'UPI' },
+  { id: 'CARD', label: 'Card' },
+];
 
 const STATUS_META = {
   PENDING:  { label: 'Pending',  color: '#b45309', bg: '#fffbeb', dot: '#f59e0b' },
@@ -163,6 +174,7 @@ export default function ApprovalsPage() {
   const [dateFilter, setDateFilter] = useState('ALL'); // ALL | TODAY | YESTERDAY | THIS_MONTH | 'YYYY-MM'
   const [page, setPage] = useState(1);
   const [approveModal, setApproveModal] = useState({ open: false, row: null, note: '' });
+  const [approveRefundMode, setApproveRefundMode] = useState('ADVANCE');
   const PAGE_SIZE = 6;
 
   const load = useCallback(async () => {
@@ -258,7 +270,11 @@ export default function ApprovalsPage() {
     const note = (approveModal.note || '').trim();
     setBusyId(row.id);
     try {
-      await apiClient.post(`/approvals/${row.id}/review`, { approve: true, note });
+      await apiClient.post(`/approvals/${row.id}/review`, {
+        approve: true, note,
+        refundMode: REFUNDING_TYPES.has(row.type) ? approveRefundMode : undefined,
+      });
+      setApproveRefundMode('ADVANCE');
       notifyToast('Approved ✓  The change has been applied.', 'success');
       celebrate();
       setApproveModal({ open: false, row: null, note: '' });
@@ -630,6 +646,27 @@ export default function ApprovalsPage() {
                 </button>
               ))}
             </div>
+            {REFUNDING_TYPES.has(approveModal.row?.type) && (
+              <div style={{ margin: '10px 0' }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                  If money is returned to the patient, return it as:
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {REFUND_MODES.map(m => (
+                    <button key={m.id} type="button" onClick={() => setApproveRefundMode(m.id)}
+                      style={{ padding: '6px 11px', borderRadius: '999px', border: '1px solid', fontSize: '11px', fontWeight: 800, cursor: 'pointer',
+                        borderColor: approveRefundMode === m.id ? '#0f52ba' : '#e2e8f0',
+                        background: approveRefundMode === m.id ? '#eff6ff' : '#f8fafc',
+                        color: approveRefundMode === m.id ? '#0f52ba' : '#475569' }}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '6px' }}>
+                  Anything paid from the patient's advance always goes back to the advance.
+                </div>
+              </div>
+            )}
             <textarea
               value={approveModal.note}
               onChange={(e) => setApproveModal({ ...approveModal, note: e.target.value })}
