@@ -4,7 +4,7 @@ import apiClient from '../../api/apiClient';
 import { AuthContext } from '../../auth/AuthContext';
 import useOffline from '../../hooks/useOffline';
 import useLiveAppointments from '../../hooks/useLiveAppointments';
-import { useIstToday } from '../../utils/istClock';
+import { useIstToday, shiftYmd } from '../../utils/istClock';
 import { visitStage, STAGE_COLORS, stageLabel } from '../../utils/visitStage';
 import { formatPatientAge } from '../../utils/patientAge';
 import { formatToken } from '../../utils/tokenFormat';
@@ -17,16 +17,25 @@ import { C, FONT, inr } from '../../components/saral/tokens';
 import { useHeldAction, useToast, useViewport } from '../../components/saral/hooks';
 import BookingSheet from './BookingSheet';
 import PaymentSheet from './PaymentSheet';
+import EditSheet from './EditSheet';
+import ReferrerSheet from './ReferrerSheet';
+import CancelApprovalSheet from './CancelApprovalSheet';
 
 /**
  * Front desk — today's patients, one clear next step per patient (UI review, round 2).
  * Every action has a word on it; "Mark arrived" is held for a few seconds with Undo
  * instead of an "Are you sure?" pop-up (the server cannot move a visit back to
  * "booked", so the request is only sent once the Undo time is over).
- * Editing, cancelling and refunds stay on the full appointment list.
+ * Edit, Change who sent and Cancel use the same server rules as the full
+ * appointment list (refund choice, admin approval for paid visits, 409 when the
+ * visit changed meanwhile). The full list stays available while this is tested.
  */
 
-const FILTERS = ['all', 'notArrived', 'arrived', 'inScan', 'waitingReport', 'reportReady', 'given'];
+const FILTERS = ['all', 'notArrived', 'arrived', 'inScan', 'waitingReport', 'reportReady', 'given', 'cancelled'];
+// Same rules as the full list: a cancelled visit can't be edited; a reported or
+// given visit can't be cancelled (the server refuses both).
+const canEdit = (v) => String(v.status || '').toUpperCase() !== 'CANCELLED';
+const canCancel = (v) => !['CANCELLED', 'DELIVERED', 'REPORTED', 'REPORTING'].includes(String(v.status || '').toUpperCase());
 const JOURNEY = ['notArrived', 'arrived', 'inScan', 'waitingReport', 'reportReady', 'given'];
 
 const istTime = (iso) => {
@@ -74,7 +83,10 @@ export default function FrontDeskPage() {
   const { activeCenter } = React.useContext(AuthContext);
   const { isOnline } = useOffline();
   const { today } = useIstToday();
-  const { rows, loading, refresh, reload, patchRow, mergeRows } = useLiveAppointments({ mode: 'today', dateIso: today });
+  const [pickedDay, setPickedDay] = React.useState(null); // null = follow today
+  const day = pickedDay || today;
+  const isToday = day === today;
+  const { rows, loading, refresh, reload, patchRow, mergeRows } = useLiveAppointments({ mode: 'today', dateIso: day });
   const vp = useViewport();
   const toast = useToast();
   const held = useHeldAction(6000);
@@ -85,35 +97,38 @@ export default function FrontDeskPage() {
   const [paying, setPaying] = React.useState(null);
   const [dues, setDues] = React.useState({}); // appointmentId -> { total, paid, due }
   const [pending, setPending] = React.useState({}); // appointmentId -> stage shown while held
+  const [editing, setEditing] = React.useState(null);
+  const [changingRef, setChangingRef] = React.useState(null);
+  const [cancelApproval, setCancelApproval] = React.useState(null);
 
-  const loadDues = React.useCallback(() => fetchDues(today).then(m => { if (m) setDues(m); }), [today]);
+  const loadDues = React.useCallback(() => fetchDues(day).then(m => { if (m) setDues(m); }), [day]);
   React.useEffect(() => {
     let alive = true;
-    const run = () => fetchDues(today).then(m => { if (alive && m) setDues(m); });
+    const run = () => fetchDues(day).then(m => { if (alive && m) setDues(m); });
     run();
     const id = setInterval(run, 60000);
     return () => { alive = false; clearInterval(id); };
-  }, [today]);
+  }, [day]);
 
   const visits = React.useMemo(() => rows
-    .filter(a => String(a.dateTime || '').slice(0, 10) === today && String(a.status || '').toLowerCase() !== 'cancelled')
+    .filter(a => String(a.dateTime || '').slice(0, 10) === day)
     .map(a => ({ ...a, stage: pending[a.appointmentId] || visitStage(a.status, a.arrivedAt) }))
     .sort((a, b) => {
       const pa = a.priority === 'STAT' ? 0 : a.priority === 'URGENT' ? 1 : 2;
       const pb = b.priority === 'STAT' ? 0 : b.priority === 'URGENT' ? 1 : 2;
       return pa - pb || String(a.dateTime).localeCompare(String(b.dateTime));
-    }), [rows, today, pending]);
+    }), [rows, day, pending]);
 
   const counts = React.useMemo(() => {
-    const c = { all: visits.length };
-    for (const v of visits) c[v.stage] = (c[v.stage] || 0) + 1;
+    const c = { all: 0 };
+    for (const v of visits) { c[v.stage] = (c[v.stage] || 0) + 1; if (v.stage !== 'cancelled') c.all += 1; }
     return c;
   }, [visits]);
-  const dueTotal = visits.reduce((s, v) => s + (dues[v.appointmentId]?.due || 0), 0);
+  const dueTotal = visits.reduce((s, v) => s + (v.stage === 'cancelled' ? 0 : (dues[v.appointmentId]?.due || 0)), 0);
 
   const shown = React.useMemo(() => {
     const s = q.trim().toLowerCase();
-    return visits.filter(v => (filter === 'all' || v.stage === filter) && (!s
+    return visits.filter(v => ((filter === 'all' && v.stage !== 'cancelled') || v.stage === filter) && (!s
       || String(v.patientName || '').toLowerCase().includes(s)
       || String(v.mobile || '').includes(s)
       || String(v.dailyTokenNumber ?? '') === s.replace(/^0+/, '')
@@ -128,11 +143,17 @@ export default function FrontDeskPage() {
     if (!isOnline) { toast.show(t('fd.offline'), 'error'); return false; }
     try {
       const res = await apiClient.patch(`/appointments/${v.appointmentId}/status`, `"${status}"`, { headers: { 'Content-Type': 'application/json' }, suppressErrorToast: true });
-      if (res?.data?.notAllowed) { toast.show(res.data.message || t('fd.failed'), 'error'); reload(); return false; }
+      if (res?.data?.notAllowed) {
+        reload();
+        if (res.data.requiresApproval && status === 'cancelled') setCancelApproval(v);
+        else toast.show(res.data.message || t('fd.failed'), 'error');
+        return false;
+      }
       const tok = res?.data?.dailyTokenNumber;
       patchRow(v.appointmentId, a => ({ ...a, status: status.toUpperCase(), ...(status === 'confirmed' ? { arrivedAt: a.arrivedAt || new Date().toISOString() } : {}), ...(tok != null ? { dailyTokenNumber: tok } : {}) }));
       refresh();
       if (status === 'confirmed') setTimeout(loadDues, 1500); // auto-billing makes the bill on arrival
+      if (status === 'cancelled') { toast.show(t('cx.done')); loadDues(); }
       return true;
     } catch (e) {
       toast.show(e?.response?.data?.message || e?.response?.data?.error || t('fd.failed'), 'error');
@@ -149,6 +170,8 @@ export default function FrontDeskPage() {
   };
   const markArrived = (v) => holdStatus(v, 'confirmed', 'arrived', t('fd.arrivedToast', { name: v.patientName }));
   const giveReport = (v) => holdStatus(v, 'delivered', 'given', t('fd.givenToast', { name: v.patientName }));
+  const cancelVisit = (v) => holdStatus(v, 'cancelled', 'cancelled', t('cx.held', { name: v.patientName }));
+  const afterEdit = (dto) => { if (dto) mergeRows([dto]); refresh(); loadDues(); };
 
   const printToken = async (v) => {
     const clinic = { name: activeCenter?.name || activeCenter?.hospitalName || '', address: activeCenter?.address || '' };
@@ -172,14 +195,15 @@ export default function FrontDeskPage() {
       </style></head><body><h1>${esc(clinic.name)}</h1><div class="a">${esc(clinic.address)}</div><hr>
       <div class="a">TOKEN</div><div class="tk">${esc(data.token)}</div><hr>
       <p class="l"><b>${esc(data.patientName)}</b></p><p class="l">${esc(data.ageSex)} ${data.patientId ? '· ' + esc(data.patientId) : ''}</p>
-      <p class="l">${esc(data.service)}</p>${data.referredBy ? `<p class="l">Ref: ${esc(data.referredBy)}</p>` : ''}<p class="l">${esc(today.split('-').reverse().join('-'))} ${esc(data.datetime)}</p>
+      <p class="l">${esc(data.service)}</p>${data.referredBy ? `<p class="l">Ref: ${esc(data.referredBy)}</p>` : ''}<p class="l">${esc(String(v.dateTime || day).slice(0, 10).split('-').reverse().join('-'))} ${esc(data.datetime)}</p>
       <hr><div class="a">${data.footer.join('<br>')}</div></body></html>`);
   };
 
   // Main action for a visit: one button, the word says what happens.
   const primaryFor = (v) => {
     const due = dues[v.appointmentId]?.due || 0;
-    if (v.stage === 'notArrived') return { kind: 'primary', icon: 'check', text: t('fd.markArrived'), run: () => markArrived(v) };
+    if (v.stage === 'cancelled') return null;
+    if (v.stage === 'notArrived') return isToday ? { kind: 'primary', icon: 'check', text: t('fd.markArrived'), run: () => markArrived(v) } : null;
     if (v.stage === 'reportReady') return { kind: 'ok', icon: 'report', text: t('fd.giveReport'), run: () => giveReport(v) };
     if (due > 0) return { kind: 'money', icon: 'rupee', text: t('fd.collect', { amount: inr(due) }), run: () => setPaying(v) };
     return null;
@@ -190,7 +214,7 @@ export default function FrontDeskPage() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <h1 style={{ margin: 0, fontSize: vp.phone ? 24 : 28, fontWeight: 800, color: C.ink }}>{t('fd.title')}</h1>
         <div style={{ fontSize: 16, color: C.muted, marginTop: 2 }}>
-          {new Date(`${today}T12:00:00Z`).toLocaleDateString(`${document.documentElement.lang || 'en'}-IN`, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}
+          {new Date(`${day}T12:00:00Z`).toLocaleDateString(`${document.documentElement.lang || 'en'}-IN`, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}
         </div>
       </div>
       {!vp.phone && <Link to="/appointment-board" style={{ fontSize: 16, fontWeight: 700, color: C.primary, minHeight: 48, display: 'inline-flex', alignItems: 'center', padding: '0 8px' }}>{t('fd.fullBoard')}</Link>}
@@ -217,8 +241,19 @@ export default function FrontDeskPage() {
     </div>
   );
 
+  const dayChips = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      {[[shiftYmd(today, -1), t('day.yesterday')], [today, t('day.today')], [shiftYmd(today, 1), t('day.tomorrow')]].map(([d, l]) => (
+        <Chip key={d} on={day === d} onClick={() => { setPickedDay(d === today ? null : d); setSelId(null); setFilter('all'); }}>{l}</Chip>
+      ))}
+      <input type="date" value={day} aria-label={t('day.other')} onChange={e => { if (e.target.value) { setPickedDay(e.target.value === today ? null : e.target.value); setSelId(null); setFilter('all'); } }}
+        style={{ minHeight: 44, borderRadius: 999, border: `1.5px solid ${![shiftYmd(today, -1), today, shiftYmd(today, 1)].includes(day) ? C.ink : C.lineStrong}`, padding: '0 14px', fontSize: 16, fontFamily: 'inherit', background: 'white', color: C.ink }} />
+    </div>
+  );
+
   const tools = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {dayChips}
       <div style={{ position: 'relative' }}>
         <span style={{ position: 'absolute', left: 14, top: 14, color: C.muted }}><Icon name="search" size={20} /></span>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('fd.search')} aria-label={t('fd.search')} type="search"
@@ -320,12 +355,31 @@ export default function FrontDeskPage() {
           {b ? (<>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16 }}><span>{t('fd.billTotal')}</span><b>{inr(b.total)}</b></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, color: C.ok }}><span>{t('fd.paidAmt')}</span><b>{inr(b.paid)}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, color: b.due > 0 ? C.due : C.ok, fontWeight: 800 }}><span>{b.due > 0 ? t('pay.toCollect') : t('fd.paid')}</span><span>{inr(b.due)}</span></div>
+            {b.due > 0
+              ? <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, color: C.due, fontWeight: 800 }}><span>{t('pay.toCollect')}</span><span>{inr(b.due)}</span></div>
+              : <div style={{ fontSize: 17, color: C.ok, fontWeight: 800 }}>{t('pay.fullyPaid')}</div>}
           </>) : <div style={{ fontSize: 15, color: C.muted }}>{t('fd.noBill')}</div>}
           {b?.due > 0 && p?.icon !== 'rupee' && <Button kind="outlineMoney" icon="rupee" onClick={() => setPaying(v)}>{t('fd.collect', { amount: inr(b.due) })}</Button>}
         </div>
 
         {p && <Button kind={p.kind} size="lg" icon={p.icon} full onClick={p.run}>{p.text}</Button>}
+        {v.stage === 'notArrived' && !isToday && <div style={{ fontSize: 15, color: C.muted }}>{t('fd.otherDayNote')}</div>}
+        {(canEdit(v) || canCancel(v)) && (
+          <div style={{ background: 'white', border: `1px solid ${C.line}`, borderRadius: 18, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {canEdit(v) && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button kind="outline" onClick={() => setEditing(v)} style={{ flex: '1 1 160px' }}>{t('ed.edit')}</Button>
+                <Button kind="outline" onClick={() => setChangingRef(v)} style={{ flex: '1 1 160px' }}>{t('rf.change')}</Button>
+              </div>
+            )}
+            {/* Kept apart from Edit on purpose, so it is not pressed by mistake. */}
+            {canCancel(v) && (
+              <div style={{ borderTop: `1px dashed ${C.lineStrong}`, paddingTop: 12, marginTop: 4 }}>
+                <Button kind="outlineDanger" icon="close" onClick={() => cancelVisit(v)} full>{t('cx.cancel')}</Button>
+              </div>
+            )}
+          </div>
+        )}
         <Link to="/appointment-board" style={{ fontSize: 16, fontWeight: 700, color: C.primary, textAlign: 'center', padding: 8 }}>{t('fd.fullBoard')}</Link>
       </div>
     );
@@ -359,6 +413,9 @@ export default function FrontDeskPage() {
       {booking && <BookingSheet open isOnline={isOnline} onClose={() => setBooking(false)}
         onBooked={(row) => { if (row.appointmentId) apiClient.get(`/appointments/${row.appointmentId}`, { suppressErrorToast: true }).then(r => r?.data?.appointmentId && mergeRows([r.data])).catch(() => {}); refresh(); }}
         onCollect={(row) => { setBooking(false); setTimeout(() => setPaying(row), 50); }} />}
+      {editing && <EditSheet key={editing.appointmentId} visit={editing} isOnline={isOnline} onClose={() => setEditing(null)} onSaved={afterEdit} />}
+      {changingRef && <ReferrerSheet key={changingRef.appointmentId} visit={changingRef} isOnline={isOnline} onClose={() => setChangingRef(null)} onDone={() => afterEdit(null)} />}
+      {cancelApproval && <CancelApprovalSheet key={cancelApproval.appointmentId} visit={cancelApproval} onClose={() => setCancelApproval(null)} />}
       {paying && <PaymentSheet key={paying.appointmentId} visit={paying} isOnline={isOnline} onClose={() => setPaying(null)} onPaid={() => loadDues()} />}
       <UndoBar held={held.held} onUndo={held.undo} label={t('fd.undo')} bottom={vp.phone ? 96 : 24} />
       {toast.node}

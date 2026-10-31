@@ -43,6 +43,7 @@ const BTN = {
   quiet: { background: '#F9FAFB', color: C.ink, border: `1.5px solid ${C.lineStrong}` },
   ok: { background: '#15803D', color: 'white', border: 'none' },
   ghost: { background: 'transparent', color: C.primary, border: 'none' },
+  outlineDanger: { background: 'white', color: C.danger, border: `2px solid ${C.danger}` },
 };
 
 /** Button: a word always, icon optional. size: 'lg' (56) | 'md' (48). */
@@ -115,7 +116,7 @@ export function Sheet({ open, onClose, title, children, footer, wide }) {
           </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>{children}</div>
-        {footer && <div style={{ padding: '12px 16px 16px', background: 'white', borderTop: `1px solid ${C.line}`, display: 'flex', gap: 10 }}>{footer}</div>}
+        {footer && <div style={{ padding: '12px 16px 16px', background: 'white', borderTop: `1px solid ${C.line}`, display: 'grid' }}>{footer}</div>}
       </div>
     </div>
   );
