@@ -47,12 +47,3 @@ export const exportFinancials = async ({ startDate, endDate } = {}) => {
   return res.data;
 };
 
-/**
- * Legacy localStorage sync — pushes offline-saved invoices to the server.
- * @param {object} command  SyncLocalStorageInvoicesCommand payload
- * @returns {{ syncedCount: number }}
- */
-export const syncLegacyInvoices = async (command) => {
-  const res = await apiClient.post('/finance/sync', command);
-  return res.data;
-};

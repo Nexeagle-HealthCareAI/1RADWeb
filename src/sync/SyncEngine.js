@@ -246,6 +246,8 @@ function resolveRoute(item) {
     case 'PRICE_UPDATE':         return { method: 'POST',   url: '/finance/registry' };
     case 'APPROVAL_CREATE':      return { method: 'POST',   url: '/approvals' };
     case 'HOSPITAL_UPDATE':      return { method: 'PUT',    url: `/hospitals/${p.id}` };
+    case 'HOSPITAL_AUTOBILL':    return { method: 'PUT',    url: `/hospitals/${p.id}/auto-billing`,
+                                          body: { enabled: !!p.enabled } };
     case 'PERSONNEL_CREATE':     return { method: 'POST',   url: '/personnel' };
     case 'PERSONNEL_UPDATE':     return { method: 'PUT',    url: `/personnel/${p.id}` };
     case 'PERSONNEL_DELETE':     return { method: 'DELETE', url: `/personnel/${p.id}` };

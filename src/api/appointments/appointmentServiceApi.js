@@ -44,18 +44,6 @@ export const updateServiceNotes = async (appointmentId, serviceId, notes) => {
 
 // ── Radiology Workflow ────────────────────────────────────────────────────────
 
-/**
- * Update the radiology report progress / TAT stage for an appointment.
- * @param {string} appointmentId
- * @param {object} command  UpdateReportProgressCommand payload
- */
-export const updateOperationsStatus = async (appointmentId, command) => {
-  const res = await apiClient.put(
-    `/appointments/${appointmentId}/operations-status`,
-    command
-  );
-  return res.data;
-};
 
 // ── SLA / Overdue ─────────────────────────────────────────────────────────────
 

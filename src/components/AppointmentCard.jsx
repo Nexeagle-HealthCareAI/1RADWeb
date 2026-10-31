@@ -173,12 +173,16 @@ export default function AppointmentCard({
           <button type="button" className="icon-btn" onClick={() => onPrescription && onPrescription(appointment)} title="Report & Prescription">
             📄
           </button>
-          <button type="button" className="icon-btn" onClick={() => onEdit(appointment)} title="Modify Appointment">
-            ✏️
-          </button>
-          <button type="button" className="icon-btn cancel-btn" onClick={() => onCancel(appointment.id)} title="Cancel Appointment">
-            ✕
-          </button>
+          {String(appointment.status || '').toUpperCase() !== 'CANCELLED' && (
+            <button type="button" className="icon-btn" onClick={() => onEdit(appointment)} title="Modify Appointment">
+              ✏️
+            </button>
+          )}
+          {!['CANCELLED', 'DELIVERED', 'REPORTED', 'REPORTING'].includes(String(appointment.status || '').toUpperCase()) && (
+            <button type="button" className="icon-btn cancel-btn" onClick={() => onCancel(appointment.id)} title="Cancel Appointment">
+              ✕
+            </button>
+          )}
         </div>
       </div>
     </div>

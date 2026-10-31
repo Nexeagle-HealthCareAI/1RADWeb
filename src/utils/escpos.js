@@ -22,8 +22,11 @@ export class EscPos {
 
   text(s) {
     const out = [];
-    for (const ch of String(s ?? '')) {
+    // Review B11: a typed name can't carry printer control codes (ESC/GS sequences cut
+    // paper, open the drawer or switch code pages). Drop C0/C1 controls; text only.
+    for (const ch of String(s ?? '').replace(/\u20B9/g, 'Rs.')) {
       const c = ch.charCodeAt(0);
+      if (c < 0x20 || c === 0x7F || (c >= 0x80 && c < 0xA0)) { out.push(0x20); continue; }
       out.push(c < 256 ? c : 0x3F); // non-latin1 → '?'
     }
     this.chunks.push(Uint8Array.from(out));

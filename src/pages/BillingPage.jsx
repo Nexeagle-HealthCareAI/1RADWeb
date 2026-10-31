@@ -20,7 +20,7 @@ import { useArchiveData } from '../hooks/billing/useArchiveData';
 import { printA4Invoice, printReceiptSlip, printThermalSlip, ghostPrint } from '../utils/billing/printHandlers';
 import { exportToExcel } from '../utils/billing/exportHandler';
 
-import { fetchFinancialMatrix, syncLegacyInvoices } from '../api/billing/reportingApi';
+import { fetchFinancialMatrix } from '../api/billing/reportingApi';
 import { fetchRegistry as fetchRegistryApi } from '../api/billing/registryApi';
 import { fetchInvoices as fetchInvoicesApi, fetchPendingBillables as fetchPendingBillablesApi } from '../api/billing/invoiceApi';
 import { fetchExpenses as fetchExpensesApi } from '../api/billing/expenseApi';
@@ -241,7 +241,6 @@ export default function BillingPage() {
 
   // --- SYNC & FETCH ---
   const [matrix, setMatrix] = useState({ daily: [], weekly: [], monthly: [], yearly: [], modalityBreakdown: [] });
-  const [isSyncing, setIsSyncing] = useState(false);
 
 
   // Responsive layout detection
@@ -650,30 +649,6 @@ export default function BillingPage() {
     newInvoiceData, setNewInvoiceData,
   });
 
-  const handleSyncLegacyData = async () => {
-    const legacy = JSON.parse(localStorage.getItem('1rad_invoices') || '[]');
-    if (legacy.length === 0) return notify({ type: 'info', message: 'No legacy data detected in browser.' });
-    setIsSyncing(true);
-    try {
-      const payload = legacy.map(inv => ({
-        invoiceId:   inv.invoiceId,
-        patientName: inv.patientName,
-        totalAmount: inv.totalAmount,
-        status:      inv.status,
-        createdAt:   inv.createdAt,
-        items: inv.items.map(it => ({ description: it.description, amount: it.amount, quantity: it.quantity }))
-      }));
-      await syncLegacyInvoices({ invoices: payload });
-      localStorage.removeItem('1rad_invoices');
-      refreshAllFinancialData();
-      notify({ type: 'success', message: 'Sync complete: local records merged.' });
-    } catch (err) {
-      console.error('[FINANCE] Sync failed', err);
-      notify({ type: 'error', message: 'Sync failed. Please try again.' });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
   const {
     filteredInvoices,
     futureAppointments,
@@ -774,16 +749,6 @@ export default function BillingPage() {
               <span style={{ fontSize: 6 }}>●</span>
               {isOnline ? 'LIVE' : 'OFFLINE'}
             </span>
-            {localStorage.getItem('1rad_invoices') && (
-              <button
-                className="billing-android-topbar-btn"
-                onClick={handleSyncLegacyData}
-                disabled={isSyncing}
-                title="Sync local data"
-              >
-                {isSyncing ? '⟳' : '☁'}
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -812,11 +777,6 @@ export default function BillingPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div id="billing-header-actions-portal"></div>
-                {localStorage.getItem('1rad_invoices') && (
-                  <button onClick={handleSyncLegacyData} disabled={isSyncing}
-                    style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#1d4ed8', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-                  >{isSyncing ? 'Syncing...' : 'Sync Local'}</button>
-                )}
               </div>
             </div>
           </div>
