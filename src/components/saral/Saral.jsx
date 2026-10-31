@@ -122,13 +122,19 @@ export function Sheet({ open, onClose, title, children, footer, wide }) {
   );
 }
 
-export function UndoBar({ held, onUndo, label, bottom = 96 }) {
+export function UndoBar({ held, onUndo, label, bottom = 96, onNow, nowLabel }) {
   if (!held) return null;
   return (
     <div role="status" style={{ position: 'fixed', left: 16, right: 16, bottom, maxWidth: 560, margin: '0 auto', zIndex: 2147483604,
       background: C.ink, color: 'white', borderRadius: 16, padding: '10px 10px 10px 16px', display: 'flex', alignItems: 'center', gap: 10,
       boxShadow: '0 10px 30px rgba(0,0,0,0.25)', fontFamily: FONT }}>
       <div style={{ flex: 1, fontSize: 16 }}>{held.text}</div>
+      {onNow && (
+        <button type="button" onClick={onNow}
+          style={{ height: 44, padding: '0 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,0.5)', background: 'transparent', color: 'white', fontSize: 16, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>
+          {nowLabel}
+        </button>
+      )}
       <button type="button" onClick={onUndo}
         style={{ height: 44, padding: '0 18px', borderRadius: 12, border: 'none', background: '#FDE68A', color: C.ink, fontSize: 16, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer' }}>
         {label}

@@ -7,7 +7,7 @@ import { isPatientArrived } from '../../utils/arrival';
 import { istTodayYmd, shiftYmd } from '../../utils/istClock';
 import { Button, Chip, Icon, Sheet } from '../../components/saral/Saral';
 import { C, inr } from '../../components/saral/tokens';
-import { Err, Note, RefundChoice, ReasonBox } from './parts';
+import { Err, Note, RefundChoice, ReasonBox, PatientMore } from './parts';
 import { apiError, fieldStyle, isDoctorRole, labelStyle } from './fdUtil';
 
 /**
@@ -57,6 +57,8 @@ export default function EditSheet({ visit, onClose, onSaved, isOnline }) {
         setF({
           name: a.patientName || '', mobile: a.mobile || '', age: value || '', unit: unit || 'Y', gender: a.patientGender || '',
           doctor: a.doctor || '', priority: (a.priority || 'ROUTINE').toUpperCase(), date: dt.slice(0, 10),
+          village: a.village || '', block: a.block || '', district: a.district || '', address: a.address || '', sourceOfInfo: a.sourceOfInfo || '',
+          notes: a.notes || '',
         });
         setLines(getServiceLines(a).map(l => ({ id: l.id, serviceName: l.serviceName, modality: l.modality, amount: l.amount, referralCutValue: l.referralCutValue, status: l.status })));
         setPhase(String(a.status || '').toUpperCase() === 'CANCELLED' ? 'cancelled' : 'form');
@@ -99,7 +101,10 @@ export default function EditSheet({ visit, onClose, onSaved, isOnline }) {
       dateTime,
       doctor: f.doctor,
       priority: f.priority,
-      notes: full.notes ?? null, // the server writes notes as sent — keep them
+      notes: f.notes, // the server writes notes as sent
+      // Address details: null = unchanged (the server leaves it as it is); a value
+      // (even empty) = what the user typed.
+      ...Object.fromEntries(['village', 'block', 'district', 'address', 'sourceOfInfo'].map(k => [k, f[k].trim() === (full[k] || '') ? null : f[k].trim()])),
       // "Who sent" is unchanged here (Change who sent has its own action);
       // null fields mean "leave as it is" on the server.
       referredBy: full.referredBy ?? null,
@@ -127,6 +132,8 @@ export default function EditSheet({ visit, onClose, onSaved, isOnline }) {
     if ((full.patientName || '') !== f.name.trim()) out.push(t('ed.nameT', { name: f.name.trim() }));
     if ((full.mobile || '') !== f.mobile.trim()) out.push(t('ed.mobileT', { mobile: f.mobile.trim() }));
     if ((full.patientAge || '') !== buildPatientAge(f.age, f.unit) || (full.patientGender || '') !== f.gender) out.push(t('ed.ageT'));
+    if (['village', 'block', 'district', 'address', 'sourceOfInfo'].some(k => (full[k] || '') !== f[k].trim())) out.push(t('md.more').replace(/\s*\(.*\)$/, ''));
+    if ((full.notes || '') !== f.notes) out.push(t('md.notes').replace(/\s*\(.*\)$/, ''));
     if ((full.priority || 'ROUTINE').toUpperCase() !== f.priority) out.push(t('ed.prioT', { p: PRIO().find(p => p[0] === f.priority)?.[1] || f.priority }));
     return out;
   };
@@ -285,6 +292,7 @@ export default function EditSheet({ visit, onClose, onSaved, isOnline }) {
                 ))}
               </div>
             </div>
+            <PatientMore value={f} onChange={(v) => setF(v)} />
           </section>
 
           {/* Tests */}
@@ -344,6 +352,10 @@ export default function EditSheet({ visit, onClose, onSaved, isOnline }) {
                 <input type="date" value={f.date} aria-label={t('ed.date')} onChange={e => e.target.value && set('date', e.target.value)} style={{ ...fieldStyle, width: 190, fontSize: 16 }} />
               </div>
             </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>{t('md.notes')}</span>
+              <textarea value={f.notes} onChange={e => set('notes', e.target.value)} rows={2} style={{ ...fieldStyle, minHeight: 72, padding: '10px 16px', resize: 'vertical' }} />
+            </label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={labelStyle}>{t('bk.priority')}</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

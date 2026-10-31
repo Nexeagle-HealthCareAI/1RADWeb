@@ -4,7 +4,7 @@ import { t } from '../../i18n';
 import { withDoctorPrefix } from '../../utils/referrerFormat';
 import { Button, Chip, Icon, Sheet } from '../../components/saral/Saral';
 import { C } from '../../components/saral/tokens';
-import { Err, Note, ReasonBox } from './parts';
+import { Err, Note, ReasonBox, PartnerMore } from './parts';
 import { apiError, fieldStyle, labelStyle } from './fdUtil';
 
 /**
@@ -37,14 +37,19 @@ export default function ReferrerSheet({ visit, onClose, onDone, isOnline }) {
   const body = () => {
     const isSelf = pick.name.trim().toLowerCase() === 'self';
     const isOther = pick.isDoctor === false && !isSelf;
+    const m = pick.more || {};
+    const clean = (v) => String(v || '').trim() || null;
     return {
       newReferrerName: withDoctorPrefix(pick.name.trim(), pick.isDoctor),
       newReferrerContact: (pick.contact || '').trim() || null,
       newReferrerIsDoctor: pick.isDoctor !== false,
       newReferrerSupportedByDoctor: isOther ? (pick.advisedBy || '').trim() : null,
-      newReferrerEmail: null, newReferrerSpecialty: null, newReferrerDegree: null,
-      newReferrerAddress: isSelf ? null : (pick.address || '').trim() || null,
-      newReferrerSupportedSpecialty: null, newReferrerSupportedDegree: null,
+      newReferrerEmail: isSelf ? null : clean(m.email),
+      newReferrerSpecialty: (!isSelf && pick.isDoctor !== false) ? clean(m.specialty) : null,
+      newReferrerDegree: (!isSelf && pick.isDoctor !== false) ? clean(m.degree) : null,
+      newReferrerAddress: isSelf ? null : (clean(m.address) || clean(pick.address)),
+      newReferrerSupportedSpecialty: isOther ? clean(m.advSpecialty) : null,
+      newReferrerSupportedDegree: isOther ? clean(m.advDegree) : null,
     };
   };
   const newName = pick ? withDoctorPrefix(pick.name.trim(), pick.isDoctor) : '';
@@ -139,6 +144,7 @@ export default function ReferrerSheet({ visit, onClose, onDone, isOnline }) {
                 <span style={labelStyle}>{t('rf.contact')}</span>
                 <input inputMode="numeric" value={pick.contact} onChange={e => setPick({ ...pick, contact: e.target.value.replace(/[^\d+ ]/g, '') })} style={fieldStyle} />
               </label>
+              <PartnerMore value={pick.more || {}} isDoctor={pick.isDoctor} onChange={(m) => setPick({ ...pick, more: m })} />
             </div>
           )}
           <Err>{err}</Err>

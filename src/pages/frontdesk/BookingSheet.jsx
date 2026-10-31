@@ -6,6 +6,11 @@ import { withDoctorPrefix } from '../../utils/referrerFormat';
 import { istTodayYmd, shiftYmd } from '../../utils/istClock';
 import { Button, Chip, Icon, Sheet } from '../../components/saral/Saral';
 import { C, inr } from '../../components/saral/tokens';
+import { PatientMore, PartnerMore } from './parts';
+
+// Same key as the full appointment list, so a kept date works on both screens.
+const PIN_KEY = 'pinnedBookingDate';
+const readPin = () => { try { return localStorage.getItem(PIN_KEY) || ''; } catch { return ''; } };
 
 /**
  * New booking in three short steps (UI review, round 2):
@@ -27,7 +32,7 @@ const sexWord = (g) => {
   const s = String(g || '').trim().toUpperCase();
   return s === 'F' || s === 'FEMALE' ? t('bk.female') : s === 'M' || s === 'MALE' ? t('bk.male') : (g || '');
 };
-const EMPTY_NEW = { name: '', age: '', unit: 'Y', gender: 'Female' };
+const EMPTY_NEW = { name: '', age: '', unit: 'Y', gender: 'Female', village: '', block: '', district: '', address: '', sourceOfInfo: '' };
 
 function Steps({ step }) {
   const names = [t('bk.s1'), t('bk.s2'), t('bk.s3')];
@@ -68,7 +73,7 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
   const [searching, setSearching] = React.useState(pre?.mobile?.length === 10);
   const [patient, setPatient] = React.useState(null); // chosen existing patient
   const [adding, setAdding] = React.useState(!!pre && pre.mobile.length !== 10);
-  const [np, setNp] = React.useState(pre ? { name: pre.name, age: pre.age, unit: pre.unit, gender: pre.gender } : EMPTY_NEW);
+  const [np, setNp] = React.useState(pre ? { ...EMPTY_NEW, name: pre.name, age: pre.age, unit: pre.unit, gender: pre.gender } : EMPTY_NEW);
   const [registry, setRegistry] = React.useState([]);
   const [doctors, setDoctors] = React.useState([]);
   const [partners, setPartners] = React.useState([]);
@@ -78,9 +83,12 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
   const [sentBy, setSentBy] = React.useState(pre?.referrerName ? { kind: 'other', name: pre.referrerName, isDoctor: true, advisedBy: '', contact: pre.referrerContact } : { kind: 'self' }); // self | partner{p} | other{name,isDoctor,advisedBy}
   const [doctor, setDoctor] = React.useState('');
   const [priority, setPriority] = React.useState('ROUTINE');
-  const preLater = pre?.date && pre.date > istTodayYmd();
-  const [day, setDay] = React.useState(preLater ? 'other' : 'today');
-  const [otherDate, setOtherDate] = React.useState(preLater ? pre.date : '');
+  // Start date: the request's wish, else a date kept from earlier bookings, else today.
+  const [pinned, setPinned] = React.useState(() => { const d = readPin(); return d && d >= istTodayYmd() ? d : ''; });
+  const startDate = (pre?.date && pre.date > istTodayYmd()) ? pre.date : (pinned && pinned > istTodayYmd() ? pinned : '');
+  const [day, setDay] = React.useState(startDate ? (startDate === shiftYmd(istTodayYmd(), 1) ? 'tomorrow' : 'other') : 'today');
+  const [otherDate, setOtherDate] = React.useState(startDate);
+  const [notes, setNotes] = React.useState(pre?.notes || '');
   const [err, setErr] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [booked, setBooked] = React.useState(null);
@@ -181,7 +189,7 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
       if (!patientId) {
         const res = await apiClient.post('/patients', {
           fullName: np.name.trim(), mobile, age: buildPatientAge(np.age, np.unit), gender: np.gender,
-          village: '', block: '', district: '', address: '', sourceOfInfo: '',
+          village: np.village.trim(), block: np.block.trim(), district: np.district.trim(), address: np.address.trim(), sourceOfInfo: np.sourceOfInfo.trim(),
         }, { headers: { 'Idempotency-Key': keys.current.patient } });
         patientId = res?.data?.patientId;
         setPatient({ patientId, fullName: np.name.trim(), mobile, age: buildPatientAge(np.age, np.unit), gender: np.gender });
@@ -190,7 +198,8 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
 
       const ref = sentBy.kind === 'self' ? { name: 'Self', isDoctor: true, contact: '' }
         : sentBy.kind === 'partner' ? { name: sentBy.p.name, isDoctor: sentBy.p.isDoctor !== false, contact: sentBy.p.contact || '', address: sentBy.p.address || '', advisedBy: sentBy.p.supportedByDoctor || '' }
-          : { name: sentBy.name.trim(), isDoctor: sentBy.isDoctor !== false, contact: sentBy.contact || '', advisedBy: sentBy.advisedBy || '' };
+          : { name: sentBy.name.trim(), isDoctor: sentBy.isDoctor !== false, contact: sentBy.contact || '', advisedBy: sentBy.advisedBy || '', ...(sentBy.more || {}) };
+      const extra = sentBy.kind === 'other' ? (sentBy.more || {}) : {};
       const lines = tests.map(r => ({ serviceName: r.serviceName, modality: String(r.modality || '').toUpperCase(), amount: Number(r.amount) || 0, referralCutValue: Number(r.referralCutValue) || 0, serviceChargeId: r.id }));
       const payload = {
         patientId,
@@ -204,7 +213,13 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
         referredAddress: ref.address || '',
         referrerIsDoctor: ref.isDoctor,
         referrerSupportedByDoctor: ref.isDoctor ? '' : (ref.advisedBy || ''),
-        notes: pre?.notes || '',
+        // Optional partner details (only when a new person is typed in).
+        referrerSupportedSpecialty: ref.isDoctor ? '' : (extra.advSpecialty || ''),
+        referrerSupportedDegree: ref.isDoctor ? '' : (extra.advDegree || ''),
+        referrerEmail: ref.isDoctor ? (extra.email || '') : '',
+        referrerSpecialty: ref.isDoctor ? (extra.specialty || '') : '',
+        referrerDegree: ref.isDoctor ? (extra.degree || '') : '',
+        notes: notes.trim(),
         priority,
         // Fulfilling a doctor's portal request: the server marks it booked.
         bookingRequestId: pre?.requestId || undefined,
@@ -326,6 +341,7 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
                     ))}
                   </div>
                 </div>
+                <PatientMore value={np} onChange={setNp} />
               </div>
             )}
           </>)}
@@ -382,6 +398,8 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
                   {sentBy.isDoctor === false && (
                     <input value={sentBy.advisedBy} placeholder={t('bk.advisedBy')} aria-label={t('bk.advisedBy')} onChange={e => setSentBy({ ...sentBy, advisedBy: e.target.value })} style={field} />
                   )}
+                  <input inputMode="numeric" value={sentBy.contact || ''} placeholder={t('rf.contact')} aria-label={t('rf.contact')} onChange={e => setSentBy({ ...sentBy, contact: e.target.value.replace(/[^\d+ ]/g, '') })} style={field} />
+                  <PartnerMore value={sentBy.more || {}} isDoctor={sentBy.isDoctor} onChange={(m) => setSentBy({ ...sentBy, more: m })} />
                 </div>
               )}
             </div>
@@ -406,8 +424,17 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
                 <Button kind="quiet" onClick={() => setStep(1)}>{t('bk.change')}</Button>
               </div>
               {tests.map(r => (
-                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17 }}><span>{r.serviceName}</span><b>{inr(r.amount)}</b></div>
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 17 }}>
+                  <span>{r.serviceName}</span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44, padding: '0 10px', borderRadius: 12, border: `1.5px solid ${C.lineStrong}` }}>
+                    <span style={{ color: C.muted, fontWeight: 700 }}>₹</span>
+                    <input inputMode="numeric" aria-label={`${t('ed.price')} ${r.serviceName}`} value={String(r.amount ?? '')}
+                      onChange={e => { const v = e.target.value.replace(/[^\d.]/g, ''); setTests(ls => ls.map(x => (x.id === r.id ? { ...x, amount: v } : x))); }}
+                      style={{ width: 76, border: 'none', outline: 'none', fontSize: 17, fontWeight: 800, fontFamily: 'inherit', background: 'transparent', textAlign: 'right' }} />
+                  </label>
+                </div>
               ))}
+              <div style={{ fontSize: 14, color: C.muted }}>{t('bk.priceNote')}</div>
               <div style={{ borderTop: `1px dashed ${C.lineStrong}`, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <span style={{ fontSize: 17, fontWeight: 700 }}>{t('bk.total')}</span>
                 <span style={{ fontSize: 30, fontWeight: 800 }}>{inr(total)}</span>
@@ -422,7 +449,14 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
                 <Chip on={day === 'other'} onClick={() => setDay('other')}>{t('bk.pickDate')}</Chip>
                 {day === 'other' && <input type="date" min={istTodayYmd()} value={otherDate} aria-label={t('bk.pickDate')} onChange={e => setOtherDate(e.target.value)} style={{ ...field, width: 190, fontSize: 16 }} />}
               </div>
+              {dateYmd && (pinned === dateYmd
+                ? <Button kind="ghost" onClick={() => { try { localStorage.removeItem(PIN_KEY); } catch { /* ignore */ } setPinned(''); }} style={{ alignSelf: 'flex-start', whiteSpace: 'normal', height: 'auto', minHeight: 48, textAlign: 'left', padding: '6px 0' }}>{t('bk.pinned', { date: dateYmd.split('-').reverse().join('-') })} · {t('bk.unpin')}</Button>
+                : <Button kind="ghost" onClick={() => { try { localStorage.setItem(PIN_KEY, dateYmd); } catch { /* ignore */ } setPinned(dateYmd); }} style={{ alignSelf: 'flex-start', whiteSpace: 'normal', height: 'auto', minHeight: 48, textAlign: 'left', padding: '6px 0' }}>{t('bk.pin')}</Button>)}
             </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={label}>{t('md.notes')}</span>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...field, minHeight: 72, padding: '10px 16px', resize: 'vertical' }} />
+            </label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={label}>{t('bk.priority')}</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

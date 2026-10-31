@@ -24,6 +24,8 @@ import ReferrerSheet from './ReferrerSheet';
 import CancelApprovalSheet from './CancelApprovalSheet';
 import DoctorRequestsSheet from './DoctorRequestsSheet';
 import usePrintCtx from './usePrintCtx';
+import TokenSheet from './TokenSheet';
+import QRCode from 'qrcode';
 
 const ReportPreviewModal = React.lazy(() => import('../../components/ReportPreviewModal'));
 
@@ -127,6 +129,7 @@ export default function FrontDeskPage() {
   const [reqCount, setReqCount] = React.useState(0);
   const [bookingRequest, setBookingRequest] = React.useState(null);
   const [preview, setPreview] = React.useState(null); // { app, serviceId, report }
+  const [tokenFor, setTokenFor] = React.useState(null); // visit whose token card is open
 
   // Waiting doctor-portal requests (badge on the button).
   const loadReqCount = React.useCallback(() => apiClient.get('/referrers/booking-requests', { params: { includeDecided: false }, suppressErrorToast: true })
@@ -182,12 +185,15 @@ export default function FrontDeskPage() {
   const sel = visits.find(v => v.appointmentId === selId) || (split ? shown[0] : null) || null;
   const [links, setLinks] = React.useState({}); // appointmentId -> signed tracking link
   const selIdNow = sel?.appointmentId;
+  const tokenId = tokenFor?.appointmentId;
   React.useEffect(() => {
-    if (!selIdNow || !/^https?:/.test(window.location.origin)) return undefined;
+    if (!/^https?:/.test(window.location.origin)) return undefined;
     let alive = true;
-    getTrackingUrl(selIdNow).then(l => { if (alive && l) setLinks(m => ({ ...m, [selIdNow]: l })); }).catch(() => {});
+    for (const id of [selIdNow, tokenId].filter(Boolean)) {
+      getTrackingUrl(id).then(l => { if (alive && l) setLinks(m => (m[id] === l ? m : { ...m, [id]: l })); }).catch(() => {});
+    }
     return () => { alive = false; };
-  }, [selIdNow]);
+  }, [selIdNow, tokenId]);
 
   // ── Actions ──
   const sendStatus = React.useCallback(async (v, status) => {
@@ -203,7 +209,10 @@ export default function FrontDeskPage() {
       const tok = res?.data?.dailyTokenNumber;
       patchRow(v.appointmentId, a => ({ ...a, status: status.toUpperCase(), ...(status === 'confirmed' ? { arrivedAt: a.arrivedAt || new Date().toISOString() } : {}), ...(tok != null ? { dailyTokenNumber: tok } : {}) }));
       refresh();
-      if (status === 'confirmed') setTimeout(loadDues, 1500); // auto-billing makes the bill on arrival
+      if (status === 'confirmed') {
+        setTimeout(loadDues, 1500); // auto-billing makes the bill on arrival
+        setTokenFor({ ...v, status: 'CONFIRMED', ...(tok != null ? { dailyTokenNumber: tok } : {}) }); // show the token straight away
+      }
       if (status === 'cancelled') { toast.show(t('cx.done')); loadDues(); }
       return true;
     } catch (e) {
@@ -240,6 +249,8 @@ export default function FrontDeskPage() {
     try { r = await printThermalToken(data); } catch { r = null; }
     if (r?.ok) return;
     if (r && !r.unconfigured) toast.show(t('fd.printFailed'), 'error');
+    let qrImg = '';
+    try { if (qr) qrImg = await QRCode.toDataURL(qr, { margin: 0, width: 160 }); } catch { /* slip without QR */ }
     ghostPrint(`<!doctype html><html><head><meta charset="utf-8"><title>Token</title><style>
       @page{size:80mm auto;margin:4mm}body{font-family:system-ui,sans-serif;width:72mm;margin:0;color:#000;text-align:center}
       h1{font-size:16px;margin:0}.a{font-size:11px}.tk{font-size:44px;font-weight:800;margin:6px 0}.l{font-size:13px;text-align:left;margin:2px 0}hr{border:0;border-top:1px dashed #000}
@@ -247,6 +258,7 @@ export default function FrontDeskPage() {
       <div class="a">TOKEN</div><div class="tk">${esc(data.token)}</div><hr>
       <p class="l"><b>${esc(data.patientName)}</b></p><p class="l">${esc(data.ageSex)} ${data.patientId ? '· ' + esc(data.patientId) : ''}</p>
       <p class="l">${esc(data.service)}</p>${data.referredBy ? `<p class="l">Ref: ${esc(data.referredBy)}</p>` : ''}<p class="l">${esc(String(v.dateTime || day).slice(0, 10).split('-').reverse().join('-'))} ${esc(data.datetime)}</p>
+      ${qrImg ? `<hr><img src="${qrImg}" style="width:28mm;height:28mm" alt=""><div class="a">Scan to see report status</div>` : ''}
       <hr><div class="a">${data.footer.join('<br>')}</div></body></html>`);
   };
 
@@ -271,7 +283,8 @@ export default function FrontDeskPage() {
     // The signed link is fetched when the patient is picked (below), so the click
     // opens WhatsApp straight away (phones block windows opened after a wait).
     const link = links[v.appointmentId] || `${window.location.origin}/track/${v.appointmentId}`;
-    const msg = t('wa.msg', {
+    const arrived = !['notArrived', 'cancelled'].includes(v.stage || visitStage(v.status, v.arrivedAt)) && tokenOf(v);
+    const msg = t(arrived ? 'wa.checkin' : 'wa.msg', {
       clinic: activeCenter?.name || activeCenter?.hospitalName || '', name: v.patientName || '', token: tokenOf(v) || t('wa.onArrival'),
       pid: v.patientIdentifier || '-', date: dmy(ymdOf(v)), tests: testsOf(v).join(', '), link,
     });
@@ -463,7 +476,9 @@ export default function FrontDeskPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {v.mobile && <a href={`tel:${v.mobile}`} style={{ minHeight: 48, padding: '0 16px', borderRadius: 14, border: `2px solid ${C.primary}`, color: C.primary, fontWeight: 700, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}><Icon name="phone" size={20} />{t('fd.call')} {v.mobile}</a>}
           <Button kind="outline" icon="print" onClick={() => printToken(v)}>{t('fd.printToken')}</Button>
+          {tokenOf(v) && <Button kind="outline" onClick={() => setTokenFor(v)}>{t('tk.show')}</Button>}
         </div>
+        {!tokenOf(v) && v.stage === 'notArrived' && <div style={{ fontSize: 15, color: C.muted }}>{t('tk.notYet')}</div>}
 
         <div style={{ background: 'white', border: `1px solid ${C.line}`, borderRadius: 18, padding: 16 }}>
           <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>{t('fd.journey')}</div>
@@ -581,6 +596,13 @@ export default function FrontDeskPage() {
       {editing && <EditSheet key={editing.appointmentId} visit={editing} isOnline={isOnline} onClose={() => setEditing(null)} onSaved={afterEdit} />}
       {changingRef && <ReferrerSheet key={changingRef.appointmentId} visit={changingRef} isOnline={isOnline} onClose={() => setChangingRef(null)} onDone={() => afterEdit(null)} />}
       {cancelApproval && <CancelApprovalSheet key={cancelApproval.appointmentId} visit={cancelApproval} onClose={() => setCancelApproval(null)} />}
+      {tokenFor && (() => {
+        // Follow the live row so the token appears as soon as the server has it.
+        const live = visits.find(x => x.appointmentId === tokenFor.appointmentId) || tokenFor;
+        const tv = (live.dailyTokenNumber ?? null) != null ? live : tokenFor;
+        return <TokenSheet visit={tv} token={tokenOf(tv)} link={links[tv.appointmentId] || ''} tests={testsOf(tv).join(', ')}
+          onClose={() => setTokenFor(null)} onPrint={() => printToken(tv)} onWhatsApp={() => shareWhatsApp({ ...tv, stage: 'arrived' })} />;
+      })()}
       {reqOpen && <DoctorRequestsSheet onClose={() => setReqOpen(false)} onCount={setReqCount}
         onBook={(r) => { setReqOpen(false); setBookingRequest(r); setBooking(true); }} />}
       {preview && (
@@ -590,7 +612,7 @@ export default function FrontDeskPage() {
         </React.Suspense>
       )}
       {paying && <PaymentSheet key={paying.appointmentId} visit={paying} isOnline={isOnline} onClose={() => setPaying(null)} onPaid={() => loadDues()} />}
-      <UndoBar held={held.held} onUndo={held.undo} label={t('fd.undo')} bottom={vp.phone ? 96 : 24} />
+      <UndoBar held={held.held} onUndo={held.undo} label={t('fd.undo')} onNow={held.flush} nowLabel={t('fd.doneNow')} bottom={vp.phone ? 96 : 24} />
       {toast.node}
     </div>
   );

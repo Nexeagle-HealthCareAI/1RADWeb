@@ -2,6 +2,13 @@
 // {name}, {amount}, {date}, {mode}, {pct} are filled in at run time.
 
 export const en = {
+  'tk.title': 'Token', 'tk.arrived': '{name} has arrived', 'tk.number': 'Token number', 'tk.none': 'The token number shows here once the server gives it.', 'tk.qr': 'The patient can scan this to see the report status',
+  'tk.whatsapp': 'Send token on WhatsApp', 'tk.print': 'Print token', 'tk.done': 'Done', 'tk.show': 'Show token', 'tk.notYet': 'Token is given when the patient arrives', 'fd.doneNow': 'Do it now',
+  'wa.checkin': '{clinic}\n\nNamaste {name}, you have checked in.\nYour token: {token}\nTests: {tests}\nPlease wait — we will call your token.\n\nSee your report status here:\n{link}\n\nThank you.',
+  'md.more': 'More details (optional)', 'md.village': 'Village / town', 'md.block': 'Block', 'md.district': 'District', 'md.address': 'Address', 'md.source': 'How did they hear about us?', 'md.sourceOther': 'Please write how',
+  'src.Friend / Family': 'Friend / family', 'src.By Doctor': 'By a doctor', 'src.Camp': 'Health camp', 'src.Social Media': 'Social media', 'src.Previous Patient': 'Came before', 'src.Walk-in': 'Walked in', 'src.Newspaper / Hoarding': 'Newspaper / hoarding', 'src.Online / Google': 'Online / Google', 'src.Other': 'Other',
+  'md.partnerMore': 'Partner details (optional)', 'md.email': 'Email', 'md.speciality': 'Speciality', 'md.degree': 'Degree', 'md.clinicAddress': 'Clinic address', 'md.advSpeciality': 'Advising doctor’s speciality', 'md.advDegree': 'Advising doctor’s degree',
+  'md.notes': 'Notes for the scan room (optional)', 'bk.pin': 'Keep this date for the next bookings', 'bk.pinned': 'Next bookings use {date}', 'bk.unpin': 'Stop keeping this date', 'bk.priceNote': 'You can change a price here if needed.',
   'fd.reports': 'Reports', 'fd.printReport': 'Print report', 'fd.reportNotReady': 'not ready yet', 'fd.whatsapp': 'Send on WhatsApp', 'fd.copyLink': 'Copy tracking link', 'fd.linkCopied': 'Tracking link copied',
   'fd.printBill': 'Print bill (A4)', 'fd.printReceipt': 'Print receipt', 'fd.printSlip': 'Print small slip', 'fd.noBillPrint': 'No bill yet to print', 'fd.share': 'Share and print',
   'fd.overdue': 'Waiting too long', 'fd.noted': 'Noted', 'fd.filters': 'Filters', 'fd.modality': 'Scan type', 'fd.doctorF': 'Doctor', 'fd.clear': 'Clear filters',
@@ -30,7 +37,7 @@ export const en = {
   'fd.search': 'Search name, mobile or token', 'fd.all': 'All', 'fd.dueTotal': '{amount} still to collect today', 'fd.loading': 'Loading today’s patients…',
   'fd.markedBy': 'Arrived at {time}', 'fd.bookedAt': 'Booked for {time}', 'fd.giveReportQ': 'Report ready — give it to the patient', 'fd.more': 'More', 'fd.tests': 'Tests',
   'bk.isDoctor': 'A doctor', 'bk.otherPerson': 'Other person (agent, ASHA)', 'bk.advisedBy': 'Doctor who advised the test', 'bk.needAdvisedBy': 'Type the doctor who advised the test',
-  'bk.noTests': 'No tests found', 'bk.saving': 'Saving…', 'bk.patient': 'Patient', 'bk.chosenTests': '{n} tests chosen', 'bk.notSynced': 'This patient was added offline and has not reached the server yet. Try again in a minute.',
+  'bk.noTests': 'No tests found', 'bk.saving': 'Saving…', 'bk.patient': 'Patient', 'bk.chosenTests': 'Tests chosen: {n}', 'bk.notSynced': 'This patient was added offline and has not reached the server yet. Try again in a minute.',
   'fd.title': 'Front desk', 'fd.patients': 'patients', 'fd.notArrived': 'not arrived', 'fd.toCollect': 'to collect',
   'fd.markArrived': 'Mark arrived', 'fd.giveReport': 'Give report', 'fd.collect': 'Collect {amount}',
   'fd.printToken': 'Print token', 'fd.fullBoard': 'Full appointment list', 'fd.token': 'Token',
@@ -64,6 +71,13 @@ export const en = {
 };
 
 export const hi = {
+  'tk.title': 'टोकन', 'tk.arrived': '{name} आ गए', 'tk.number': 'टोकन नंबर', 'tk.none': 'सर्वर से टोकन नंबर मिलते ही यहाँ दिखेगा।', 'tk.qr': 'मरीज़ इसे स्कैन करके रिपोर्ट की स्थिति देख सकते हैं',
+  'tk.whatsapp': 'टोकन व्हाट्सऐप पर भेजें', 'tk.print': 'टोकन छापें', 'tk.done': 'हो गया', 'tk.show': 'टोकन दिखाएँ', 'tk.notYet': 'मरीज़ के आने पर टोकन मिलता है', 'fd.doneNow': 'अभी करें',
+  'wa.checkin': '{clinic}\n\nनमस्ते {name}, आपकी हाज़िरी लग गई है।\nआपका टोकन: {token}\nजाँचें: {tests}\nकृपया इंतज़ार करें — आपका टोकन बुलाया जाएगा।\n\nअपनी रिपोर्ट की स्थिति यहाँ देखें:\n{link}\n\nधन्यवाद।',
+  'md.more': 'और जानकारी (ज़रूरी नहीं)', 'md.village': 'गाँव / शहर', 'md.block': 'ब्लॉक', 'md.district': 'ज़िला', 'md.address': 'पता', 'md.source': 'हमारे बारे में कैसे पता चला?', 'md.sourceOther': 'कैसे, लिखें',
+  'src.Friend / Family': 'दोस्त / परिवार', 'src.By Doctor': 'डॉक्टर से', 'src.Camp': 'हेल्थ कैंप', 'src.Social Media': 'सोशल मीडिया', 'src.Previous Patient': 'पहले आ चुके हैं', 'src.Walk-in': 'खुद आए', 'src.Newspaper / Hoarding': 'अख़बार / होर्डिंग', 'src.Online / Google': 'ऑनलाइन / गूगल', 'src.Other': 'और कुछ',
+  'md.partnerMore': 'भेजने वाले की जानकारी (ज़रूरी नहीं)', 'md.email': 'ईमेल', 'md.speciality': 'विशेषज्ञता', 'md.degree': 'डिग्री', 'md.clinicAddress': 'क्लिनिक का पता', 'md.advSpeciality': 'सलाह देने वाले डॉक्टर की विशेषज्ञता', 'md.advDegree': 'सलाह देने वाले डॉक्टर की डिग्री',
+  'md.notes': 'स्कैन रूम के लिए नोट (ज़रूरी नहीं)', 'bk.pin': 'अगली बुकिंग के लिए यही तारीख रखें', 'bk.pinned': 'अगली बुकिंग {date} की होगी', 'bk.unpin': 'यह तारीख हटाएँ', 'bk.priceNote': 'ज़रूरत हो तो यहाँ दाम बदल सकते हैं।',
   'fd.reports': 'रिपोर्ट', 'fd.printReport': 'रिपोर्ट छापें', 'fd.reportNotReady': 'अभी तैयार नहीं', 'fd.whatsapp': 'व्हाट्सऐप पर भेजें', 'fd.copyLink': 'ट्रैकिंग लिंक कॉपी करें', 'fd.linkCopied': 'ट्रैकिंग लिंक कॉपी हो गया',
   'fd.printBill': 'बिल छापें (A4)', 'fd.printReceipt': 'रसीद छापें', 'fd.printSlip': 'छोटी पर्ची छापें', 'fd.noBillPrint': 'छापने के लिए अभी बिल नहीं है', 'fd.share': 'भेजें और छापें',
   'fd.overdue': 'बहुत देर से इंतज़ार', 'fd.noted': 'देख लिया', 'fd.filters': 'छाँटें', 'fd.modality': 'स्कैन का प्रकार', 'fd.doctorF': 'डॉक्टर', 'fd.clear': 'छँटाई हटाएँ',
@@ -92,7 +106,7 @@ export const hi = {
   'fd.search': 'नाम, मोबाइल या टोकन से खोजें', 'fd.all': 'सभी', 'fd.dueTotal': 'आज {amount} लेना बाकी', 'fd.loading': 'आज के मरीज़ आ रहे हैं…',
   'fd.markedBy': '{time} पर आए', 'fd.bookedAt': '{time} की बुकिंग', 'fd.giveReportQ': 'रिपोर्ट तैयार — मरीज़ को दें', 'fd.more': 'और', 'fd.tests': 'जाँचें',
   'bk.isDoctor': 'डॉक्टर', 'bk.otherPerson': 'कोई और (एजेंट, आशा)', 'bk.advisedBy': 'जाँच लिखने वाले डॉक्टर', 'bk.needAdvisedBy': 'जाँच लिखने वाले डॉक्टर का नाम लिखें',
-  'bk.noTests': 'कोई जाँच नहीं मिली', 'bk.saving': 'सेव हो रहा है…', 'bk.patient': 'मरीज़', 'bk.chosenTests': '{n} जाँचें चुनी', 'bk.notSynced': 'यह मरीज़ बिना इंटरनेट के जोड़ा गया था और अभी सर्वर तक नहीं पहुँचा। एक मिनट बाद फिर करें।',
+  'bk.noTests': 'कोई जाँच नहीं मिली', 'bk.saving': 'सेव हो रहा है…', 'bk.patient': 'मरीज़', 'bk.chosenTests': 'चुनी गई जाँचें: {n}', 'bk.notSynced': 'यह मरीज़ बिना इंटरनेट के जोड़ा गया था और अभी सर्वर तक नहीं पहुँचा। एक मिनट बाद फिर करें।',
   'fd.title': 'फ़्रंट डेस्क', 'fd.patients': 'मरीज़', 'fd.notArrived': 'अभी नहीं आए', 'fd.toCollect': 'लेना बाकी',
   'fd.markArrived': 'हाज़िरी लगाएँ', 'fd.giveReport': 'रिपोर्ट दें', 'fd.collect': '{amount} लें',
   'fd.printToken': 'टोकन छापें', 'fd.fullBoard': 'पूरी अपॉइंटमेंट सूची', 'fd.token': 'टोकन',
@@ -126,6 +140,13 @@ export const hi = {
 };
 
 export const bn = {
+  'tk.title': 'টোকেন', 'tk.arrived': '{name} এসেছেন', 'tk.number': 'টোকেন নম্বর', 'tk.none': 'সার্ভার টোকেন দিলেই নম্বর এখানে দেখাবে।', 'tk.qr': 'রোগী এটা স্ক্যান করে রিপোর্টের অবস্থা দেখতে পারবেন',
+  'tk.whatsapp': 'টোকেন হোয়াটসঅ্যাপে পাঠান', 'tk.print': 'টোকেন ছাপুন', 'tk.done': 'হয়ে গেছে', 'tk.show': 'টোকেন দেখান', 'tk.notYet': 'রোগী এলে টোকেন দেওয়া হয়', 'fd.doneNow': 'এখনই করুন',
+  'wa.checkin': '{clinic}\n\nনমস্কার {name}, আপনার হাজিরা হয়ে গেছে।\nআপনার টোকেন: {token}\nপরীক্ষা: {tests}\nঅপেক্ষা করুন — আপনার টোকেন ডাকা হবে।\n\nআপনার রিপোর্টের অবস্থা এখানে দেখুন:\n{link}\n\nধন্যবাদ।',
+  'md.more': 'আরও তথ্য (না দিলেও চলবে)', 'md.village': 'গ্রাম / শহর', 'md.block': 'ব্লক', 'md.district': 'জেলা', 'md.address': 'ঠিকানা', 'md.source': 'আমাদের কথা কীভাবে জানলেন?', 'md.sourceOther': 'কীভাবে, লিখুন',
+  'src.Friend / Family': 'বন্ধু / পরিবার', 'src.By Doctor': 'ডাক্তারের কাছ থেকে', 'src.Camp': 'হেলথ ক্যাম্প', 'src.Social Media': 'সোশ্যাল মিডিয়া', 'src.Previous Patient': 'আগে এসেছিলেন', 'src.Walk-in': 'নিজে এসেছেন', 'src.Newspaper / Hoarding': 'খবরের কাগজ / হোর্ডিং', 'src.Online / Google': 'অনলাইন / গুগল', 'src.Other': 'অন্য কিছু',
+  'md.partnerMore': 'যিনি পাঠালেন তাঁর তথ্য (না দিলেও চলবে)', 'md.email': 'ইমেল', 'md.speciality': 'বিশেষজ্ঞতা', 'md.degree': 'ডিগ্রি', 'md.clinicAddress': 'ক্লিনিকের ঠিকানা', 'md.advSpeciality': 'পরামর্শদাতা ডাক্তারের বিশেষজ্ঞতা', 'md.advDegree': 'পরামর্শদাতা ডাক্তারের ডিগ্রি',
+  'md.notes': 'স্ক্যান রুমের জন্য নোট (না দিলেও চলবে)', 'bk.pin': 'পরের বুকিংয়ে এই তারিখ রাখুন', 'bk.pinned': 'পরের বুকিং {date} তারিখের', 'bk.unpin': 'এই তারিখ সরান', 'bk.priceNote': 'দরকার হলে এখানে দাম বদলাতে পারেন।',
   'fd.reports': 'রিপোর্ট', 'fd.printReport': 'রিপোর্ট ছাপুন', 'fd.reportNotReady': 'এখনও তৈরি নয়', 'fd.whatsapp': 'হোয়াটসঅ্যাপে পাঠান', 'fd.copyLink': 'ট্র্যাকিং লিংক কপি করুন', 'fd.linkCopied': 'ট্র্যাকিং লিংক কপি হয়েছে',
   'fd.printBill': 'বিল ছাপুন (A4)', 'fd.printReceipt': 'রসিদ ছাপুন', 'fd.printSlip': 'ছোট স্লিপ ছাপুন', 'fd.noBillPrint': 'ছাপার জন্য এখনও বিল নেই', 'fd.share': 'পাঠান ও ছাপুন',
   'fd.overdue': 'অনেকক্ষণ অপেক্ষায়', 'fd.noted': 'দেখেছি', 'fd.filters': 'বাছাই', 'fd.modality': 'স্ক্যানের ধরন', 'fd.doctorF': 'ডাক্তার', 'fd.clear': 'বাছাই সরান',
@@ -154,7 +175,7 @@ export const bn = {
   'fd.search': 'নাম, মোবাইল বা টোকেন দিয়ে খুঁজুন', 'fd.all': 'সব', 'fd.dueTotal': 'আজ {amount} নেওয়া বাকি', 'fd.loading': 'আজকের রোগীরা আসছে…',
   'fd.markedBy': '{time}-এ এসেছেন', 'fd.bookedAt': '{time}-এর বুকিং', 'fd.giveReportQ': 'রিপোর্ট তৈরি — রোগীকে দিন', 'fd.more': 'আরও', 'fd.tests': 'পরীক্ষা',
   'bk.isDoctor': 'ডাক্তার', 'bk.otherPerson': 'অন্য কেউ (এজেন্ট, আশা)', 'bk.advisedBy': 'যে ডাক্তার পরীক্ষা লিখেছেন', 'bk.needAdvisedBy': 'যে ডাক্তার পরীক্ষা লিখেছেন তাঁর নাম লিখুন',
-  'bk.noTests': 'কোনো পরীক্ষা পাওয়া যায়নি', 'bk.saving': 'সেভ হচ্ছে…', 'bk.patient': 'রোগী', 'bk.chosenTests': '{n}টি পরীক্ষা বাছা হয়েছে', 'bk.notSynced': 'এই রোগী ইন্টারনেট ছাড়া যোগ হয়েছিলেন, এখনও সার্ভারে পৌঁছাননি। এক মিনিট পরে আবার চেষ্টা করুন।',
+  'bk.noTests': 'কোনো পরীক্ষা পাওয়া যায়নি', 'bk.saving': 'সেভ হচ্ছে…', 'bk.patient': 'রোগী', 'bk.chosenTests': 'বাছা পরীক্ষা: {n}', 'bk.notSynced': 'এই রোগী ইন্টারনেট ছাড়া যোগ হয়েছিলেন, এখনও সার্ভারে পৌঁছাননি। এক মিনিট পরে আবার চেষ্টা করুন।',
   'fd.title': 'ফ্রন্ট ডেস্ক', 'fd.patients': 'রোগী', 'fd.notArrived': 'এখনও আসেননি', 'fd.toCollect': 'নিতে বাকি',
   'fd.markArrived': 'হাজিরা নিন', 'fd.giveReport': 'রিপোর্ট দিন', 'fd.collect': '{amount} নিন',
   'fd.printToken': 'টোকেন ছাপুন', 'fd.fullBoard': 'পুরো অ্যাপয়েন্টমেন্ট তালিকা', 'fd.token': 'টোকেন',
