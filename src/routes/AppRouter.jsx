@@ -19,6 +19,7 @@ const SharedStudyPage = lazy(() => import('../pages/SharedStudyPage'));
 const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
 const AccessDenied = lazy(() => import('../pages/AccessDenied'));
 const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
+const FrontDeskPage = lazy(() => import('../pages/frontdesk/FrontDeskPage'));
 const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
 const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
 const AdminBoard = lazy(() => import('../pages/AdminBoard'));
@@ -239,6 +240,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin']} moduleRoutes={['/staff']}>
               <StaffDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/front-desk"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} moduleRoutes={['/front-desk', '/appointment-board']} requiredModule="RIS">
+              <FrontDeskPage />
             </ProtectedRoute>
           }
         />

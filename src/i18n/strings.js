@@ -117,4 +117,6 @@ const bn = {
   'login.welcome': 'আবার স্বাগতম', 'login.sub': 'চালিয়ে যেতে সাইন ইন করুন',
 };
 
-export const STRINGS = { en, hi, bn };
+import * as FD from './strings.frontdesk';
+
+export const STRINGS = { en: { ...en, ...FD.en }, hi: { ...hi, ...FD.hi }, bn: { ...bn, ...FD.bn } };

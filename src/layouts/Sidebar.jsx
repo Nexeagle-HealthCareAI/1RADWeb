@@ -30,6 +30,7 @@ const T = {
 
 // ── Route → SVG icon ──────────────────────────────────────────────────────────
 const ICONS = {
+  '/front-desk': <><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5v-11zM4 4v1h8V4H4zm0 3v1h8V7H4zm0 3v1h5v-1H4z"/></>,
   '/configuration': <>
     <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
     <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
@@ -370,7 +371,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
 
   const navItems = NAV_ITEMS.filter(item =>
-    allowedRoutes.includes(item.route) &&
+    (allowedRoutes.includes(item.route) || (item.accessVia || []).some(r => allowedRoutes.includes(r))) &&
     // Product-module gate (RIS / PACS SKUs): hide items the active center's
     // subscription doesn't include. hasModule() is permissive while the
     // subscription is still loading, so the menu doesn't flash on boot.
