@@ -38,6 +38,7 @@ import { useBillingNotice, BillingNoticeModal } from '../components/Billing/Bill
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
 import DayBookHub from '../components/Billing/DayBookHub';
 import CreditNotesHub from '../components/Billing/CreditNotesHub';
+import { useBillingSettings } from '../api/billing/billingSettingsApi';
 import FinanceManager from '../components/FinanceManager';
 import Pagination from '../components/Pagination';
 import PaymentSuccessModal from '../components/Billing/PaymentSuccessModal';
@@ -627,7 +628,11 @@ export default function BillingPage() {
     }).catch(() => { /* print falls back to the centre name and address only */ });
     return () => { alive = false; };
   }, [activeCenter?.id]);
-  const printCtx = { activeCenter, ownerDetails, notify, taxProfile };
+  const taxSettings = useBillingSettings(activeCenter?.id);
+  const printTaxProfile = React.useMemo(
+    () => (taxProfile ? { ...taxProfile, gstEnabled: taxSettings?.gstEnabled !== false } : taxProfile),
+    [taxProfile, taxSettings?.gstEnabled]);
+  const printCtx = { activeCenter, ownerDetails, notify, taxProfile: printTaxProfile };
   const handlePrintThermal = async (invInput = null) => {
     await printThermalSlip(invInput || selectedInvoice, printCtx);
   };
@@ -979,7 +984,7 @@ export default function BillingPage() {
       )}
 
       {billingViewMode === 'CREDIT_NOTES' && (
-        <CreditNotesHub isMobile={isMobile} isOnline={isOnline} activeCenter={activeCenter} taxProfile={taxProfile} />
+        <CreditNotesHub isMobile={isMobile} isOnline={isOnline} activeCenter={activeCenter} taxProfile={printTaxProfile} taxSettings={taxSettings} />
       )}
 
       {billingViewMode === 'ANALYTICS' && matrix && (

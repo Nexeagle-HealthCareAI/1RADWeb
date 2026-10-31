@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import apiClient from '../api/apiClient';
 import Pagination from './Pagination';
+import { useBillingSettings } from '../api/billing/billingSettingsApi';
 
 const FinanceManager = ({
   isMobile,
@@ -32,6 +33,7 @@ const FinanceManager = ({
   TODAY,
   hideTabs = []
 }) => {
+  const taxSettings = useBillingSettings(activeCenter?.id);
   const [financeViewMode, setFinanceViewMode] = useState('REGISTRY');
   const [showAutoBillConfirm, setShowAutoBillConfirm] = useState(false);
 
@@ -810,6 +812,11 @@ const FinanceManager = ({
                       style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }} />
                   </div>
                 </div>
+                {taxSettings?.gstEnabled === false && (
+                  <div style={{ fontSize: '11px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '7px 10px' }}>
+                    GST is switched off for this centre (Tax &amp; billing tab), so bills charge 0% whatever rate is set here. The rate is kept for when it is switched back on.
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ flex: 1, padding: '11px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', color: '#475569' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>Cancel</button>

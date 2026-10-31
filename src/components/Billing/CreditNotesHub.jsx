@@ -25,7 +25,8 @@ const errorText = async (e, fallback) => {
   return data?.message || data?.error || fallback;
 };
 
-export default function CreditNotesHub({ isMobile, isOnline, activeCenter, taxProfile }) {
+export default function CreditNotesHub({ isMobile, isOnline, activeCenter, taxProfile, taxSettings }) {
+  const gstOn = taxSettings?.gstEnabled !== false;
   const today = istTodayYmd();
   const [from, setFrom] = React.useState(shiftYmd(today, -30));
   const [to, setTo] = React.useState(today);
@@ -69,6 +70,7 @@ export default function CreditNotesHub({ isMobile, isOnline, activeCenter, taxPr
         <input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)} style={input} />
         <button type="button" onClick={load} disabled={loading} style={btn}>{loading ? 'Loading…' : 'Refresh'}</button>
         <div style={{ flex: 1 }} />
+        {gstOn ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={label}>GSTR-1</span>
           <input type="month" value={month} max={today.slice(0, 7)} onChange={e => setMonth(e.target.value)} style={input} />
@@ -77,7 +79,15 @@ export default function CreditNotesHub({ isMobile, isOnline, activeCenter, taxPr
             {downloading ? 'Preparing…' : 'Download sheet'}
           </button>
         </div>
+        ) : (
+          <span style={{ fontSize: 11, color: '#64748b' }}>GST is off for this centre (Admin → Tax &amp; billing), so there is no GSTR-1 sheet.</span>
+        )}
       </div>
+      {taxSettings?.creditNotesEnabled === false && (
+        <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb', color: '#92400e', fontSize: '12px' }}>
+          Credit notes are switched off for this centre (Admin → Tax &amp; billing). New ones aren’t being issued; those below were issued earlier.
+        </div>
+      )}
       <div style={{ fontSize: '11px', color: '#64748b' }}>
         Raised automatically when a paid bill is lowered, made free or cancelled (credit note), or money is returned on a bill whose value didn&apos;t change (refund voucher).
       </div>

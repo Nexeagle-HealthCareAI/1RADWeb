@@ -15,7 +15,7 @@ const money = (n) => `₹${(Math.round((Number(n) || 0) * 100) / 100).toLocaleSt
 const lbl = { display: 'block', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' };
 const input = { width: '100%', padding: '9px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box', background: 'white' };
 
-export default function PayoutTaxPanel({ commissionIds, netDeficits, payeeName, value, onChange }) {
+export default function PayoutTaxPanel({ commissionIds, netDeficits, payeeName, value, onChange, tdsEnabled = true }) {
   const [preview, setPreview] = React.useState(null);
   const [error, setError] = React.useState('');
   const panOk = !value.pan || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value.pan);
@@ -56,9 +56,13 @@ export default function PayoutTaxPanel({ commissionIds, netDeficits, payeeName, 
         </div>
         <div>
           <label style={lbl}>TDS</label>
-          <select value={value.tdsCategory} onChange={e => set({ tdsCategory: e.target.value })} style={input}>
-            {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
+          {tdsEnabled ? (
+            <select value={value.tdsCategory} onChange={e => set({ tdsCategory: e.target.value })} style={input}>
+              {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          ) : (
+            <div style={{ ...input, color: '#64748b', background: '#f1f5f9' }} title="Admin → Tax & billing">Off for this centre</div>
+          )}
         </div>
         <div>
           <label style={lbl}>PAYEE PAN</label>

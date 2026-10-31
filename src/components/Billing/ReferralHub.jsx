@@ -5,6 +5,8 @@ import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
 import { payCommissions, fetchCommissions } from '../../api/billing/payoutApi';
 import PayoutTaxPanel from './PayoutTaxPanel';
+import useAuth from '../../auth/useAuth';
+import { useBillingSettings } from '../../api/billing/billingSettingsApi';
 
 const getIstDateStr = (iso) => {
   if (!iso) return null;
@@ -281,6 +283,10 @@ const ReferralHub = ({
   });
   const [payeeFormErrors, setPayeeFormErrors] = useState({});
   // Review R10/R12: payout mode, reference and TDS.
+  // The default TDS type, and whether TDS applies at all, come from Admin → Tax & billing.
+  const { activeCenter: taxCentre } = useAuth() || {};
+  const taxSettings = useBillingSettings(taxCentre?.id);
+  const defaultTdsCategory = taxSettings?.tdsEnabled === false ? 'NONE' : (taxSettings?.defaultTdsCategory || 'COMMISSION');
   const [payoutTax, setPayoutTax] = useState({ mode: 'CASH', reference: '', tdsCategory: 'COMMISSION', pan: '' });
   const [isPaying, setIsPaying] = useState(false);
 
@@ -394,7 +400,7 @@ const ReferralHub = ({
       referrerSearchTerm: '',
       showReferrerDropdown: false,
     }));
-    setPayoutTax({ mode: 'CASH', reference: '', tdsCategory: 'COMMISSION', pan: (partnerRef?.pan || '').toUpperCase() });
+    setPayoutTax({ mode: 'CASH', reference: '', tdsCategory: defaultTdsCategory, pan: (partnerRef?.pan || '').toUpperCase() });
     setPayeeFormErrors({});
     const partnerId = activePartnerId;
     setBulkConfirmModal({
@@ -1934,6 +1940,7 @@ const ReferralHub = ({
                 payeeName={payeeForm.payeeName}
                 value={payoutTax}
                 onChange={setPayoutTax}
+                tdsEnabled={taxSettings?.tdsEnabled !== false}
               />
 
               <div style={{ display: 'flex', gap: '12px' }}>

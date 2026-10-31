@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, lazy, Suspense } from
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
+import TaxBillingSettings from '../components/Admin/TaxBillingSettings';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
@@ -85,7 +86,7 @@ export default function AdminBoard() {
   // Everything RIS/clinic-ops (Overview analytics, Roles, Hospitals, Finance) is
   // hidden. RIS-only / RIS+PACS see the full tab set.
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
-  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Letterhead'];
+  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Tax & billing', 'Letterhead'];
   const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead'] : ALL_TABS;
   // The single role every Cloud PACS-only user is onboarded with — full access
   // to the (already module-trimmed) PACS surface. admindoctor is the superset
@@ -3506,6 +3507,9 @@ export default function AdminBoard() {
           isTestMode={isTestMode}
           TODAY={TODAY}
         />
+      )}
+      {activeTab === 'Tax & billing' && (
+        <TaxBillingSettings hospitalId={activeCenter?.id} isOnline={isOnline} isMobile={isMobile} />
       )}
       {activeTab === 'Letterhead' && renderPrescriptionArchitect()}
       

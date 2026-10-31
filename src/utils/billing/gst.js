@@ -58,8 +58,9 @@ export const taxBreakdown = (inv) => {
   });
 };
 
-/** 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'BILL' (centre not GST-registered). */
+/** 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'BILL' (centre not GST-registered, or GST switched off). */
 export const documentType = (inv, taxProfile) => {
+  if (taxProfile?.gstEnabled === false) return 'BILL'; // switched off in Admin → Tax & billing
   const registered = /^[0-9]{2}[A-Z0-9]{13}$/.test(String(taxProfile?.gstin || '').toUpperCase());
   if (!registered) return 'BILL';
   return (inv?.items || []).some(it => !it.isFree && lineRate(it) > 0) ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY';
