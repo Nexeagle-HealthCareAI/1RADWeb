@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { t, useLang } from '../i18n';
+import LanguageSwitcher from '../i18n/LanguageSwitcher';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import PinSetupModal from '../auth/PinSetupModal';
@@ -92,6 +94,7 @@ const INDUSTRY_QUOTES = [
 ];
 
 export default function LoginPage() {
+  useLang();
   const { login, hasAdminDoctor, sendOtp, verifyOtp, currentUser, signInFromCache, enrollPin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -618,6 +621,7 @@ export default function LoginPage() {
       {/* end immersive-brand */}
 
       <div className="glass-card">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}><LanguageSwitcher /></div>
         <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <img
             src={`${import.meta.env.BASE_URL}Logo.png`}
@@ -628,8 +632,8 @@ export default function LoginPage() {
               marginBottom: '16px',
             }}
           />
-          <h2 className="auth-title" style={{ color: '#0f172a', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
-          <p className="auth-subtitle" style={{ color: 'rgba(15,23,42,0.75)', fontSize: '13px', fontWeight: 500 }}>Sign in to your account to continue</p>
+          <h2 className="auth-title" style={{ color: '#0f172a', fontSize: '24px', fontWeight: 900 }}>{t('login.welcome')}</h2>
+          <p className="auth-subtitle" style={{ color: 'rgba(15,23,42,0.75)', fontSize: '13px', fontWeight: 500 }}>{t('login.sub')}</p>
         </div>
 
         {/* ── Offline-ready highlight — reassures users the app keeps working
@@ -661,12 +665,10 @@ export default function LoginPage() {
               fontSize: '11px', fontWeight: 900, letterSpacing: '0.5px', textTransform: 'uppercase',
               color: isOnline ? '#2563eb' : '#34d399',
             }}>
-              {isOnline ? 'Works fully offline' : 'You are offline — that is okay'}
+              {isOnline ? t('login.offline') : t('login.noNet')}
             </div>
             <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(15,23,42,0.62)' }}>
-              {isOnline
-                ? 'Sign in once and keep working without internet — everything syncs automatically when you reconnect.'
-                : 'No internet needed. Sign in with your saved PIN and continue — your changes sync the moment you are back online.'}
+              {isOnline ? t('login.offlineSub') : t('login.noNetSub')}
             </div>
           </div>
         </div>

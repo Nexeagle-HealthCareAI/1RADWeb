@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useLang } from '../i18n';
+import LanguageSwitcher from '../i18n/LanguageSwitcher';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import '../styles/global.css';
 
 export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime }) {
+  useLang();
   const time = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Multi-hospital switcher — the desktop TopNav switcher is hidden on mobile,
@@ -86,11 +89,11 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
           alt="1Rad Flow"
           style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
         />
-        <span style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>1Rad Flow</span>
       </div>
 
-      {/* Right: Switcher + Profile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {/* Right: Language + Switcher + Profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <LanguageSwitcher compact />
         
         {/* Centre Switcher */}
         <div ref={switcherRef} style={{ position: 'relative' }}>

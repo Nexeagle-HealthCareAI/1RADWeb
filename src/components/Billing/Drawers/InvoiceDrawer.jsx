@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import { notifyToast } from '../../../utils/toast';
+import { RefundPanel } from './RefundPanel';
 
 export const InvoiceDrawer = ({
   isMobile,
@@ -878,6 +879,12 @@ export const InvoiceDrawer = ({
                  )}
               </div>
 
+              <RefundPanel
+                invoice={selectedInvoice}
+                isOnline={isOnline}
+                onRefunded={() => { setIsInvoiceDrawerOpen(false); if (onAdvanceRefunded) onAdvanceRefunded(); }}
+              />
+
               {!isPaid ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                    <div>
@@ -1175,4 +1182,4 @@ export const InvoiceDrawer = ({
     </div>
   );
 };
-
+

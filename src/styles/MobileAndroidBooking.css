@@ -88,7 +88,7 @@
 }
 
 .android-booking-subtitle {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.75);
   letter-spacing: 0.8px;
@@ -105,7 +105,7 @@
   gap: 4px;
   padding: 3px 8px;
   border-radius: 20px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -192,7 +192,7 @@
 }
 
 .android-card-title {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   color: #0f52ba;
   text-transform: uppercase;
@@ -204,7 +204,7 @@
 }
 
 .android-card-subtitle {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: #64748b;
 }
@@ -217,7 +217,7 @@
 }
 
 .android-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   color: #334155;
   letter-spacing: 0.3px;
@@ -227,7 +227,7 @@
 }
 
 .android-label-hint {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: #059669;
   background: #ecfdf5;
@@ -400,7 +400,7 @@
 }
 
 .android-modality-tile .mod-name {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 950;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -459,7 +459,7 @@
 }
 
 .android-service-card .srv-badge {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 900;
   background: #0f52ba;
   color: white;
@@ -490,7 +490,7 @@
 }
 
 .android-duplicate-title {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 950;
   color: #b45309;
   letter-spacing: 0.5px;
@@ -516,7 +516,7 @@
   border: none;
   background: #0f52ba;
   color: white;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   cursor: pointer;
   white-space: nowrap;

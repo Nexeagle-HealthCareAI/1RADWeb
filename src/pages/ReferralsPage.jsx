@@ -141,7 +141,7 @@ export default function ReferralsPage() {
   );
   const buildDoctorLink = async (referrerId) => {
     const { data } = await apiClient.get(`/referrers/${referrerId}/share-link`);
-    return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
+    return `${window.location.origin}/r/${referrerId}#t=${data.token}`; // review R23: token in the fragment, never sent to a server
   };
   // Pull back every portal link ever issued for this doctor (a forwarded message, a
   // lost phone, a doctor who left). Old links stop working immediately; links copied or
@@ -625,7 +625,12 @@ export default function ReferralsPage() {
       degree: isDoctor ? (editingReferrer.degree || '') : '',
       isDoctor,
       supportedByDoctor: isDoctor ? '' : (editingReferrer.supportedByDoctor || ''),
+      pan: (editingReferrer.pan || '').toUpperCase(),
     };
+    if (profile.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(profile.pan)) {
+      notifyToast('PAN should look like ABCDE1234F.', 'error');
+      return;
+    }
 
     try {
       setIsSavingReferrer(true);

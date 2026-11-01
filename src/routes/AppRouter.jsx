@@ -19,6 +19,7 @@ const SharedStudyPage = lazy(() => import('../pages/SharedStudyPage'));
 const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
 const AccessDenied = lazy(() => import('../pages/AccessDenied'));
 const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
+const FrontDeskPage = lazy(() => import('../pages/frontdesk/FrontDeskPage'));
 const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
 const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
 const AdminBoard = lazy(() => import('../pages/AdminBoard'));
@@ -107,7 +108,7 @@ export default function AppRouter() {
     <Routes>
       {/* Public / Semi-Public */}
       <Route path="/track/:id" element={<StatusTracking />} />
-      {/* Public doctor referral portal — anonymous, signed token in ?t= (#3) */}
+      {/* Public doctor referral portal — anonymous, signed token in #t= (older links ?t=), sent as X-Referral-Token (#3, review R23) */}
       <Route path="/r/:id" element={<DoctorReferralPortal />} />
       {/* Public secure study share — anonymous, signed 24h token in the path. */}
       <Route path="/share/:token" element={<SharedStudyPage />} />
@@ -239,6 +240,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin']} moduleRoutes={['/staff']}>
               <StaffDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/front-desk"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} moduleRoutes={['/front-desk', '/appointment-board']} requiredModule="RIS">
+              <FrontDeskPage />
             </ProtectedRoute>
           }
         />

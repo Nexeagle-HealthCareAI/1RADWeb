@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Bengali:wght@400;600;700&display=swap');
+/*
+ * Saral — readability layer (UI review, Oct 2026).
+ *
+ * The screens were written with ~1,700 inline font sizes of 10 px or less and
+ * ~1,700 extra-bold (900/950) weights. Until each screen is rebuilt on the shared
+ * components, this sheet lifts them app-wide:
+ *   • nothing below 12 px; 11 px becomes 13 px
+ *   • 900/950 weights become 700 (heavy type is hard to read on small phones)
+ *   • the bottom bar always shows its labels
+ * It only touches the signed-in app (.app-layout) and never the report editor
+ * (.ProseMirror), whose text sizes are the document's own.
+ */
+
+.app-layout [style*="font-size: 7px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 7.5px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 8px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 8.5px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 9px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 9.5px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 10px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 10.5px"]:not(.ProseMirror *) {
+  font-size: 12px !important;
+  letter-spacing: 0.2px !important;
+}
+
+.app-layout [style*="font-size: 11px"]:not(.ProseMirror *),
+.app-layout [style*="font-size: 11.5px"]:not(.ProseMirror *) {
+  font-size: 13px !important;
+}
+
+.app-layout [style*="font-weight: 950"]:not(.ProseMirror *),
+.app-layout [style*="font-weight: 900"]:not(.ProseMirror *),
+.app-layout [style*="font-weight: 800"]:not(.ProseMirror *) {
+  font-weight: 700 !important;
+}
+
+/* Class-styled labels that were 9–11 px */
+.app-layout .intel-label,
+.app-layout .stat-label,
+.app-layout .stat-sub,
+.app-layout .intel-trend,
+.app-layout .modality-bar-label,
+.app-layout .appt-page-subtitle,
+.app-layout .pagination-info {
+  font-size: 13px !important;
+  letter-spacing: 0.2px !important;
+  font-weight: 600 !important;
+}
+.app-layout .intel-label,
+.app-layout .stat-label {
+  text-transform: none !important;
+}
+.app-layout .mod-quick-pill {
+  font-size: 14px !important;
+  min-height: 40px;
+}
+.app-layout th {
+  font-size: 12px !important;
+}
+
+/* Bottom bar: every tab shows its word, not just the active one */
+@media (max-width: 639px) {
+  .mobile-bottom-nav-label {
+    position: static !important;
+    opacity: 1 !important;
+    transform: none !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    color: #475569 !important;
+    margin-top: 2px;
+    white-space: nowrap;
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-bottom-nav-item.active .mobile-bottom-nav-label {
+    color: #1D4ED8 !important;
+    font-weight: 700 !important;
+  }
+  .mobile-bottom-nav-item.active .mobile-bottom-nav-icon {
+    transform: none !important;
+  }
+  .mobile-bottom-nav-icon {
+    height: 32px !important;
+  }
+}
+
+/* Phone count tiles on the appointment board: compact, so patients show sooner */
+@media (max-width: 639px) {
+  .mobile-stat-tile {
+    flex-basis: 124px !important;
+    min-height: 0 !important;
+    justify-content: flex-start !important;
+    gap: 2px;
+  }
+}
+
+/* Hindi and Bengali: proper fonts instead of the phone's fallback */
+html[lang="hi"] body, html[lang="hi"] button, html[lang="hi"] input, html[lang="hi"] select {
+  font-family: Inter, 'Noto Sans Devanagari', system-ui, sans-serif;
+}
+html[lang="bn"] body, html[lang="bn"] button, html[lang="bn"] input, html[lang="bn"] select {
+  font-family: Inter, 'Noto Sans Bengali', system-ui, sans-serif;
+}

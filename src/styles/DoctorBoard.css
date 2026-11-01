@@ -46,7 +46,7 @@
 
   .board-view-container .board-header > div:first-child p {
     margin-left: 0 !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -81,7 +81,7 @@
   .board-view-container .admin-tabs button {
     flex: 1 !important;
     padding: 10px 12px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -133,7 +133,7 @@
   }
 
   .board-padding > div:first-child .summary-card > span {
-    font-size: 8px !important;
+    font-size: 12px !important;
     letter-spacing: 1px !important;
   }
 
@@ -182,7 +182,7 @@
   .board-padding > div:nth-child(2) select {
     flex: 1 1 calc(50% - 8px) !important;
     min-width: 0 !important;
-    font-size: 11px !important;
+    font-size: 13px !important;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -228,12 +228,12 @@
 
   .board-padding > div:nth-child(3) th {
     padding: 12px 10px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 
   .board-padding > div:nth-child(3) td {
     padding: 12px 10px !important;
-    font-size: 11px !important;
+    font-size: 13px !important;
   }
 
   /* Action buttons in table — smaller on mobile */
@@ -243,7 +243,7 @@
 
   .board-padding > div:nth-child(3) td:last-child button {
     padding: 6px 10px !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -336,7 +336,7 @@
   }
 
   #preview-toolbar h3 {
-    font-size: 11px !important;
+    font-size: 13px !important;
   }
 
   #preview-toolbar > div:last-child {
@@ -347,7 +347,7 @@
   #preview-toolbar > div:last-child button {
     flex: 1 !important;
     padding: 10px 12px !important;
-    font-size: 10px !important;
+    font-size: 12px !important;
     justify-content: center !important;
   }
 
@@ -403,7 +403,7 @@
 
   .modal-overlay > div > div:last-child button {
     padding: 12px !important;
-    font-size: 11px !important;
+    font-size: 13px !important;
   }
 }
 

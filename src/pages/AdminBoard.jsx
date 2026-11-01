@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, lazy, Suspense } from
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
+import TaxBillingSettings from '../components/Admin/TaxBillingSettings';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
@@ -85,7 +86,7 @@ export default function AdminBoard() {
   // Everything RIS/clinic-ops (Overview analytics, Roles, Hospitals, Finance) is
   // hidden. RIS-only / RIS+PACS see the full tab set.
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
-  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Letterhead'];
+  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Tax & billing', 'Letterhead'];
   const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead'] : ALL_TABS;
   // The single role every Cloud PACS-only user is onboarded with — full access
   // to the (already module-trimmed) PACS surface. admindoctor is the superset
@@ -327,6 +328,8 @@ export default function AdminBoard() {
     registrationNumber: '',
     pan: '',
     nabhNumber: '',
+    publicContact: '',
+    publicEmail: '',
     isAutoBillingEnabled: false,
     latitude: null,
     longitude: null,
@@ -489,6 +492,8 @@ export default function AdminBoard() {
         registrationNumber:  r.registrationNumber  || r.RegistrationNumber  || '',
         pan:                 r.pan                 || r.PAN                 || '',
         nabhNumber:          r.nabhNumber          || r.NABHNumber          || '',
+        publicContact:       r.publicContact       || '',
+        publicEmail:         r.publicEmail         || '',
         isAutoBillingEnabled: r.isAutoBillingEnabled || r.IsAutoBillingEnabled || false,
         // Nullable: a centre with no pin set yet has neither field, and 0 is
         // a valid coordinate (equator/prime meridian) so this can't use `||`.
@@ -708,6 +713,8 @@ export default function AdminBoard() {
       registrationNumber: hospitalData.registrationNumber,
       pan: hospitalData.pan,
       nabhNumber: hospitalData.nabhNumber,
+      publicContact: hospitalData.publicContact ?? null,
+      publicEmail: hospitalData.publicEmail ?? null,
       latitude: hospitalData.latitude,
       longitude: hospitalData.longitude
     };
@@ -753,32 +760,26 @@ export default function AdminBoard() {
     const targetHubId = activeCenter?.id;
     if (!targetHubId) return;
 
-    const payload = {
-      hospitalName: hospitalData.hospitalName || activeCenter.name,
-      hospitalAddress: hospitalData.hospitalAddress || 'Metadata synchronization active.',
-      gstin: hospitalData.gstin || '',
-      registrationNumber: hospitalData.registrationNumber || '',
-      pan: hospitalData.pan || '',
-      nabhNumber: hospitalData.nabhNumber || '',
-      isAutoBillingEnabled: newAutoBill
-    };
+    // Review B9: only the flag goes to its own endpoint, so a half-loaded form can't
+    // blank the centre's GSTIN/PAN/address.
+    const outboxItem = { id: targetHubId, enabled: newAutoBill };
 
     if (!isOnline) {
-      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+      await addToOutbox('HOSPITAL_AUTOBILL', outboxItem);
       notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       return;
     }
 
     try {
-      await apiClient.put(`/hospitals/${targetHubId}`, payload);
+      await apiClient.put(`/hospitals/${targetHubId}/auto-billing`, { enabled: newAutoBill });
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       setHospitalData(prev => ({ ...prev, isAutoBillingEnabled: newAutoBill }));
       await refreshCenters();
     } catch (err) {
       console.error('[FINANCE] Protocol update failed', err);
       if (!err.response) {
-        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+        await addToOutbox('HOSPITAL_AUTOBILL', outboxItem);
         notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
         setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       } else {
@@ -799,6 +800,8 @@ export default function AdminBoard() {
             registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
             pan: res.data.pan || res.data.PAN || '',
             nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
+            publicContact: res.data.publicContact || '',
+            publicEmail: res.data.publicEmail || '',
             isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
           };
           setHospitalData(data);
@@ -1375,7 +1378,8 @@ export default function AdminBoard() {
                   { label: 'GSTIN', value: hospitalData.gstin },
                   { label: 'Registration Number', value: hospitalData.registrationNumber },
                   { label: 'PAN', value: hospitalData.pan },
-                  { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber }
+                  { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber },
+                  { label: 'Contact for referrers', value: [hospitalData.publicContact, hospitalData.publicEmail].filter(Boolean).join(' · ') }
                 ].map(item => (
                   <div key={item.label} style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
                     <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '3px' }}>{item.label}</div>
@@ -1717,6 +1721,16 @@ export default function AdminBoard() {
                     <div>
                         <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>NABH / NABL Number</label>
                         <input type="text" value={hospitalData.nabhNumber} onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value})} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
+                    {/* Review R9: what the referral portal shows doctors and agents — the
+                        centre's own number, not an admin's personal one. */}
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Phone shown to referrers</label>
+                        <input type="tel" value={hospitalData.publicContact || ''} onChange={e => setHospitalData({...hospitalData, publicContact: e.target.value})} placeholder="Front-desk number" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Email shown to referrers</label>
+                        <input type="email" value={hospitalData.publicEmail || ''} onChange={e => setHospitalData({...hospitalData, publicEmail: e.target.value})} placeholder="desk@centre.in" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
                     </div>
                   </div>
               </div>
@@ -3493,6 +3507,9 @@ export default function AdminBoard() {
           isTestMode={isTestMode}
           TODAY={TODAY}
         />
+      )}
+      {activeTab === 'Tax & billing' && (
+        <TaxBillingSettings hospitalId={activeCenter?.id} isOnline={isOnline} isMobile={isMobile} />
       )}
       {activeTab === 'Letterhead' && renderPrescriptionArchitect()}
       

@@ -421,7 +421,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .demo-lvl {
-  font-size: 11px;
+  font-size: 13px;
   color: #ffd700;
   font-weight: 800;
   text-transform: uppercase;
@@ -827,7 +827,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .xp-text {
-  font-size: 9px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
   text-align: right;
   margin-top: 2px;
@@ -878,7 +878,7 @@ button, a, input[type="button"], input[type="submit"] {
   margin-left: auto;
   background: #ff4757;
   color: #0f172a;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: bold;
   height: 18px;
   width: 18px;
@@ -1057,7 +1057,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .hub-label {
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 900;
   color: #0f52ba;
   letter-spacing: 2px;
@@ -1108,7 +1108,7 @@ button, a, input[type="button"], input[type="submit"] {
 
 .id-badge {
   font-family: monospace;
-  font-size: 8px;
+  font-size: 12px;
   background: rgba(0, 0, 0, 0.05);
   padding: 2px 6px;
   border-radius: 4px;
@@ -1122,7 +1122,7 @@ button, a, input[type="button"], input[type="submit"] {
   color: var(--tactical-cyan) !important;
   opacity: 0.7;
   letter-spacing: 2px !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
 }
 
 .btn-collapse {
@@ -1236,7 +1236,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .status-text {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   color: #1e293b;
   letter-spacing: 0.5px;
@@ -1271,7 +1271,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .date-display {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   color: #64748b;
   text-transform: uppercase;
@@ -1422,7 +1422,7 @@ button, a, input[type="button"], input[type="submit"] {
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.5px;
 }
 
@@ -1433,7 +1433,7 @@ button, a, input[type="button"], input[type="submit"] {
 .status-badge {
   padding: 4px 8px;
   border-radius: 12px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1519,7 +1519,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .queue-card-info p {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-secondary);
 }
 
@@ -1687,7 +1687,7 @@ button, a, input[type="button"], input[type="submit"] {
 
 .info-item .label {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-secondary);
   text-transform: uppercase;
   margin-bottom: 2px;
@@ -1735,7 +1735,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .file-badge {
-  font-size: 10px;
+  font-size: 12px;
   padding: 2px 4px;
   border-radius: 3px;
   background: #444;
@@ -1775,7 +1775,7 @@ button, a, input[type="button"], input[type="submit"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 12px;
   color: #666;
 }
 
@@ -1911,7 +1911,7 @@ button, a, input[type="button"], input[type="submit"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 12px;
   color: #666;
 }
 
@@ -2066,7 +2066,7 @@ button, a, input[type="button"], input[type="submit"] {
   bottom: -25px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -2105,7 +2105,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .builder-item-sub {
-  font-size: 11px;
+  font-size: 13px;
   color: #888;
 }
 
@@ -2211,7 +2211,7 @@ button, a, input[type="button"], input[type="submit"] {
   top: -20px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 700;
   color: #e74c3c;
   white-space: nowrap;
@@ -2475,7 +2475,7 @@ button, a, input[type="button"], input[type="submit"] {
 
   .data-table td::before {
     content: attr(data-label);
-    font-size: 10px !important;
+    font-size: 12px !important;
     font-weight: 800 !important;
     color: #888 !important;
     text-transform: uppercase !important;
@@ -2547,7 +2547,7 @@ button, a, input[type="button"], input[type="submit"] {
   }
 
   .mobile-compact-text {
-    font-size: 10px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -2667,7 +2667,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .node-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   fill: rgba(15, 23, 42, 0.75);
   letter-spacing: 1.5px;
@@ -2733,7 +2733,7 @@ button, a, input[type="button"], input[type="submit"] {
 
 .auth-immersive-container .form-group label {
   color: rgba(15, 23, 42, 0.85);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 1.5px;
   margin-bottom: 12px;
@@ -2794,7 +2794,7 @@ button, a, input[type="button"], input[type="submit"] {
     margin-top: 24px;
   }
   .login-platform-strip__label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: 2.5px;
     text-transform: uppercase;
@@ -2822,7 +2822,7 @@ button, a, input[type="button"], input[type="submit"] {
   .login-platform-chip__icon { font-size: 20px; flex-shrink: 0; }
   .login-platform-chip__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .login-platform-chip__name { font-size: 13px; font-weight: 900; color: #0f172a; letter-spacing: -0.2px; }
-  .login-platform-chip__tagline { font-size: 11px; font-weight: 600; color: rgba(15, 23, 42, 0.55); }
+  .login-platform-chip__tagline { font-size: 13px; font-weight: 600; color: rgba(15, 23, 42, 0.55); }
   .login-platform-chip__arrow { font-size: 14px; font-weight: 800; color: var(--chip-accent, #2563eb); flex-shrink: 0; }
 }
 
@@ -2994,7 +2994,7 @@ button, a, input[type="button"], input[type="submit"] {
   
   .status-hud {
     padding: 8px 16px;
-    font-size: 10px;
+    font-size: 12px;
   }
   
   .temporal-hud {
@@ -3163,7 +3163,7 @@ button, a, input[type="button"], input[type="submit"] {
 /* Light variants for specific glass-card cases (like Login Page) */
 .glass-card .premium-label-light {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   color: rgba(15,23,42,0.85);
   text-transform: uppercase;
@@ -3228,7 +3228,7 @@ button, a, input[type="button"], input[type="submit"] {
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   transition: all 0.3s ease;
   background: transparent;
@@ -3316,7 +3316,7 @@ button, a, input[type="button"], input[type="submit"] {
 
   .auth-immersive-container .premium-label-light,
   .auth-immersive-container .form-group label {
-    font-size: 11px !important;
+    font-size: 13px !important;
     font-weight: 800 !important;
     letter-spacing: 1px !important;
     color: #475569 !important;
@@ -3395,7 +3395,7 @@ button, a, input[type="button"], input[type="submit"] {
   }
   
   .auth-immersive-container .premium-label {
-    font-size: 11px !important;
+    font-size: 13px !important;
     font-weight: 800 !important;
     letter-spacing: 1px !important;
     color: #475569 !important;
@@ -3521,7 +3521,7 @@ button, a, input[type="button"], input[type="submit"] {
   .mobile-bottom-nav-label {
     position: absolute;
     bottom: 8px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.2px;
     color: #1e293b;

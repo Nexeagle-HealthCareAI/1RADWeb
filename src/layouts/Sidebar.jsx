@@ -1,4 +1,5 @@
 import { liveAwareInterval } from '../live/liveUpdates';
+import { navLabel, useLang } from '../i18n';
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
@@ -29,6 +30,7 @@ const T = {
 
 // ── Route → SVG icon ──────────────────────────────────────────────────────────
 const ICONS = {
+  '/front-desk': <><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5v-11zM4 4v1h8V4H4zm0 3v1h8V7H4zm0 3v1h5v-1H4z"/></>,
   '/configuration': <>
     <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
     <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
@@ -155,7 +157,7 @@ function NavRow({ item, collapsed, isMobile, onClose, badge = 0 }) {
             fontSize: '13.5px', fontWeight: isActive ? 500 : 400,
             color: isActive ? T.textHigh : hov ? T.textHigh : T.textMid,
             transition: 'color 0.13s', letterSpacing: '0.01em',
-          }}>{item.label}</span>
+          }}>{navLabel(item)}</span>
           {isUpcoming && (
             <span style={{
               fontSize: '9px', fontWeight: 700, letterSpacing: '0.4px',
@@ -194,7 +196,7 @@ function NavRow({ item, collapsed, isMobile, onClose, badge = 0 }) {
         )}
       </NavLink>
 
-      {showCollapsed && <Tooltip label={item.label} anchorRef={rowRef} visible={hov} />}
+      {showCollapsed && <Tooltip label={navLabel(item)} anchorRef={rowRef} visible={hov} />}
     </div>
   );
 }
@@ -243,8 +245,20 @@ const SettingsIcon = () => (
 const PACS_ONLY_ROUTES = new Set(['/admin-board', '/configuration', '/studies', '/dicom-bridge']);
 
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
+  useLang();
   const { currentUser, logout, activeCenter, hasModule, modules } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  // UI review: on tablets and small laptops the full menu took a sixth of the
+  // screen. Below 1280 px it starts as an icon rail (labels on hover/long-press);
+  // the chevron still opens it, and the choice is remembered on this device.
+  const [collapsed, setCollapsedState] = useState(() => {
+    try { const v = localStorage.getItem('1rad_sidebar_collapsed'); if (v === '1' || v === '0') return v === '1'; } catch { /* ignore */ }
+    return typeof window !== 'undefined' && window.innerWidth < 1280;
+  });
+  const setCollapsed = (fn) => setCollapsedState(prev => {
+    const next = typeof fn === 'function' ? fn(prev) : fn;
+    try { localStorage.setItem('1rad_sidebar_collapsed', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
   const [soHov, setSoHov] = useState(false);
   // Per-row hover state for Security/Sync/Sessions was inlined when those
   // rows became children of the new Settings group, so the standalone
@@ -332,10 +346,9 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   }, [currentUser, activeCenter, sidebarLocation.pathname]);
 
   const isMobile = viewW < 640;
-  const isTablet = viewW >= 640 && viewW < 1024;
 
-  // On mobile/tablet the sidebar is a full drawer — collapsed rail is desktop-only
-  const showCollapsed = collapsed && !isMobile && !isTablet;
+  // Phones use the drawer; tablets and desktops can use the icon rail.
+  const showCollapsed = collapsed && !isMobile;
 
   if (!currentUser) return null;
 
@@ -358,7 +371,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
 
   const navItems = NAV_ITEMS.filter(item =>
-    allowedRoutes.includes(item.route) &&
+    (allowedRoutes.includes(item.route) || (item.accessVia || []).some(r => allowedRoutes.includes(r))) &&
     // Product-module gate (RIS / PACS SKUs): hide items the active center's
     // subscription doesn't include. hasModule() is permissive while the
     // subscription is still loading, so the menu doesn't flash on boot.
@@ -373,8 +386,6 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   // Width: mobile = full drawer handled by CSS, desktop = variable
   const sidebarW = isMobile
     ? T.wMobile
-    : isTablet
-    ? T.wExpanded
     : showCollapsed ? T.wCollapsed : T.wExpanded;
 
   const FF = '"Segoe UI", system-ui, sans-serif';

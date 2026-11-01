@@ -15,7 +15,10 @@ import apiClient from '../api/apiClient';
 import { notifyToast } from '../utils/toast';
 
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-const LW = 162; // launcher pill width (logo + "Ask RadAI")
+// Launcher: a pill with "Ask RadAI" on desktop; on phones and tablets just the
+// round logo (54 px), parked above the bottom bar so it doesn't cover the list.
+const isCompact = () => typeof window !== 'undefined' && window.innerWidth < 1024;
+const lw = () => (isCompact() ? 54 : 162);
 const LH = 54;  // launcher pill height
 const LOGO = `${import.meta.env.BASE_URL}Logo.png`;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -34,19 +37,19 @@ const WAKE = /(hey\s+rad\s*ai|ok\s+rad\s*ai|hey\s+rad\b|rad\s*ai|radai)/i;
 const loadPos = () => {
   if (typeof window === 'undefined') return { x: 20, y: 20 };
   // Default: bottom-right, above the page edge.
-  let p = { x: window.innerWidth - LW - 20, y: window.innerHeight - LH - 90 };
+  let p = { x: window.innerWidth - lw() - 16, y: window.innerHeight - LH - (isCompact() ? 104 : 90) };
   try {
-    const raw = localStorage.getItem('radai_pos');
+    const raw = localStorage.getItem('radai_pos_v2');
     if (raw) {
       const j = JSON.parse(raw);
       if (j && Number.isFinite(j.x) && Number.isFinite(j.y)) p = j;
     }
   } catch { /* ignore */ }
-  // ALWAYS clamp into the current viewport. A position saved on a larger screen
+  // Alw()AYS clamp into the current viewport. A position saved on a larger screen
   // (or before a rotate / dev-tools resize) would otherwise land off-screen and
   // the launcher would be invisible — which reads as "RadAI is gone".
   return {
-    x: clamp(p.x, 8, Math.max(8, window.innerWidth - LW - 8)),
+    x: clamp(p.x, 8, Math.max(8, window.innerWidth - lw() - 8)),
     y: clamp(p.y, 8, Math.max(8, window.innerHeight - LH - 8)),
   };
 };
@@ -64,6 +67,7 @@ export default function RadAI() {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(loadPos);
   const posRef = useRef(pos);
+  const [compact, setCompact] = useState(isCompact);
   const setPosBoth = (p) => { posRef.current = p; setPos(p); };
 
   const [messages, setMessages] = useState([
@@ -76,7 +80,7 @@ export default function RadAI() {
   const bodyRef = useRef(null);
 
   // Language hint (drives voice-out + helps the model) and voice-out on/off.
-  const [lang, setLang] = useState(() => { try { return localStorage.getItem('radai_lang') || 'en'; } catch { return 'en'; } });
+  const [lang, setLang] = useState(() => { try { return localStorage.getItem('radai_lang') || (localStorage.getItem('1rad_lang') === 'hi' ? 'hi' : 'en'); } catch { return 'en'; } });
   const [soundOn, setSoundOn] = useState(() => { try { return localStorage.getItem('radai_sound') !== '0'; } catch { return true; } });
   const [speakingId, setSpeakingId] = useState(null);
 
@@ -90,10 +94,10 @@ export default function RadAI() {
 
   // Keep the launcher on-screen if the window resizes.
   useEffect(() => {
-    const onResize = () => setPosBoth({
-      x: clamp(posRef.current.x, 8, window.innerWidth - LW - 8),
+    const onResize = () => { setCompact(isCompact()); setPosBoth({
+      x: clamp(posRef.current.x, 8, window.innerWidth - lw() - 8),
       y: clamp(posRef.current.y, 8, window.innerHeight - LH - 8),
-    });
+    }); };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -139,14 +143,14 @@ export default function RadAI() {
       const dx = ev.clientX - sx, dy = ev.clientY - sy;
       if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
       if (moved) setPosBoth({
-        x: clamp(origin.x + dx, 8, window.innerWidth - LW - 8),
+        x: clamp(origin.x + dx, 8, window.innerWidth - lw() - 8),
         y: clamp(origin.y + dy, 8, window.innerHeight - LH - 8),
       });
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      if (moved) { try { localStorage.setItem('radai_pos', JSON.stringify(posRef.current)); } catch { /* ignore */ } }
+      if (moved) { try { localStorage.setItem('radai_pos_v2', JSON.stringify(posRef.current)); } catch { /* ignore */ } }
       else setOpen((o) => !o);
     };
     window.addEventListener('pointermove', onMove);
@@ -410,7 +414,7 @@ export default function RadAI() {
   // Panel anchored to the launcher, clamped on-screen.
   const PW = Math.min(380, (typeof window !== 'undefined' ? window.innerWidth : 380) - 24);
   const PH = Math.min(540, (typeof window !== 'undefined' ? window.innerHeight : 540) - 24);
-  const panelLeft = clamp(pos.x + LW - PW, 12, (typeof window !== 'undefined' ? window.innerWidth : PW) - PW - 12);
+  const panelLeft = clamp(pos.x + lw() - PW, 12, (typeof window !== 'undefined' ? window.innerWidth : PW) - PW - 12);
   const panelTop = clamp(pos.y - PH - 12, 12, (typeof window !== 'undefined' ? window.innerHeight : PH) - PH - 12);
 
   const headerBtn = {
@@ -426,8 +430,9 @@ export default function RadAI() {
       <button
         onPointerDown={onPointerDown}
         title="Ask RadAI — help (drag to move)"
+        aria-label="Ask RadAI for help"
         style={{
-          position: 'fixed', left: pos.x, top: pos.y, height: LH, padding: '0 18px 0 7px', borderRadius: LH / 2,
+          position: 'fixed', left: pos.x, top: pos.y, height: LH, padding: compact ? '0 7px' : '0 18px 0 7px', borderRadius: LH / 2,
           border: 'none', cursor: 'grab', zIndex: 2147483600, touchAction: 'none',
           background: 'linear-gradient(135deg,#7c3aed,#4f46e5)',
           boxShadow: open ? '0 10px 28px -6px rgba(79,70,229,0.7)' : '0 8px 22px -6px rgba(79,70,229,0.55)',
@@ -441,10 +446,12 @@ export default function RadAI() {
         <span style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}>
           <img src={LOGO} alt="NexEagle" draggable={false} style={{ width: '32px', height: '32px', objectFit: 'contain', pointerEvents: 'none' }} />
         </span>
-        <span style={{ display: 'flex', alignItems: 'baseline', gap: '4px', pointerEvents: 'none' }}>
-          <span style={{ fontSize: '13px', fontWeight: 800, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.3px' }}>Ask</span>
-          <span className="radai-shimmer" style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '0.5px' }}>RadAI</span>
-        </span>
+        {!compact && (
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: '4px', pointerEvents: 'none' }}>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.3px' }}>Ask</span>
+            <span className="radai-shimmer" style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '0.5px' }}>RadAI</span>
+          </span>
+        )}
       </button>
 
       {open && (

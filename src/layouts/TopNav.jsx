@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useLang, t } from '../i18n';
+import LanguageSwitcher from '../i18n/LanguageSwitcher';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
@@ -18,6 +20,7 @@ const DESKTOP_DOWNLOAD_URL =
 const IS_ELECTRON_APP = typeof window !== 'undefined' && !!window.electron;
 
 export default function TopNav({ currentTime }) {
+  useLang();
   const { currentUser, activeCenter, subscription, centers, switchCenter } = useAuth();
   const navigate = useNavigate();
 
@@ -288,7 +291,7 @@ export default function TopNav({ currentTime }) {
               <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
                 <div className="nav-terminal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-                    {hasMultipleHospitals ? 'Active hospital' : 'Current Terminal'}
+                    {t('hdr.centre')}
                   </span>
                   {isOnline && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />}
                 </div>
@@ -417,7 +420,7 @@ export default function TopNav({ currentTime }) {
                 style={{ display: 'flex', flexDirection: 'column' }}
               >
                 <span style={{ fontSize: '9px', fontWeight: 950, color: syncToneColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  {isSyncing ? 'Syncing...' : isOnline ? 'Online' : 'Offline'}
+                  {isSyncing ? 'Syncing…' : isOnline ? t('hdr.online') : t('hdr.offline')}
                 </span>
                 {poisonedCount > 0 ? (
                   <span style={{ fontSize: '10px', fontWeight: 800, color: '#b91c1c' }}>
@@ -476,9 +479,11 @@ export default function TopNav({ currentTime }) {
                 <line x1="8" y1="21" x2="16" y2="21"></line>
                 <line x1="12" y1="17" x2="12" y2="21"></line>
               </svg>
-              <span className="nav-desktop-download-label">Get Desktop App</span>
+              <span className="nav-desktop-download-label">{t('hdr.desktopApp')}</span>
             </button>
           )}
+
+          <LanguageSwitcher />
 
           {/* SLA bell — auto-hides when there are no overdue patients. */}
           <OverdueBell />

@@ -22,7 +22,7 @@ export const ROLE_LABELS = {
 export const ROLE_HOME = {
   admindoctor: '/admin-board',
   admin: '/admin-board',
-  receptionist: '/appointment-board',
+  receptionist: '/front-desk',
   technician: '/technician',
   doctor: '/doctor-board',
   accountant: '/billing',
@@ -37,6 +37,15 @@ export const NAV_ITEMS = [
     label: 'Dashboard',
     route: '/admin-board',
     allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
+    // Simple today screen (UI review, round 2). Anyone who may open the
+    // appointment list may open this too (accessVia), so saved custom roles keep working.
+    label: 'Front desk',
+    route: '/front-desk',
+    allowedRoles: ['admindoctor', 'admin', 'receptionist'],
+    requiredModule: 'RIS',
+    accessVia: ['/appointment-board'],
   },
   {
     label: 'Appointments',
@@ -107,9 +116,9 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  admin: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  receptionist: ['/appointment-board', '/operations-board', '/studies'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admin: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  receptionist: ['/front-desk', '/appointment-board', '/operations-board', '/studies'],
   technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
   doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
   accountant: ['/billing', '/operations-board'],

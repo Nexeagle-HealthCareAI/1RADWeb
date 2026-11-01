@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLang } from '../i18n';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import MobileMenuSheet from './MobileMenuSheet';
@@ -18,6 +19,7 @@ import { OFFLINE_MODE_ENABLED } from '../config/offlineMode';
 
 
 export default function AppLayout() {
+  const [lang] = useLang();
   const { currentUser, logout, showTimeoutModal, timeoutCountdown, resetIdleTimer, subscription, refreshSubscription } = useAuth();
   const location = useLocation();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -180,7 +182,7 @@ export default function AppLayout() {
       <div className="main-content">
         <TopNav currentTime={currentTime} />
 
-        <main className="page-content" ref={pageContentRef} style={{ padding: 0 }}>
+        <main className="page-content" ref={pageContentRef} style={{ padding: 0 }} key={lang}>
           <Outlet />
         </main>
       </div>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { istTodayYmd } from '../../utils/istClock';
 import * as XLSX from 'xlsx-js-style';
 import { fetchFinancialMatrix } from '../../api/billing/reportingApi';
 import RevenueCollectionsPanel from './panels/RevenueCollectionsPanel';
@@ -44,7 +45,7 @@ const AnalyticsHub = ({
   const currentSection = forceSection || activeSection;
   const isEmpty = invoices.length === 0 && expenses.length === 0 && referralCommissions.length === 0;
 
-  const TODAY = new Date().toISOString().split('T')[0];
+  const TODAY = istTodayYmd(); // today in India, not the UTC date
 
   const handleExportToExcel = () => {
     if (!modalityGroupedServices.length) return;
