@@ -76,6 +76,15 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'doctor', 'technician'],
   },
   {
+    // Partners and payouts in the simple look (UI review, round 3). Anyone who may open
+    // the Referrals page or Billing may open it (accessVia), so custom roles keep working.
+    label: 'Partners & payouts',
+    route: '/partners',
+    allowedRoles: ['admindoctor', 'admin', 'accountant'],
+    requiredModule: 'RIS',
+    accessVia: ['/referrals', '/billing'],
+  },
+  {
     label: 'Referral Incentives',
     route: '/referrals',
     allowedRoles: ['admindoctor', 'admin'],
@@ -116,12 +125,12 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  admin: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
   receptionist: ['/front-desk', '/appointment-board', '/operations-board', '/studies'],
   technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
   doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
-  accountant: ['/billing', '/operations-board'],
+  accountant: ['/billing', '/partners', '/operations-board'],
 };
 
 export const getCustomRoles = (hospitalId) => {

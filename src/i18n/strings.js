@@ -118,5 +118,6 @@ const bn = {
 };
 
 import * as FD from './strings.frontdesk';
+import * as PT from './strings.partners';
 
-export const STRINGS = { en: { ...en, ...FD.en }, hi: { ...hi, ...FD.hi }, bn: { ...bn, ...FD.bn } };
+export const STRINGS = { en: { ...en, ...FD.en, ...PT.en }, hi: { ...hi, ...FD.hi, ...PT.hi }, bn: { ...bn, ...FD.bn, ...PT.bn } };

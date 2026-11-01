@@ -208,7 +208,10 @@ export default function BookingSheet({ open, onClose, onBooked, onCollect, isOnl
         dateTime: `${dateYmd}T${istNowTime()}`,
         type: 'scheduled',
         doctor,
-        referredBy: withDoctorPrefix(ref.name, ref.isDoctor),
+        // A partner picked from the list goes by id under its stored name (the server
+        // credits exactly that partner); a typed-in person gets the doctor title.
+        referredBy: sentBy.kind === 'partner' ? ref.name : withDoctorPrefix(ref.name, ref.isDoctor),
+        referrerId: sentBy.kind === 'partner' ? (sentBy.p.referrerId || undefined) : undefined,
         referredContact: ref.contact || '',
         referredAddress: ref.address || '',
         referrerIsDoctor: ref.isDoctor,
