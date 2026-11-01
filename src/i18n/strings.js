@@ -119,5 +119,6 @@ const bn = {
 
 import * as FD from './strings.frontdesk';
 import * as PT from './strings.partners';
+import * as RP from './strings.reporting';
 
-export const STRINGS = { en: { ...en, ...FD.en, ...PT.en }, hi: { ...hi, ...FD.hi, ...PT.hi }, bn: { ...bn, ...FD.bn, ...PT.bn } };
+export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn } };
