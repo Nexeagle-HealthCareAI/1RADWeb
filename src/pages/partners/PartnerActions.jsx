@@ -3,8 +3,8 @@ import apiClient from '../../api/apiClient';
 import { t } from '../../i18n';
 import { Button, Sheet } from '../../components/saral/Saral';
 import { C } from '../../components/saral/tokens';
-import { Err, Note } from '../frontdesk/parts';
-import { apiError, fieldStyle } from '../frontdesk/fdUtil';
+import { Err, Note } from '../../components/saral/parts';
+import { apiError, fieldStyle } from '../../components/saral/formUtil';
 
 /** A plain "are you sure" sheet - in place of the browser's confirm pop-up. */
 export function ConfirmSheet({ title, body, confirm, danger, run, onClose, onDone }) {

@@ -80,7 +80,7 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
 
   // Do not exclude /dicom-bridge since it is not on the permanent bottom nav bar
-  const BOTTOM_NAV_ROUTES = new Set(['/front-desk', '/billing', '/studies', '/doctor-board']);
+  const BOTTOM_NAV_ROUTES = new Set(['/appointment-board', '/billing', '/studies', '/doctor-board']);
 
   const navItems = NAV_ITEMS.filter(item =>
     (allowedRoutes.includes(item.route) || (item.accessVia || []).some(r => allowedRoutes.includes(r))) &&
@@ -89,7 +89,7 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
     !BOTTOM_NAV_ROUTES.has(item.route)
   );
 
-  const clinicalRoutes = ['/front-desk', '/technician', '/operations-board', '/dicom-bridge', '/studies', '/appointment-board', '/doctor-board', '/billing'];
+  const clinicalRoutes = ['/technician', '/operations-board', '/dicom-bridge', '/studies', '/appointment-board', '/doctor-board', '/billing'];
   const adminRoutes = ['/admin-board', '/approvals', '/partners', '/referrals', '/staff'];
   
   const clinicalItems = navItems.filter(item => clinicalRoutes.includes(item.route));

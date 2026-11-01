@@ -8511,7 +8511,7 @@ export default function AppointmentBoard() {
           <div className="appt-page-top">
         <div className="appt-page-header">
           <div className="appt-page-title-block">
-            <h1 className="appt-page-title">Appointment Board</h1>
+            <h1 className="appt-page-title">{tr('page.appointments')}</h1>
           </div>
 
           <div className="appt-page-actions">
