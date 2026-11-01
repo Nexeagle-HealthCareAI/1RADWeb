@@ -40,7 +40,10 @@ export default function ReferrerSheet({ visit, onClose, onDone, isOnline }) {
     const m = pick.more || {};
     const clean = (v) => String(v || '').trim() || null;
     return {
-      newReferrerName: withDoctorPrefix(pick.name.trim(), pick.isDoctor),
+      // A partner picked from the list is sent by id under its stored name, so the
+      // server credits exactly that partner (never a namesake).
+      newReferrerName: pick.id ? pick.name.trim() : withDoctorPrefix(pick.name.trim(), pick.isDoctor),
+      newReferrerId: pick.id || null,
       newReferrerContact: (pick.contact || '').trim() || null,
       newReferrerIsDoctor: pick.isDoctor !== false,
       newReferrerSupportedByDoctor: isOther ? (pick.advisedBy || '').trim() : null,
@@ -126,7 +129,7 @@ export default function ReferrerSheet({ visit, onClose, onDone, isOnline }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Chip on={isPick('Self')} onClick={() => { setOther(false); setPick({ name: 'Self', isDoctor: true }); }}>{t('bk.self')}</Chip>
             {partners.slice(0, 12).map(p => (
-              <Chip key={p.id || p.name} on={isPick(p.name)} onClick={() => { setOther(false); setPick({ name: p.name, isDoctor: p.isDoctor !== false, contact: p.contact || '', advisedBy: p.supportedByDoctor || '', address: p.address || '' }); }}>
+              <Chip key={p.id || p.name} on={isPick(p.name)} onClick={() => { setOther(false); setPick({ id: p.referrerId, name: p.name, isDoctor: p.isDoctor !== false, contact: p.contact || '', advisedBy: p.supportedByDoctor || '', address: p.address || '' }); }}>
                 {withDoctorPrefix(p.name, p.isDoctor !== false)}
               </Chip>
             ))}

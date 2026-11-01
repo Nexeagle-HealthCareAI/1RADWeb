@@ -19,6 +19,7 @@ const SharedStudyPage = lazy(() => import('../pages/SharedStudyPage'));
 const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
 const AccessDenied = lazy(() => import('../pages/AccessDenied'));
 const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
+const PartnersPage = lazy(() => import('../pages/partners/PartnersPage'));
 const FrontDeskPage = lazy(() => import('../pages/frontdesk/FrontDeskPage'));
 const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
 const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
@@ -216,6 +217,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute authOnly={true}>
               <SyncStatusPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/partners"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'accountant']} moduleRoutes={['/partners', '/referrals', '/billing']} requiredModule="RIS">
+              <PartnersPage />
             </ProtectedRoute>
           }
         />

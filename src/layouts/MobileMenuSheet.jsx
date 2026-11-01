@@ -24,6 +24,7 @@ const ICONS = {
   '/dicom-bridge': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/><path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.823-.823a2 2 0 0 1-.451-2.587l1.328-1.372a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.242-4.243z"/></svg>,
   '/studies': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/><path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.823-.823a2 2 0 0 1-.451-2.587l1.328-1.372a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.242-4.243z"/></svg>,
   '/referrals': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M12.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM11 12.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/><path d="M3.5 7a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/><path d="M12.5 7a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-1.5-3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/><path d="M3.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-1.5-3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/></svg>,
+  '/partners': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M12.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM11 12.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/><path d="M3.5 7a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/><path d="M12.5 7a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-1.5-3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/><path d="M3.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-1.5-3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/></svg>,
   '/staff': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path fillRule="evenodd" d="M5.216 14A2.238 2.238 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.325 6.325 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216z"/><path d="M4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg>,
   '/operations-board': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/><path d="M8 8a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 8zm2.5 1.5a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0v-1a.5.5 0 0 1 .5-.5zm-5 1a.5.5 0 0 1 .5.5v0a.5.5 0 0 1-1 0v0a.5.5 0 0 1 .5-.5z"/></svg>,
   '/approvals': <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z"/></svg>
@@ -37,6 +38,7 @@ const ROUTE_THEMES = {
   '/admin-board': { bg: '#f3e8ff', color: '#9333ea' },      // Purple
   '/approvals': { bg: '#fef3c7', color: '#d97706' },        // Amber
   '/referrals': { bg: '#ffe4e6', color: '#e11d48' },        // Rose
+  '/partners': { bg: '#ffe4e6', color: '#e11d48' },        // Rose (partners & payouts)
   '/staff': { bg: '#ccfbf1', color: '#0d9488' },            // Teal
   '/configuration': { bg: '#f1f5f9', color: '#475569' },    // Slate
   '/subscription': { bg: '#ede9fe', color: '#7c3aed' },     // Violet
@@ -88,7 +90,7 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
   );
 
   const clinicalRoutes = ['/front-desk', '/technician', '/operations-board', '/dicom-bridge', '/studies', '/appointment-board', '/doctor-board', '/billing'];
-  const adminRoutes = ['/admin-board', '/approvals', '/referrals', '/staff'];
+  const adminRoutes = ['/admin-board', '/approvals', '/partners', '/referrals', '/staff'];
   
   const clinicalItems = navItems.filter(item => clinicalRoutes.includes(item.route));
   const adminItems = navItems.filter(item => adminRoutes.includes(item.route));
