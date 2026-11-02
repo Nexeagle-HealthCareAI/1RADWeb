@@ -1,11 +1,11 @@
 import React from 'react';
 import { t } from '../../i18n';
-import { C } from '../../components/saral/tokens';
-import { fieldStyle, labelStyle } from './fdUtil';
-import { Chip, Icon } from '../../components/saral/Saral';
+import { C } from './tokens';
+import { fieldStyle, labelStyle } from './formUtil';
+import { Chip, Icon } from './Saral';
 import { PATIENT_SOURCES, OTHER_SOURCE, canonicalSource } from '../../utils/patientSources';
 
-/** Small building blocks shared by the front-desk sheets. */
+/** Small building blocks shared by the Saral sheets (form notes, errors, folding sections). */
 
 export function Err({ children }) {
   if (!children) return null;

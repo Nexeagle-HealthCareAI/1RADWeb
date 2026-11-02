@@ -33,6 +33,17 @@ export const nativeStorage = {
     return true;
   },
 
+  // Used by report drafts (useReportAutosave) after a successful sign-off or
+  // addendum. The browser build was missing this, so every web sign-off threw
+  // "nativeStorage.delete is not a function" AFTER the server had signed.
+  delete: async (key) => {
+    if (IS_ELECTRON && window.electron.store) {
+      return window.electron.store.delete(key);
+    }
+    try { localStorage.removeItem(key); } catch { /* best-effort cleanup */ }
+    return true;
+  },
+
   getAll: async () => {
     if (IS_ELECTRON && window.electron.store) {
       return window.electron.store.getAll();

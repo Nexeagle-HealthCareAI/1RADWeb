@@ -9,7 +9,7 @@ import { Button, Chip, Icon, Tag } from '../../components/saral/Saral';
 import { C, FONT, inr } from '../../components/saral/tokens';
 import { useToast, useViewport } from '../../components/saral/hooks';
 import { csvCell, csvNumber, downloadCsv } from '../../utils/csv';
-import { apiError, fieldStyle } from '../frontdesk/fdUtil';
+import { apiError, fieldStyle } from '../../components/saral/formUtil';
 import PartnerSheet from './PartnerSheet';
 import PartnerFormSheet from './PartnerFormSheet';
 import { LinksSheet, UploadSheet } from './BulkSheets';

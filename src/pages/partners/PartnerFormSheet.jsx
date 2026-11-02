@@ -3,8 +3,8 @@ import apiClient from '../../api/apiClient';
 import { t } from '../../i18n';
 import { Button, Chip, Sheet } from '../../components/saral/Saral';
 import { C } from '../../components/saral/tokens';
-import { Err, More, Note } from '../frontdesk/parts';
-import { apiError, fieldStyle, labelStyle } from '../frontdesk/fdUtil';
+import { Err, More, Note } from '../../components/saral/parts';
+import { apiError, fieldStyle, labelStyle } from '../../components/saral/formUtil';
 import { mobileDigits } from './ptUtil';
 
 /**

@@ -22,7 +22,7 @@ export const ROLE_LABELS = {
 export const ROLE_HOME = {
   admindoctor: '/admin-board',
   admin: '/admin-board',
-  receptionist: '/front-desk',
+  receptionist: '/appointment-board',
   technician: '/technician',
   doctor: '/doctor-board',
   accountant: '/billing',
@@ -39,19 +39,13 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    // Simple today screen (UI review, round 2). Anyone who may open the
-    // appointment list may open this too (accessVia), so saved custom roles keep working.
+    // The appointment screen, called Front desk. Custom roles saved while the simple
+    // Front desk screen existed (route /front-desk) still open it (accessVia).
     label: 'Front desk',
-    route: '/front-desk',
-    allowedRoles: ['admindoctor', 'admin', 'receptionist'],
-    requiredModule: 'RIS',
-    accessVia: ['/appointment-board'],
-  },
-  {
-    label: 'Appointments',
     route: '/appointment-board',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
     requiredModule: 'RIS',
+    accessVia: ['/front-desk'],
   },
   {
     label: 'Billing',
@@ -125,9 +119,9 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/front-desk', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  receptionist: ['/front-desk', '/appointment-board', '/operations-board', '/studies'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  receptionist: ['/appointment-board', '/operations-board', '/studies'],
   technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
   doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
   accountant: ['/billing', '/partners', '/operations-board'],

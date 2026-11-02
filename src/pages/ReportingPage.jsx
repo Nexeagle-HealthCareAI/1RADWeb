@@ -23,6 +23,7 @@ import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import ReportingDicomPanel from '../components/Reporting/ReportingDicomPanel';
 import ReportingEditorPanel from '../components/Reporting/ReportingEditorPanel';
+import SimplePadTab from '../components/Reporting/SimplePadTab';
 import { NotificationModal, DraftRecoveryModal, WordSyncModal } from '../components/Reporting/ReportingModals';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId } from '../db/repos/reportsRepo';
@@ -122,8 +123,10 @@ const ReportingPage = () => {
   // Default tab. Opening from the study board's "View" passes ?view=dicom so the
   // window lands on the DICOM viewer; otherwise start on Reporting.
   const [activeMainTab, setActiveMainTab] = useState(
-    isInitialViewDicom ? 'DICOM' : 'REPORTING'
-  ); // 'DICOM', 'REPORTING', 'TIMELINE'
+    // Desktop and tablet land on the Report pad (images | paper | sign); phones
+    // keep the classic tabs. ?view=dicom still opens the viewer directly.
+    isInitialViewDicom ? 'DICOM' : (window.innerWidth >= 768 ? 'PAD' : 'REPORTING')
+  ); // 'PAD', 'DICOM', 'REPORTING', 'TIMELINE'
   // True only while the DICOM tab is visible — defers ZIP download until the user
   // actually needs the viewer, avoiding a 200-500 MB download on every page open.
   const dicomTabActiveRef = useRef(isInitialViewDicom);
@@ -133,15 +136,16 @@ const ReportingPage = () => {
 
   const handleSelectMainTab = (tabId) => {
     setActiveMainTab(tabId);
-    dicomTabActiveRef.current = tabId === 'DICOM';
-    // Trigger DICOM loading on-demand — only when the doctor opens the DICOM tab.
-    if (tabId === 'DICOM' && uploadedFiles[activeAssetIndex]?.needsHydration) {
+    // The Report pad shows the viewer too, so it counts as "DICOM visible".
+    dicomTabActiveRef.current = tabId === 'DICOM' || tabId === 'PAD';
+    // Trigger DICOM loading on-demand — only when a tab that shows images opens.
+    if ((tabId === 'DICOM' || tabId === 'PAD') && uploadedFiles[activeAssetIndex]?.needsHydration) {
       hydrateZipAsset(activeAssetIndex);
     }
     if (!isTablet) {
       if (tabId === 'DICOM') {
         setEditorState('collapsed');
-      } else if (tabId === 'REPORTING') {
+      } else if (tabId === 'PAD' || tabId === 'REPORTING') {
         setEditorState('standard');
         setActiveRightTab('REPORT');
       } else if (tabId === 'TIMELINE') {
@@ -150,6 +154,14 @@ const ReportingPage = () => {
       }
     }
   };
+
+  // On phones the pad falls back to the classic tabs (it is a desktop/tablet
+  // layout); rendering goes through effectiveMainTab below. Entering the pad
+  // counts as "viewer visible" for the polling/hydration bookkeeping.
+  const effectiveMainTab = (activeMainTab === 'PAD' && isMobile) ? 'REPORTING' : activeMainTab;
+  useEffect(() => {
+    if (activeMainTab === 'PAD' && !isMobile) dicomTabActiveRef.current = true;
+  }, [activeMainTab, isMobile]);
 
   // Performance optimization states
   const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
@@ -2513,6 +2525,52 @@ const ReportingPage = () => {
     );
   };
 
+  // The DICOM viewer panel, shared by the DICOM tab and the Report pad tab so
+  // both mount the identical viewer with identical wiring.
+  const renderDicomPanel = () => (
+    <ReportingDicomPanel
+            isMobile={isMobile}
+            isTablet={isTablet}
+            isSyncEnabled={isSyncEnabled}
+            isHistoricalMode={isHistoricalMode}
+            annotationKey={isHistoricalMode ? null : studyId ? `study:${studyId}` : appointmentId ? `appointment:${appointmentId}` : null}
+            activeAppointment={activeAppointment}
+            appointmentId={appointmentId}
+            activeServiceId={activeServiceId}
+            activeServiceMod={activeServiceMod}
+            activeAssetIndex={activeAssetIndex}
+            setActiveAssetIndex={setActiveAssetIndex}
+            activeMetadata={activeMetadata}
+            setActiveMetadata={setActiveMetadata}
+            activeTool={activeTool}
+            setActiveTool={setActiveTool}
+            cineEnabled={cineEnabled}
+            setCineEnabled={setCineEnabled}
+            currentSlice={currentSlice}
+            setCurrentSlice={setCurrentSlice}
+            layoutMode={layoutMode}
+            setLayoutMode={setLayoutMode}
+            resetTrigger={resetTrigger}
+            setResetTrigger={setResetTrigger}
+            setShowShortcutsHelp={setShowShortcutsHelp}
+            keyImages={keyImages}
+            toggleKeyImage={toggleKeyImage}
+            loadingProgress={loadingProgress}
+            processingStatus={processingStatus}
+            historicalStudyContext={historicalStudyContext}
+            uploadedFiles={uploadedFiles}
+            visibleUploadedFiles={visibleUploadedFiles}
+            viewportProps={viewportProps}
+            handleFileChange={handleFileChange}
+            handleRestoreCurrentStudy={handleRestoreCurrentStudy}
+            hydrateZipAsset={hydrateZipAsset}
+            navigate={navigate}
+            showNotif={showNotif}
+            loading={loading}
+            onMeasurement={onMeasurement}
+          />
+  );
+
   return (
     <>
     <div className="reporting-app-container" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -3612,6 +3670,7 @@ const ReportingPage = () => {
             padding: '5px', borderRadius: '16px', border: '1px solid rgba(15, 82, 186, 0.1)'
           }}>
             {[
+              { id: 'PAD',       label: 'Report Pad',             icon: '⚡' },
               { id: 'DICOM',     label: 'DICOM Viewer',           icon: '🔍' },
               { id: 'REPORTING', label: 'Reporting',              icon: '📝' },
               // 'AI Voice Reporting (Beta)' tab hidden for now — the
@@ -3687,52 +3746,43 @@ const ReportingPage = () => {
             Intentionally does NOT use the .panel-center class — that class has a
             mobile media-query rule forcing height: 65vh + flex-row that fights
             this layout. We give the wrapper its own inline-only styles instead. */}
-        {activeMainTab === 'DICOM' && (
-          <ReportingDicomPanel
-            isMobile={isMobile}
+        {/* REPORT PAD TAB — images | paper | sign (Saral). Desktop and tablet.
+            Mounted only once the visit has loaded: the heavy editor then mounts in
+            a settled tree (same as opening the Reporting tab by hand). */}
+        {effectiveMainTab === 'PAD' && !activeAppointment && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 15, fontWeight: 600 }}>
+            Loading…
+          </div>
+        )}
+        {effectiveMainTab === 'PAD' && activeAppointment && (
+          <SimplePadTab
+            renderDicomPanel={renderDicomPanel}
+            renderNarrativeEditor={renderNarrativeEditor}
+            templates={templates}
+            selectedTemplateId={selectedTemplateId}
+            setSelectedTemplateId={setSelectedTemplateId}
+            applyEditorContent={applyEditorContent}
+            impression={impression}
+            setImpression={setImpression}
+            advice={advice}
+            setAdvice={setAdvice}
+            saveStatus={saveStatus}
+            lastSavedAt={lastSavedAt}
+            savingVisible={savingVisible}
+            handleUndoConflict={handleUndoConflict}
+            isOnline={isOnline}
+            isFinalized={isFinalized}
+            reportStatus={reportStatus}
+            handlePreviewPrint={handlePreviewPrint}
+            handleSaveReport={handleSaveReport}
             isTablet={isTablet}
-            isSyncEnabled={isSyncEnabled}
-            isHistoricalMode={isHistoricalMode}
-            annotationKey={isHistoricalMode ? null : studyId ? `study:${studyId}` : appointmentId ? `appointment:${appointmentId}` : null}
-            activeAppointment={activeAppointment}
-            appointmentId={appointmentId}
-            activeServiceId={activeServiceId}
-            activeServiceMod={activeServiceMod}
-            activeAssetIndex={activeAssetIndex}
-            setActiveAssetIndex={setActiveAssetIndex}
-            activeMetadata={activeMetadata}
-            setActiveMetadata={setActiveMetadata}
-            activeTool={activeTool}
-            setActiveTool={setActiveTool}
-            cineEnabled={cineEnabled}
-            setCineEnabled={setCineEnabled}
-            currentSlice={currentSlice}
-            setCurrentSlice={setCurrentSlice}
-            layoutMode={layoutMode}
-            setLayoutMode={setLayoutMode}
-            resetTrigger={resetTrigger}
-            setResetTrigger={setResetTrigger}
-            setShowShortcutsHelp={setShowShortcutsHelp}
-            keyImages={keyImages}
-            toggleKeyImage={toggleKeyImage}
-            loadingProgress={loadingProgress}
-            processingStatus={processingStatus}
-            historicalStudyContext={historicalStudyContext}
-            uploadedFiles={uploadedFiles}
-            visibleUploadedFiles={visibleUploadedFiles}
-            viewportProps={viewportProps}
-            handleFileChange={handleFileChange}
-            handleRestoreCurrentStudy={handleRestoreCurrentStudy}
-            hydrateZipAsset={hydrateZipAsset}
-            navigate={navigate}
-            showNotif={showNotif}
-            loading={loading}
-            onMeasurement={onMeasurement}
           />
         )}
 
+        {effectiveMainTab === 'DICOM' && renderDicomPanel()}
+
             {/* REPORTING TAB */}
-            {activeMainTab === 'REPORTING' && (
+            {effectiveMainTab === 'REPORTING' && (
               <ReportingEditorPanel
                 renderNarrativeEditor={renderNarrativeEditor}
                 applyEditorContent={applyEditorContent}
@@ -3763,7 +3813,7 @@ const ReportingPage = () => {
             )}
 
             {/* VOICE REPORTING TAB — split: controls (left) + live editor (right) */}
-            {activeMainTab === 'VOICE' && (
+            {effectiveMainTab === 'VOICE' && (
               <div style={{
                 flex: 1, minHeight: 0,
                 display: 'flex', flexDirection: isMobile ? 'column' : 'row',
@@ -3799,7 +3849,7 @@ const ReportingPage = () => {
             )}
 
             {/* TIMELINE TAB */}
-            {activeMainTab === 'TIMELINE' && (
+            {effectiveMainTab === 'TIMELINE' && (
               <div style={{ flex: 1, overflowY: 'auto', background: '#f1f5f9', padding: '24px 28px' }}>
                 <div style={{ width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
                   <PatientTimeline

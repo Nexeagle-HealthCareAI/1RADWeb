@@ -20,7 +20,6 @@ const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
 const AccessDenied = lazy(() => import('../pages/AccessDenied'));
 const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
 const PartnersPage = lazy(() => import('../pages/partners/PartnersPage'));
-const FrontDeskPage = lazy(() => import('../pages/frontdesk/FrontDeskPage'));
 const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
 const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
 const AdminBoard = lazy(() => import('../pages/AdminBoard'));
@@ -254,16 +253,14 @@ export default function AppRouter() {
         />
         <Route
           path="/front-desk"
-          element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} moduleRoutes={['/front-desk', '/appointment-board']} requiredModule="RIS">
-              <FrontDeskPage />
-            </ProtectedRoute>
-          }
+          // The simple Front desk screen was retired; the appointment screen is now
+          // called Front desk. Old links and bookmarks land there.
+          element={<Navigate to="/appointment-board" replace />}
         />
         <Route
           path="/appointment-board"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} requiredModule="RIS">
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} moduleRoutes={['/appointment-board', '/front-desk']} requiredModule="RIS">
               <AppointmentBoard />
             </ProtectedRoute>
           }

@@ -1,7 +1,7 @@
 import { t } from '../../i18n';
-import { C } from '../../components/saral/tokens';
+import { C } from './tokens';
 
-/** Plain helpers and styles shared by the front-desk sheets. */
+/** Plain helpers and styles shared by the Saral sheets. */
 
 export const fieldStyle = {
   width: '100%', minHeight: 56, borderRadius: 14, border: `1.5px solid ${C.lineStrong}`, padding: '0 16px',
