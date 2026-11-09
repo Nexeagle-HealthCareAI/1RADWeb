@@ -14,6 +14,7 @@ export const en = {
   'rp.offline': 'No internet — saving on this computer',
   'rp.hideImgs': 'Hide images', 'rp.showImgs': 'Show images',
   'rp.signHint': 'Ctrl+Enter also opens signing',
+  'rp.doctorSigns': 'A doctor signs this report',
 };
 
 export const hi = {
@@ -28,6 +29,7 @@ export const hi = {
   'rp.offline': 'इंटरनेट नहीं — इसी कंप्यूटर पर सेव हो रहा है',
   'rp.hideImgs': 'तस्वीरें छिपाएँ', 'rp.showImgs': 'तस्वीरें दिखाएँ',
   'rp.signHint': 'Ctrl+Enter से भी साइन खुलता है',
+  'rp.doctorSigns': 'यह रिपोर्ट डॉक्टर साइन करेंगे',
 };
 
 export const bn = {
@@ -42,4 +44,5 @@ export const bn = {
   'rp.offline': 'ইন্টারনেট নেই — এই কম্পিউটারে সেভ হচ্ছে',
   'rp.hideImgs': 'ছবি লুকান', 'rp.showImgs': 'ছবি দেখান',
   'rp.signHint': 'Ctrl+Enter দিয়েও সাইন খোলে',
+  'rp.doctorSigns': 'এই রিপোর্ট ডাক্তার সাইন করবেন',
 };

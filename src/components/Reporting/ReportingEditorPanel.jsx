@@ -11,12 +11,12 @@ import { sanitizeMarkup } from '../../utils/sanitizeHtml';
  * pagination); the VOICE tab stays in the page.
  */
 export default function ReportingEditorPanel({
+  canSign = true,
   renderNarrativeEditor,
   applyEditorContent,
   templates,
   selectedTemplateId,
   setSelectedTemplateId,
-  protocol,
   handleOpenInWord,
   handlePreviewPrint,
   openingWord,
@@ -238,8 +238,11 @@ export default function ReportingEditorPanel({
           </button>
 
           <button
+            disabled={!canSign}
+            title={canSign ? '' : 'Only a doctor can sign'}
             onClick={() => {
-              handleSaveReport(true);
+              // The real sign-off: password → /reporting/report/finalize.
+              window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
             }}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -252,7 +255,7 @@ export default function ReportingEditorPanel({
             }}
           >
             <span>🖊️</span>
-            <span>Sign & Verify (1-Tap)</span>
+            <span>{canSign ? 'Sign report' : 'Doctor signs'}</span>
           </button>
         </div>
 
@@ -654,8 +657,8 @@ export default function ReportingEditorPanel({
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
                     >{openingWord ? '… Opening' : '📝 Open in Word'}</button>
 
-                    <button
-                      onClick={() => handleSaveReport(true)}
+                    {canSign && <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'))}
                       style={{
                         marginTop: '4px',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -669,7 +672,7 @@ export default function ReportingEditorPanel({
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(22, 163, 74, 0.4)'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(22, 163, 74, 0.3)'; }}
-                    >🖊 Finalize &amp; Sign</button>
+                    >🖊 Sign report</button>}
                   </div>
 
                   {/* Signature card */}
@@ -682,12 +685,12 @@ export default function ReportingEditorPanel({
                     boxShadow: '0 4px 14px rgba(10, 22, 40, 0.15)',
                   }}>
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg, transparent, #d4a017 50%, transparent)' }} />
-                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#d4a017', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '8px' }}>Signature</div>
+                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#d4a017', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '8px' }}>Signing</div>
                     <div style={{ fontWeight: 800, fontSize: '13px', color: 'white', lineHeight: 1.3, marginBottom: '4px' }}>
-                      {protocol?.hospital?.name || 'Authorized Diagnostic Center'}
+                      Only a doctor can sign
                     </div>
-                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
-                      Digital Medical Record Signature
+                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: 500, lineHeight: 1.45 }}>
+                      Sign report asks for your password. A Final report is locked; corrections go in as an addendum.
                     </div>
                   </div>
                 </aside>

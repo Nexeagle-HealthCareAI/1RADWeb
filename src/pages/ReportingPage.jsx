@@ -36,7 +36,13 @@ const ReportingPage = () => {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const { isOnline, addToOutbox } = useOffline();
-  const { user: currentUser } = useAuth();
+  // The auth context exposes `currentUser` (roles = the ACTIVE centre's roles).
+  // This page used to read `user`, which doesn't exist, so the signer's name
+  // never reached the sign-off dialog.
+  const { currentUser } = useAuth();
+  // Only doctors sign (the server enforces it too). Technicians can type a
+  // draft; a doctor takes it over and signs.
+  const canSign = (currentUser?.roles || []).some(r => r === 'admindoctor' || r === 'doctor');
   // 60s tick so the on-premises clock advances while the radiologist is
   // actively reporting — shows the case "ageing" in real time.
   useTickClock();
@@ -292,6 +298,9 @@ const ReportingPage = () => {
     setBaseline: setReportBaseline,
     finalizeReport,
     addAddendum,
+    markContentLoading,
+    markContentLoaded,
+    flushNow,
   } = useReportAutosave({
     appointmentId,
     imagingStudyId: studyId,
@@ -502,6 +511,8 @@ const ReportingPage = () => {
   const fetchReportingContext = useCallback(async (appId) => {
     const reqId = ++fetchReqRef.current;               // supersede any older in-flight load
     const isStale = () => reqId !== fetchReqRef.current;
+    let handedOff = false;                             // a scoped reload took over
+    markContentLoading();                              // no saves until this study's text is applied
     setLoading(true);
     setError(null);
     console.info(`[1RAD] Initializing Reporting Context for AppID: ${appId}`);
@@ -565,7 +576,13 @@ const ReportingPage = () => {
         // service has already been reported.
         const firstUnreported = lines.find(l => !['REPORTED', 'DELIVERED'].includes((l.status || '').toUpperCase()));
         const target = firstUnreported || lines[0];
-        if (target?.id) setActiveServiceId(target.id);
+        if (target?.id) {
+          // Picking a study re-runs this load scoped to it. Stop here so this
+          // unscoped load can't apply a different study's report on top.
+          setActiveServiceId(target.id);
+          handedOff = true;
+          return;
+        }
       }
       // Surface available patient fields so the editor banner can verify which
       // ones are present (helpful when payload shape varies dev vs prod).
@@ -650,6 +667,18 @@ const ReportingPage = () => {
         }),
         apiClient.get(`/Study/${appId}/manifest`).catch(() => ({ data: { success: false } }))
       ]);
+
+      // The user switched study (or left) while these were loading — a newer
+      // load owns the editor now; applying this one would mix two studies.
+      if (isStale()) return;
+
+      // Start this study from a clean slate: nothing from the previously open
+      // study (its impression, advice, template, signature or lock) carries over.
+      setImpression('');
+      setAdvice('');
+      setSelectedTemplateId(null);
+      setIsFinalized(false);
+      applyReportMeta(null);
 
       if (templRes.data?.success) {
         // Normalize PascalCase API response (Id/Name/Content) to camelCase so
@@ -819,7 +848,8 @@ const ReportingPage = () => {
                 applyEditorContent(localDraft.findings || '');
                 if (localDraft.impression) setImpression(localDraft.impression);
                 if (localDraft.advice) setAdvice(localDraft.advice);
-                if (localDraft.templateId) setSelectedTemplateId(String(localDraft.templateId));
+                const draftTpl = localDraft.templateId || localDraft.selectedTemplateId;
+                if (draftTpl) setSelectedTemplateId(String(draftTpl));
                 restored = true;
               }
             }
@@ -871,6 +901,9 @@ const ReportingPage = () => {
           console.warn('[1RAD] New-case local draft check failed', draftErr);
         }
 
+        // A new report has no server version yet: fresh baseline + no OCC token.
+        if (!restoredDraft) setReportBaseline({ findings: '', rowVersion: null });
+
         // No draft → auto-match a template against the ACTIVE service's name (or
         // fall back to the visit's primary service for legacy single-service
         // visits). This makes the template binding follow whichever service tab
@@ -893,10 +926,15 @@ const ReportingPage = () => {
               applyEditorContent(matchContent);
             } else {
               console.info(`[1RAD] No matching template for service "${targetServiceName}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
+              applyEditorContent(''); // never leave the previous study's text in place
             }
+          } else {
+            applyEditorContent('');
           }
         }
       }
+      // This study's text is now in the editor — saves may go to it.
+      markContentLoaded(activeServiceId);
     } catch (err) {
       console.error('[REPORTING] Initialization failure, trying cache', err);
       // Try to load from cache
@@ -911,18 +949,20 @@ const ReportingPage = () => {
         applyEditorContent(draft.findings || '');
         setImpression(draft.impression || '');
         setAdvice(draft.advice || '');
-        setSelectedTemplateId(draft.selectedTemplateId);
+        setSelectedTemplateId(draft.selectedTemplateId || draft.templateId || null);
+        markContentLoaded(activeServiceId);
       } else {
         setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
       }
     } finally {
-      setLoading(false);
+      // A superseded / handed-off load doesn't own the spinner.
+      if (!handedOff && !isStale()) setLoading(false);
     }
     // Depending on activeServiceId so a service tab switch refetches the
     // scoped report instead of replaying the captured closure value. The
     // appointment+services state is reset above to the current values so
     // this is safe to re-run.
-  }, [activeServiceId]);
+  }, [activeServiceId, markContentLoading, markContentLoaded]);
 
   // Cloud PACS-only context loader. A study has no appointment / services /
   // timeline — it carries its own demographics and its assets come back on the
@@ -1040,13 +1080,14 @@ const ReportingPage = () => {
       } catch (recoverErr) {
         console.warn('[REPORTING] Study draft crash-recovery check failed', recoverErr);
       }
+      markContentLoaded(null); // PACS-only: one report per study, no service scope
     } catch (err) {
       console.error('[REPORTING] Study context init failure', err);
       setError('SYSTEM_INITIALIZATION_ERROR: Could not prepare the study reporting workspace. ' + (err.message || ''));
     } finally {
       setLoading(false);
     }
-  }, [setReportBaseline, fetchPatientTimeline]);
+  }, [setReportBaseline, fetchPatientTimeline, markContentLoaded]);
 
   useEffect(() => {
     if (studyId) {
@@ -3489,6 +3530,10 @@ const ReportingPage = () => {
                       disabled={!line.id || isActive}
                       onClick={() => {
                         if (!line.id || line.id === activeServiceId) return;
+                        // Save what's typed for THIS study before leaving it,
+                        // then block saves until the next study has loaded.
+                        flushNow();
+                        markContentLoading();
                         setActiveServiceId(line.id);
                         setServiceOverflowOpen(false);
                         const next = new URLSearchParams(searchParams);
@@ -3776,6 +3821,7 @@ const ReportingPage = () => {
             handlePreviewPrint={handlePreviewPrint}
             handleSaveReport={handleSaveReport}
             isTablet={isTablet}
+            canSign={canSign}
           />
         )}
 
@@ -3784,6 +3830,7 @@ const ReportingPage = () => {
             {/* REPORTING TAB */}
             {effectiveMainTab === 'REPORTING' && (
               <ReportingEditorPanel
+                canSign={canSign}
                 renderNarrativeEditor={renderNarrativeEditor}
                 applyEditorContent={applyEditorContent}
                 templates={templates}
