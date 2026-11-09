@@ -3936,6 +3936,7 @@ const ReportingPage = () => {
           appointmentServiceId={activeServiceId || null}
           doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
           patientData={activeAppointment}
+          signature={{ ...(reportSignature || {}), status: reportStatus }}
           reportContent={{
             mode: 'Narrative',
             // Use getPrintHTML so Path B's auto-flow boundaries are injected
