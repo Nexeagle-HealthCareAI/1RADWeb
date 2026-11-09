@@ -694,7 +694,7 @@ const ReportingPage = () => {
             : `/Reporting/report/${appId}`
         ).catch(async () => {
           try {
-            const cached = await getReportByAppointmentId(appId);
+            const cached = await getReportByAppointmentId(appId, activeServiceId);
             if (cached) {
               console.info('[REPORTING] Network fetch failed — rendering from offline cache.');
               return { data: { success: true, data: { ...cached, isFinalized: !!cached.isFinalized } } };

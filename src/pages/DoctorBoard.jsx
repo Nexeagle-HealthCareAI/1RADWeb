@@ -37,6 +37,16 @@ const WAITING = ['scanned', 'reporting'];
 // Custom roles, Admin, Technician, Receptionist, Accountant → all default to 'ALL'.
 const DOCTOR_ROLES = ['admindoctor', 'doctor'];
 
+
+// Which study a preview should show on a visit with several: the first one
+// that is signed, else the first study. (Previews used to always show the
+// first study, whatever its state.)
+function previewServiceId(c) {
+  const lines = (c?.services || []).filter(l => l && l.id && !l.deletedAt);
+  const signed = lines.find(l => ['REPORTED', 'DELIVERED'].includes(String(l.status || '').toUpperCase()));
+  return (signed || lines[0])?.id || null;
+}
+
 export default function DoctorBoard() {
   const { activeCenter, currentUser } = useContext(AuthContext);
   // The board's clock: refreshed every minute, so "today" rolls over at
@@ -59,6 +69,7 @@ export default function DoctorBoard() {
   
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
+  const [previewSvcId, setPreviewServiceId] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
 
   const [search, setSearch] = useState('');
@@ -333,7 +344,9 @@ export default function DoctorBoard() {
       setPreviewAppointment(c);
       
       // Attempt to fetch existing report for this appointment
-      const reportRes = await apiClient.get(`/Reporting/report/${c.appointmentId || c.id}`).catch(() => null);
+      const svcId = previewServiceId(c);
+      setPreviewServiceId(svcId);
+      const reportRes = await apiClient.get(`/Reporting/report/${c.appointmentId || c.id}`, { params: svcId ? { serviceId: svcId } : undefined }).catch(() => null);
       const body = reportRes?.data;
       const r = (body?.success && body?.data) ? body.data : body;
 
@@ -344,7 +357,7 @@ export default function DoctorBoard() {
           data: r.structuredData,
           impression: r.impression || '',
           advice: r.advice || '',
-          isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported'
+          isFinalized: !!r.isFinalized || /final|addend/i.test(String(r.status || ''))
         });
       } else {
         setPreviewReport({
@@ -844,6 +857,7 @@ export default function DoctorBoard() {
           doctorId={previewAppointment?.doctorId}
           appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
           patientData={previewAppointment}
+          appointmentServiceId={previewSvcId}
           reportContent={previewReport}
         />
       </Suspense>

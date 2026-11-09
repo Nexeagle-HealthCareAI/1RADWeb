@@ -44,6 +44,16 @@ const PRIORITY_RANK = { 'STAT': 0, 'URGENT': 1, 'ROUTINE': 2 };
 
 const TODAY = istTodayYmd(); // today in India (YYYY-MM-DD)
 
+
+// Which study a preview should show on a visit with several: the first one
+// that is signed, else the first study. (Previews used to always show the
+// first study, whatever its state.)
+function previewServiceId(c) {
+  const lines = (c?.services || []).filter(l => l && l.id && !l.deletedAt);
+  const signed = lines.find(l => ['REPORTED', 'DELIVERED'].includes(String(l.status || '').toUpperCase()));
+  return (signed || lines[0])?.id || null;
+}
+
 export default function TechnicianPage() {
   const { activeCenter } = useContext(AuthContext);
   const { isOnline } = useOffline();
@@ -72,6 +82,7 @@ export default function TechnicianPage() {
   const [techNotes, setTechNotes] = useState('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
+  const [previewSvcId, setPreviewServiceId] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
 
   // File input ref for resetting after upload
@@ -893,7 +904,9 @@ export default function TechnicianPage() {
       setLoading(true);
       setPreviewAppointment(c);
       
-      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
+      const svcId = previewServiceId(c);
+      setPreviewServiceId(svcId);
+      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`, { params: svcId ? { serviceId: svcId } : undefined }).catch(() => null);
       if (reportRes?.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         setPreviewReport({
@@ -902,7 +915,7 @@ export default function TechnicianPage() {
           data: r.structuredData,
           impression: r.impression,
           advice: r.advice,
-          isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported' || c.status?.toLowerCase() === 'completed'
+          isFinalized: !!r.isFinalized || /final|addend/i.test(String(r.status || ''))
         });
       } else {
         setPreviewReport({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
@@ -2085,6 +2098,7 @@ export default function TechnicianPage() {
         doctorId={previewAppointment?.doctorId}
         appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
         patientData={previewAppointment}
+        appointmentServiceId={previewSvcId}
         reportContent={previewReport}
       />
 

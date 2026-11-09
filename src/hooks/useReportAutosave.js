@@ -219,7 +219,7 @@ export default function useReportAutosave({
             impression,
             advice,
             templateId: selectedTemplateId,
-          });
+          }, contentService());
         } catch (cacheErr) {
           console.warn('[REPORTING] Local cache draft write failed', cacheErr);
         }
