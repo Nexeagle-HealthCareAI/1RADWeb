@@ -47,14 +47,23 @@ export async function downloadReportPdf(pages, filename = 'report.pdf', options 
       margin: 0,
       filename: filename,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, allowTaint: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      // Every sheet is exactly one A4 page already: break only where the
+      // sheets end (avoid-all moved whole sheets and added blank pages).
+      pagebreak: { mode: ['css', 'legacy'] },
       ...options,
     };
 
     // Generate and download PDF
-    await html2pdf().set(pdfOptions).from(container).save();
+    // html2pdf slices one tall canvas into A4 pages; sub-pixel rounding of
+    // n × 297mm leaves a sliver that became an extra, blank last page. Keep
+    // exactly one PDF page per sheet.
+    await html2pdf().set(pdfOptions).from(container).toPdf().get('pdf').then((pdf) => {
+      while (pdf.internal.getNumberOfPages() > pages.length) {
+        pdf.deletePage(pdf.internal.getNumberOfPages());
+      }
+    }).save();
 
     // Clean up
     document.body.removeChild(container);
