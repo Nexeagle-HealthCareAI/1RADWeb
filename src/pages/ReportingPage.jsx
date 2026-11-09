@@ -410,7 +410,7 @@ const ReportingPage = () => {
   const {
     aiReview, setAiReview,
     handleAiAssist, runRadAiCleanup, acceptAiReview,
-  } = useReportAi({ activeService, activeAppointment, appointmentId, editorRef, applyEditorContent, showNotif });
+  } = useReportAi({ activeService, activeAppointment, appointmentId, imagingStudyId: studyId || null, editorRef, applyEditorContent, showNotif });
 
   // Prior-study copy-forward — pull a previous report's findings into the
   // current report with a comparison line. Flattens any .word-page wrappers so

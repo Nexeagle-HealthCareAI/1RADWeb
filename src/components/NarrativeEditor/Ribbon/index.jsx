@@ -95,7 +95,7 @@ const TABS = [
 export default function Ribbon(props) {
   const {
     editor, onSave, isFullscreen, toggleFullscreen,
-    voiceSupported, voiceActive, onToggleVoice,
+    voiceSupported, voiceActive, onToggleVoice, voiceMode,
     saveStatus,            // '' | 'modified' | 'saving' | 'saved'
     lastSavedAt,           // Date | null
     onOpenTemplates,       // opens full picker dialog
@@ -214,7 +214,7 @@ export default function Ribbon(props) {
             available in this browser (Firefox / older Safari). */}
         {voiceSupported && (
           <QATBtn
-            title={voiceActive ? 'Stop voice dictation' : 'Start voice dictation'}
+            title={voiceActive ? (voiceMode === 'cloud' ? 'Stop voice dictation (cloud speech — allowed by your centre)' : 'Stop voice dictation (on this computer)') : 'Start voice dictation'}
             onClick={onToggleVoice}
             icon={(
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

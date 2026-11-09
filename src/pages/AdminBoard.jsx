@@ -13,6 +13,7 @@ import { formatPatientAge } from '../utils/patientAge';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import ReportPaperSettings from '../components/reportPaper/ReportPaperSettings';
+import AiPrivacySettings from '../components/aiPrivacy/AiPrivacySettings';
 // Lazy — pulls in mapbox-gl, which doesn't need to be part of the board's
 // own bundle.
 const HospitalLocationPicker = lazy(() => import('../components/HospitalLocationPicker'));
@@ -86,8 +87,8 @@ export default function AdminBoard() {
   // Everything RIS/clinic-ops (Overview analytics, Roles, Hospitals, Finance) is
   // hidden. RIS-only / RIS+PACS see the full tab set.
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
-  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Tax & billing', 'Letterhead'];
-  const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead'] : ALL_TABS;
+  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Tax & billing', 'Letterhead', 'AI & privacy'];
+  const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead', 'AI & privacy'] : ALL_TABS;
   // The single role every Cloud PACS-only user is onboarded with — full access
   // to the (already module-trimmed) PACS surface. admindoctor is the superset
   // role, so it satisfies the reporting + admin routes a PACS centre exposes;
@@ -3107,6 +3108,7 @@ export default function AdminBoard() {
         <TaxBillingSettings hospitalId={activeCenter?.id} isOnline={isOnline} isMobile={isMobile} />
       )}
       {activeTab === 'Letterhead' && <ReportPaperSettings currentUser={currentUser} />}
+      {activeTab === 'AI & privacy' && <AiPrivacySettings />}
       
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
