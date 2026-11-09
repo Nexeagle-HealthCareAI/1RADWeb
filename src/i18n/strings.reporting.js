@@ -15,6 +15,16 @@ export const en = {
   'rp.hideImgs': 'Hide images', 'rp.showImgs': 'Show images',
   'rp.signHint': 'Ctrl+Enter also opens signing',
   'rp.doctorSigns': 'A doctor signs this report',
+  'rp.aiDraft': 'Draft from key images',
+  'rp.aiDrafting': 'Drafting from images…',
+  'rp.aiDraftNeedKeys': 'Mark key images (★ or K) first',
+  'rp.aiDraftTitle': 'AI draft from {n} key image(s)',
+  'rp.aiDraftWarn': 'A draft only. Check every line against the images — you are signing it, not the AI.',
+  'rp.aiDraftMasked': 'Text printed on the images (name, ID) was blacked out before sending.',
+  'rp.aiReplace': 'Replace my findings',
+  'rp.aiAppend': 'Add below my findings',
+  'rp.aiUseImpression': 'Also use the AI impression',
+  'rp.aiDiscard': 'Discard',
 };
 
 export const hi = {
@@ -30,6 +40,16 @@ export const hi = {
   'rp.hideImgs': 'तस्वीरें छिपाएँ', 'rp.showImgs': 'तस्वीरें दिखाएँ',
   'rp.signHint': 'Ctrl+Enter से भी साइन खुलता है',
   'rp.doctorSigns': 'यह रिपोर्ट डॉक्टर साइन करेंगे',
+  'rp.aiDraft': 'की इमेज से ड्राफ्ट',
+  'rp.aiDrafting': 'इमेज से ड्राफ्ट बन रहा है…',
+  'rp.aiDraftNeedKeys': 'पहले की इमेज चुनें (★ या K)',
+  'rp.aiDraftTitle': '{n} की इमेज से AI ड्राफ्ट',
+  'rp.aiDraftWarn': 'यह सिर्फ़ ड्राफ्ट है। हर लाइन इमेज से मिलाकर देखें — साइन आप करेंगे, AI नहीं।',
+  'rp.aiDraftMasked': 'इमेज पर छपा नाम/ID भेजने से पहले काला कर दिया गया।',
+  'rp.aiReplace': 'मेरी फाइंडिंग्स बदलें',
+  'rp.aiAppend': 'मेरी फाइंडिंग्स के नीचे जोड़ें',
+  'rp.aiUseImpression': 'AI इम्प्रेशन भी लें',
+  'rp.aiDiscard': 'हटाएँ',
 };
 
 export const bn = {
@@ -45,4 +65,14 @@ export const bn = {
   'rp.hideImgs': 'ছবি লুকান', 'rp.showImgs': 'ছবি দেখান',
   'rp.signHint': 'Ctrl+Enter দিয়েও সাইন খোলে',
   'rp.doctorSigns': 'এই রিপোর্ট ডাক্তার সাইন করবেন',
+  'rp.aiDraft': 'কী ইমেজ থেকে ড্রাফট',
+  'rp.aiDrafting': 'ইমেজ থেকে ড্রাফট হচ্ছে…',
+  'rp.aiDraftNeedKeys': 'আগে কী ইমেজ বাছুন (★ বা K)',
+  'rp.aiDraftTitle': '{n}টি কী ইমেজ থেকে AI ড্রাফট',
+  'rp.aiDraftWarn': 'এটা শুধু ড্রাফট। প্রতিটি লাইন ইমেজের সাথে মিলিয়ে দেখুন — সাইন আপনি করছেন, AI নয়।',
+  'rp.aiDraftMasked': 'ইমেজে ছাপা নাম/ID পাঠানোর আগে কালো করা হয়েছে।',
+  'rp.aiReplace': 'আমার ফাইন্ডিংস বদলান',
+  'rp.aiAppend': 'আমার ফাইন্ডিংসের নিচে যোগ করুন',
+  'rp.aiUseImpression': 'AI ইমপ্রেশনও নিন',
+  'rp.aiDiscard': 'বাদ দিন',
 };

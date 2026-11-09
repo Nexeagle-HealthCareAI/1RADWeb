@@ -1312,7 +1312,7 @@ export default function ReportingDicomPanel({
                             )}
 
                             {/* Key Images Indicator */}
-                            {keyImages.includes(`${activeAssetIndex + idx}_${currentSlice}`) && (
+                            {idx === 0 && !!currentFiles[currentSlice - 1]?.sopInstanceUID && keyImages.includes(currentFiles[currentSlice - 1].sopInstanceUID) && (
                               <div style={{ position: 'absolute', top: '60px', right: '15px', zIndex: 10 }}>
                                 <div style={{ background: 'rgba(245, 158, 11, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', color: 'white', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '5px' }}>
                                   ⭐ KEY IMAGE

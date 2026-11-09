@@ -769,6 +769,11 @@ export function warmupCornerstone() {
   return initCornerstone().catch(() => {});
 }
 
+// keyImages holds DICOM instance UIDs (saved key images) or, for older
+// callers, file names.
+const isKeyFile = (keyImages, f) => !!f && Array.isArray(keyImages)
+  && (keyImages.includes(f.name) || (!!f.sopInstanceUID && keyImages.includes(f.sopInstanceUID)));
+
 const AdvancedDicomViewer = ({
   files,
   // Backend-rendered JPEG thumbnail (256px, ~30 KB) for the active series.
@@ -4571,13 +4576,15 @@ const AdvancedDicomViewer = ({
           onClick={() => {
             const viewport = renderingEngineRef.current.getViewport(viewportId);
             const imageId = viewport.getCurrentImageId();
-            onKeyImageToggle(imageId);
+            // The file carries the DICOM instance UID, so the page can save
+            // the key image against the exact picture.
+            onKeyImageToggle(imageId, files?.[currentImageIndex], currentImageIndex);
           }}
           style={{ 
             position: 'absolute', 
             bottom: '20px', 
             left: '20px', 
-            background: keyImages.includes(files?.[currentImageIndex]?.name) ? '#fbbf24' : 'rgba(0,0,0,0.5)', 
+            background: isKeyFile(keyImages, files?.[currentImageIndex]) ? '#fbbf24' : 'rgba(0,0,0,0.5)', 
             border: 'none',
             color: '#fff', 
             padding: isTablet ? '12px 16px' : '8px 12px', 
@@ -4595,7 +4602,7 @@ const AdvancedDicomViewer = ({
             opacity: showToolbar ? 1 : (isFullscreen ? 0 : 1)
           }}
         >
-          <span>{keyImages.includes(files?.[currentImageIndex]?.name) ? '★' : '☆'}</span>
+          <span>{isKeyFile(keyImages, files?.[currentImageIndex]) ? '★' : '☆'}</span>
           KEY_IMAGE
         </button>
       )}

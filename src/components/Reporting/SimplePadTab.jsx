@@ -2,6 +2,7 @@ import React from 'react';
 import { t } from '../../i18n';
 import { C, FONT } from '../saral/tokens';
 import SearchableTemplatePicker from '../SearchableTemplatePicker';
+import { sanitizeReportHtml } from '../../utils/sanitizeHtml';
 
 /**
  * Report pad — the simple reporting tab (Saral look). One rule: the doctor sees
@@ -31,6 +32,12 @@ export default function SimplePadTab({
   handleSaveReport,
   isTablet,
   canSign = true,
+  keyImageCount = 0,
+  visionEnabled = false,
+  visionDraft = null,
+  onVisionDraft,
+  onApplyVisionDraft,
+  onDiscardVisionDraft,
 }) {
   // Images start hidden on tablets (one screen), visible on desktop.
   const [showImgs, setShowImgs] = React.useState(!isTablet);
@@ -101,6 +108,13 @@ export default function SimplePadTab({
             style={{ height: 40, padding: '0 16px', borderRadius: 999, border: 'none', background: C.okSoft, color: C.ok, fontSize: 15, fontWeight: 800, cursor: selectedTemplate && !isFinalized ? 'pointer' : 'not-allowed', opacity: selectedTemplate && !isFinalized ? 1 : 0.5, fontFamily: 'inherit' }}>
             {t('rp.allNormal')}
           </button>
+          {visionEnabled && canSign && !isFinalized && (
+            <button type="button" onClick={onVisionDraft} disabled={!keyImageCount || visionDraft?.busy}
+              title={keyImageCount ? '' : t('rp.aiDraftNeedKeys')}
+              style={{ height: 40, padding: '0 16px', borderRadius: 999, border: `1.5px solid ${C.primary}`, background: 'white', color: C.primary, fontSize: 15, fontWeight: 800, cursor: keyImageCount && !visionDraft?.busy ? 'pointer' : 'not-allowed', opacity: keyImageCount ? 1 : 0.55, fontFamily: 'inherit' }}>
+              ✨ {visionDraft?.busy ? t('rp.aiDrafting') : `${t('rp.aiDraft')}${keyImageCount ? ` (${keyImageCount})` : ''}`}
+            </button>
+          )}
           <span style={{ flex: 1 }}></span>
           <span style={{ fontSize: 14, fontWeight: 700, color: savedTone }}>{saveStatus === 'CONFLICT' ? '⚠' : '✓'} {savedText}</span>
           {saveStatus === 'CONFLICT' && (
@@ -156,6 +170,54 @@ export default function SimplePadTab({
               {t('rp.sign')} ▸
             </button>
           )}
+        </div>
+      </div>
+      {visionDraft?.open && (
+        <VisionDraftSheet draft={visionDraft} onApply={onApplyVisionDraft} onDiscard={onDiscardVisionDraft} />
+      )}
+    </div>
+  );
+}
+
+/** Review an AI draft before anything touches the report. */
+function VisionDraftSheet({ draft, onApply, onDiscard }) {
+  const [useImpression, setUseImpression] = React.useState(!!draft.impression);
+  const btn = (primary) => ({
+    height: 44, padding: '0 16px', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+    border: primary ? 'none' : `1.5px solid ${C.lineStrong}`, background: primary ? C.primary : 'white', color: primary ? 'white' : C.ink,
+  });
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onDiscard(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onDiscard]);
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="ai-draft-title"
+      style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ width: 'min(760px, 100%)', maxHeight: '90vh', overflow: 'auto', background: 'white', borderRadius: 18, padding: 20, display: 'flex', flexDirection: 'column', gap: 12, fontFamily: FONT, color: C.ink, boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+        <div id="ai-draft-title" style={{ fontSize: 20, fontWeight: 800 }}>✨ {t('rp.aiDraftTitle', { n: draft.imagesUsed || 0 })}</div>
+        <div style={{ background: C.dueSoft, color: C.dueInk, borderRadius: 12, padding: '10px 12px', fontSize: 14, fontWeight: 700 }}>
+          {t('rp.aiDraftWarn')}
+          {draft.stripsMasked && <div style={{ fontWeight: 500, marginTop: 4 }}>{t('rp.aiDraftMasked')}</div>}
+        </div>
+        <div style={{ border: `1.5px solid ${C.line}`, borderRadius: 12, padding: '10px 14px', fontSize: 15, lineHeight: 1.6 }}
+          dangerouslySetInnerHTML={{ __html: sanitizeReportHtml(draft.findingsHtml || '') }} />
+        {draft.impression && (
+          <div style={{ border: `2px solid ${C.primary}`, borderRadius: 12, padding: '10px 14px', fontSize: 15, fontWeight: 600 }}>
+            <div style={{ fontSize: 12, letterSpacing: 1, color: C.primary, fontWeight: 800, marginBottom: 4 }}>{t('rp.impression').toUpperCase()}</div>
+            {draft.impression}
+          </div>
+        )}
+        {draft.impression && (
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 15, cursor: 'pointer' }}>
+            <input type="checkbox" checked={useImpression} onChange={e => setUseImpression(e.target.checked)} style={{ width: 18, height: 18 }} />
+            {t('rp.aiUseImpression')}
+          </label>
+        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button type="button" style={btn(false)} onClick={onDiscard}>{t('rp.aiDiscard')}</button>
+          <button type="button" style={btn(false)} onClick={() => onApply('append', useImpression)}>{t('rp.aiAppend')}</button>
+          <button type="button" style={btn(true)} onClick={() => onApply('replace', useImpression)} autoFocus>{t('rp.aiReplace')}</button>
         </div>
       </div>
     </div>

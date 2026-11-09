@@ -12,6 +12,7 @@ import { resetAiPolicyCache } from '../NarrativeEditor/hooks/speechEngine';
 
 const FEATURE_NAMES = {
   voice: 'Voice → report draft',
+  vision: 'Draft from key images',
   format: 'RadAI formatter',
   grammar: 'Grammar check (AI)',
   'assist:improve': 'Improve wording',
@@ -23,7 +24,7 @@ const FEATURE_NAMES = {
   'assist:restructure': 'Restructure report',
 };
 const featureName = (f) => FEATURE_NAMES[f] || f;
-const toDraft = (pd) => ({ reportAiEnabled: pd.reportAiEnabled, allowCloudDictation: pd.allowCloudDictation, useDefault: pd.usesDefaultLimit, limit: String(pd.monthlyCallLimit) });
+const toDraft = (pd) => ({ reportAiEnabled: pd.reportAiEnabled, allowCloudDictation: pd.allowCloudDictation, useDefault: pd.usesDefaultLimit, limit: String(pd.monthlyCallLimit), visionDraftEnabled: !!pd.visionDraftEnabled, captureApprovedCases: !!pd.captureApprovedCases });
 const num = (n) => Number(n || 0).toLocaleString('en-IN');
 
 const box = { background: 'white', border: `1.5px solid ${C.line}`, borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 };
@@ -77,6 +78,8 @@ export default function AiPrivacySettings() {
     draft.reportAiEnabled !== policy.reportAiEnabled
     || draft.allowCloudDictation !== policy.allowCloudDictation
     || draft.useDefault !== policy.usesDefaultLimit
+    || draft.visionDraftEnabled !== !!policy.visionDraftEnabled
+    || draft.captureApprovedCases !== !!policy.captureApprovedCases
     || (!draft.useDefault && Number(draft.limit) !== policy.monthlyCallLimit)
   );
   const limitBad = draft && !draft.useDefault && !(/^\d+$/.test(draft.limit) && Number(draft.limit) <= 1000000);
@@ -89,6 +92,8 @@ export default function AiPrivacySettings() {
         reportAiEnabled: draft.reportAiEnabled,
         allowCloudDictation: draft.allowCloudDictation,
         monthlyCallLimit: draft.useDefault ? null : Number(draft.limit),
+        visionDraftEnabled: draft.visionDraftEnabled,
+        captureApprovedCases: draft.captureApprovedCases,
       });
       const pd = res?.data?.data;
       setPolicy(pd);
@@ -126,6 +131,16 @@ export default function AiPrivacySettings() {
         <Switch id="ai-cloud-voice" on={draft.allowCloudDictation} onChange={(v) => setDraft({ ...draft, allowCloudDictation: v })}
           label="Allow cloud voice typing"
           sub="Voice typing runs on the computer itself where the browser supports it. If it doesn't, the browser can only do it by sending the doctor's voice to its own cloud speech service (Google for Chrome). Leave this off unless your centre accepts that." />
+      </div>
+
+      <div style={box}>
+        <h3 style={h}>AI and the scans</h3>
+        <Switch id="ai-vision" on={draft.visionDraftEnabled} onChange={(v) => setDraft({ ...draft, visionDraftEnabled: v })}
+          label="Draft from key images"
+          sub="Doctors can ask the AI for a first draft from the images they starred. This sends those pictures (not the DICOM files) to the AI provider. Ultrasound and screen-capture images often have the patient's name printed on them: we black out the top and bottom strips where machines usually print it, but cannot promise every machine. The draft is only a draft — the doctor reviews, edits and signs." />
+        <Switch id="ai-capture" on={draft.captureApprovedCases} onChange={(v) => setDraft({ ...draft, captureApprovedCases: v })}
+          label="Keep signed reports to improve our AI"
+          sub={`Each Final report is kept with the patient's name and IDs removed, which images it describes, and how much the doctor changed any AI draft. Stays in this centre's database. ${num(policy.approvedCasesKept)} kept so far.`} />
       </div>
 
       <div style={box}>
