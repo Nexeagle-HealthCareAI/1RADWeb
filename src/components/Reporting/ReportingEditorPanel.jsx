@@ -221,9 +221,9 @@ export default function ReportingEditorPanel({
           boxShadow: '0 -4px 16px rgba(0,0,0,0.03)', zIndex: 30
         }}>
           <button
-            onClick={() => {
-              handleSaveReport(false);
-              setMobileToast('Draft saved locally & to cloud');
+            onClick={async () => {
+              await handleSaveReport(false);
+              setMobileToast(isOnline ? 'Saved' : 'Saved on this device — will sync when online');
               setTimeout(() => setMobileToast(null), 3000);
             }}
             style={{

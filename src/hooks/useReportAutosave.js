@@ -97,17 +97,56 @@ export default function useReportAutosave({
   // tab could keep the old tab's text when it had no template match.
   //   undefined = loading (don't save) · null = visit-level (legacy / PACS) · id
   const contentServiceRef = useRef(undefined);
-  const markContentLoading = useCallback(() => { contentServiceRef.current = undefined; }, []);
-  const markContentLoaded = useCallback((serviceId) => { contentServiceRef.current = serviceId || null; }, []);
   const contentReady = () => contentServiceRef.current !== undefined;
   const contentService = () => contentServiceRef.current || null;
+
+  // ── "Clean" snapshot ───────────────────────────────────────────────────────
+  // Loading a report (or a template) into the editor is not an edit, but the
+  // editor reports it as one — so merely OPENING a case used to save it within
+  // seconds (creating empty draft rows, burning a request per open). After a
+  // study loads we take a snapshot of what's on screen; nothing is marked
+  // changed (or saved) until the content differs from it.
+  const latestRef = useRef({});
+  useEffect(() => { latestRef.current = { impression, advice, selectedTemplateId }; });
+  const cleanSnapshotRef = useRef(null);       // null = not taken yet (still loading)
+  const snapshotTimerRef = useRef(null);
+  const snapshotNow = () => JSON.stringify({
+    f: editorRef.current?.editor?.getHTML?.() ?? '',
+    i: latestRef.current.impression || '',
+    a: latestRef.current.advice || '',
+    t: latestRef.current.selectedTemplateId ? String(latestRef.current.selectedTemplateId) : '',
+  });
+  // True when there is something to save (the content moved off the snapshot).
+  const isChanged = () => {
+    if (cleanSnapshotRef.current === null) return false;           // load echo
+    return cleanSnapshotRef.current === '__dirty__' || snapshotNow() !== cleanSnapshotRef.current;
+  };
+
+  const markContentLoading = useCallback(() => {
+    contentServiceRef.current = undefined;
+    cleanSnapshotRef.current = null;
+    if (snapshotTimerRef.current) { clearTimeout(snapshotTimerRef.current); snapshotTimerRef.current = null; }
+  }, []);
+  // restoredUnsaved: the load put a recovered local draft (not the server copy)
+  // on screen — that IS unsaved work, so it must sync.
+  const markContentLoaded = useCallback((serviceId, restoredUnsaved = false) => {
+    contentServiceRef.current = serviceId || null;
+    if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+    if (restoredUnsaved) { cleanSnapshotRef.current = '__dirty__'; return; }
+    // After the editor's 300 ms change debounce + React's state flush.
+    snapshotTimerRef.current = setTimeout(() => {
+      snapshotTimerRef.current = null;
+      if (contentServiceRef.current !== undefined) cleanSnapshotRef.current = snapshotNow();
+    }, 900);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── 1. LOCAL AUTOSAVE: Immediate persistence to nativeStorage/localStorage ──
   useEffect(() => {
     if (!ownerKey || isFinalized) return;
 
     const timer = setTimeout(async () => {
-      if (!contentReady()) return;
+      if (!contentReady() || !isChanged()) return;
       // Read the FRESH editor HTML, not the (debounced) editorText state, so
       // attribute changes like right-align that haven't crossed the 300 ms
       // onUpdate debounce yet still get persisted.
@@ -151,7 +190,7 @@ export default function useReportAutosave({
     if (!ownerKey || isFinalized) return;
 
     const autosaveTimer = setTimeout(async () => {
-      if (!contentReady()) return;
+      if (!contentReady() || !isChanged()) return;
       // Pull fresh editor HTML so attribute-only changes (right-align,
       // text-color, etc.) made within the 300 ms onUpdate debounce window
       // still make it into the persisted draft.
@@ -268,10 +307,13 @@ export default function useReportAutosave({
           // when this is present; falls back to last-write-wins when null.
           rowVersion: rowVersionRef.current,
         };
+        const sentSnapshot = snapshotNow();
         const res = await apiClient.post('/reporting/save', payload);
         if (res.data?.success) {
           setLastSavedAt(new Date());
           setSaveStatus('SUCCESS');
+          // What the server now holds is the new "clean" point.
+          if (contentReady()) cleanSnapshotRef.current = sentSnapshot;
           autosaveFailuresRef.current = 0;
           dirtySinceRef.current = null;   // start a fresh dirty window next cycle
           // Save completed - cancel the deferred "Saving…" label and
@@ -352,9 +394,10 @@ export default function useReportAutosave({
   flushRef.current = () => {
     if (!ownerKey || isFinalized || cloudAutosaveDisabledReason || !contentReady()) return;
     const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
-    // Nothing changed since the server's last known content → nothing to flush.
-    const dirty = saveStatus === 'DIRTY' || saveStatus === 'SAVING'
-      || (serverBaselineRef.current != null && freshFindings !== serverBaselineRef.current);
+    // Nothing changed since it was loaded / last saved → nothing to flush.
+    // (Comparing with the server copy saved an auto-applied template as a
+    // draft every time a new case was merely opened and closed.)
+    const dirty = saveStatus === 'SAVING' || isChanged();
     if (!dirty) return;
 
     // 1) Persist the local draft immediately (crash-recovery + offline re-open).
@@ -457,8 +500,10 @@ export default function useReportAutosave({
 
     setIsSaving(true);
     try {
+      const sentSnapshot = snapshotNow();
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
+        if (contentReady()) cleanSnapshotRef.current = sentSnapshot;
         // The server now holds exactly what we just sent — advance the
         // baseline so any subsequent draft compares lineage against this
         // saved content (and a reload right after save won't falsely prompt).
@@ -472,7 +517,8 @@ export default function useReportAutosave({
         // the corner even when the manual save modal isn't visible.
         setSaveStatus('SUCCESS');
         setLastSavedAt(new Date());
-        notify('success', 'DRAFT SAVED', 'Your changes have been saved successfully.');
+        // No pop-up: the status line already says "Saved <time>". A blocking
+        // "Understood" dialog on every save cost a click per report.
       }
     } catch (err) {
       console.error('[REPORTING] Save failed', err);

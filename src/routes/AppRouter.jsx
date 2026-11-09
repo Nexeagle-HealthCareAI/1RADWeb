@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import ProtectedRoute from './ProtectedRoute';
 import { ROLE_HOME, getRolePermissions } from '../data/roles';
@@ -28,6 +28,14 @@ const StaffPage = lazy(() => import('../pages/StaffPage'));
 const StaffDashboardPage = lazy(() => import('../pages/StaffDashboardPage'));
 const BillingPage = lazy(() => import('../pages/BillingPage'));
 const ReportingPage = lazy(() => import('../pages/ReportingPage'));
+
+// One fresh reporting page per visit/study: moving to the next patient must
+// never carry the previous patient's images, text or sign-off state across.
+function KeyedReportingPage() {
+  const { id } = useParams();
+  const [search] = useSearchParams();
+  return <ReportingPage key={id || search.get('id') || search.get('studyId') || 'reporting'} />;
+}
 const DicomViewerPage = lazy(() => import('../pages/DicomViewerPage'));
 const StudiesPage = lazy(() => import('../pages/StudiesPage'));
 const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage'));
@@ -293,7 +301,7 @@ export default function AppRouter() {
           path="/reporting/:id"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
-              <ReportingPage />
+              <KeyedReportingPage />
             </ProtectedRoute>
           }
         />
@@ -302,7 +310,7 @@ export default function AppRouter() {
           path="/reporting"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/studies']} requiredModule="PACS">
-              <ReportingPage />
+              <KeyedReportingPage />
             </ProtectedRoute>
           }
         />

@@ -16,14 +16,18 @@ export function isVoiceSupported() {
  * rather than data-driven. They run AFTER the JSON misheard→correct
  * corrections so a 58-pair fix can't accidentally clobber "full stop".
  */
+// "colon" and "period" are NOT commands on their own — they are anatomy and
+// clinical words ("sigmoid colon", "a period of 3 months") and used to turn
+// into ":" / "." mid-sentence. Say "full stop", "insert period" or
+// "insert colon" for the punctuation.
 const VOICE_COMMANDS = [
   [/\bfull stop\b/gi,      '.'],
-  [/\bperiod\b/gi,         '.'],
+  [/\binsert period\b/gi,  '.'],
   [/\bcomma\b/gi,          ','],
   [/\bsemicolon\b/gi,      ';'],
-  [/\bcolon\b/gi,          ':'],
+  [/\binsert colon\b/gi,   ':'],
   [/\bquestion mark\b/gi,  '?'],
-  [/\bexclamation\b/gi,    '!'],
+  [/\bexclamation mark\b/gi, '!'],
   [/\bopen bracket\b/gi,   '('],
   [/\bclose bracket\b/gi,  ')'],
   [/\bnew line\b/gi,       '\n'],
@@ -78,6 +82,9 @@ function postProcess(text) {
   // dictionary hasn't loaded yet), run the tiny hardcoded list too. Idempotent.
   for (const [re, sub] of HARDCODED_FALLBACK) out = out.replace(re, sub);
   for (const [re, sub] of VOICE_COMMANDS) out = out.replace(re, sub);
+  // Spoken punctuation arrives space-padded ("clear . heart") — attach it to
+  // the word before, and open brackets to the word after.
+  out = out.replace(/[ \t]+([.,;:?!)])/g, '$1').replace(/\([ \t]+/g, '(');
   return out;
 }
 

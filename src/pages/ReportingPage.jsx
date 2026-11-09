@@ -9,6 +9,7 @@ import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
+import { notifyToast } from '../utils/toast';
 import useAuth from '../auth/useAuth';
 import useReportAutosave, { reportDraftKey } from '../hooks/useReportAutosave';
 import useReportAi from '../hooks/useReportAi';
@@ -104,6 +105,9 @@ const ReportingPage = () => {
     setActiveAssetIndex(0);
   }, [activeServiceId]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  // Latest images for the poller (which shouldn't re-subscribe on every change).
+  const uploadedFilesRef = useRef([]);
+  useEffect(() => { uploadedFilesRef.current = uploadedFiles; }, [uploadedFiles]);
 
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeTool, setActiveTool] = useState('WindowLevel');
@@ -283,10 +287,44 @@ const ReportingPage = () => {
     setAdvice(adv || '');
     if (templateId) setSelectedTemplateId(String(templateId));
   }, [applyEditorContent]);
+  // After a Final sign-off go straight to the next piece of work: first any
+  // other unsigned study on this visit, then the next waiting patient in the
+  // worklist order the doctor opened from; only then back to the list.
+  // The save hook (created below) supplies markContentLoading; reach it
+  // through a ref so this callback can be defined first.
+  const markLoadingRef = useRef(null);
   const onReportFinalized = useCallback(() => {
     setIsFinalized(true);
+    const nextStudy = (appointmentServices || []).find(l => l.id && l.id !== activeServiceId
+      && !['REPORTED', 'DELIVERED'].includes(String(l.status || '').toUpperCase()));
+    if (nextStudy && appointmentId) {
+      notifyToast({ title: 'Signed ✓', message: `Next on this visit: ${nextStudy.serviceName || 'the next study'}` }, 'success');
+      markLoadingRef.current?.();
+      setAppointmentServices(prev => prev.map(l => (l.id === activeServiceId ? { ...l, status: 'REPORTED' } : l)));
+      setActiveServiceId(nextStudy.id);
+      navigate({ search: `?serviceId=${encodeURIComponent(nextStudy.id)}` }, { replace: true });
+      return;
+    }
+    let next = null;
+    try {
+      const queue = JSON.parse(sessionStorage.getItem('1rad_report_queue') || '[]');
+      const at = queue.findIndex(x => x.id === appointmentId);
+      const rest = queue.filter(x => x.id !== appointmentId);
+      next = (at >= 0 ? queue.slice(at + 1) : rest).find(x => ['scanned', 'reporting'].includes(x.status))
+          || rest.find(x => ['scanned', 'reporting'].includes(x.status)) || null;
+      sessionStorage.setItem('1rad_report_queue', JSON.stringify(rest));
+    } catch { next = null; }
+    if (next) {
+      notifyToast({ title: 'Signed ✓', message: `Next patient: ${next.name || 'next in your list'}` }, 'success');
+      if (next.status === 'scanned') {
+        apiClient.patch(`/appointments/${next.id}/status`, '"reporting"', { headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+      }
+      navigate(`/reporting/${next.id}`);
+      return;
+    }
+    notifyToast({ title: 'Signed ✓', message: 'No more reports waiting in your list.' }, 'success');
     navigate('/doctor-board');
-  }, [navigate]);
+  }, [navigate, appointmentServices, activeServiceId, appointmentId]);
   const {
     saveStatus,
     lastSavedAt,
@@ -319,6 +357,7 @@ const ReportingPage = () => {
     onFinalized: onReportFinalized,
   });
 
+  useEffect(() => { markLoadingRef.current = markContentLoading; }, [markContentLoading]);
   const handleSaveReportRef = useRef(handleSaveReport);
   useEffect(() => {
     handleSaveReportRef.current = handleSaveReport;
@@ -778,6 +817,7 @@ const ReportingPage = () => {
         console.warn('[1RAD][TEMPLATE_DEBUG] log failed', logErr);
       }
 
+      let restoredUnsaved = false;   // a recovered local draft is on screen → must sync
       if (r && (r.findings !== undefined || r.impression !== undefined)) {
         console.info(`[1RAD] Found Existing Report.`);
 
@@ -851,6 +891,7 @@ const ReportingPage = () => {
                 const draftTpl = localDraft.templateId || localDraft.selectedTemplateId;
                 if (draftTpl) setSelectedTemplateId(String(draftTpl));
                 restored = true;
+                restoredUnsaved = true;
               }
             }
           }
@@ -896,6 +937,7 @@ const ReportingPage = () => {
             const draftTpl = localDraft.selectedTemplateId || localDraft.templateId;
             if (draftTpl) setSelectedTemplateId(String(draftTpl));
             restoredDraft = true;
+            restoredUnsaved = true;
           }
         } catch (draftErr) {
           console.warn('[1RAD] New-case local draft check failed', draftErr);
@@ -934,7 +976,7 @@ const ReportingPage = () => {
         }
       }
       // This study's text is now in the editor — saves may go to it.
-      markContentLoaded(activeServiceId);
+      markContentLoaded(activeServiceId, restoredUnsaved);
     } catch (err) {
       console.error('[REPORTING] Initialization failure, trying cache', err);
       // Try to load from cache
@@ -950,7 +992,7 @@ const ReportingPage = () => {
         setImpression(draft.impression || '');
         setAdvice(draft.advice || '');
         setSelectedTemplateId(draft.selectedTemplateId || draft.templateId || null);
-        markContentLoaded(activeServiceId);
+        markContentLoaded(activeServiceId, true);
       } else {
         setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
       }
@@ -1058,6 +1100,7 @@ const ReportingPage = () => {
         applyReportMeta(r);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
       }
+      let studyRestored = false;
       try {
         // Study mode has no service scope — the draft key matches the autosave
         // hook's ownerKey (`study_<id>`).
@@ -1070,6 +1113,7 @@ const ReportingPage = () => {
           const draftTs = new Date(localDraft.timestamp || 0).getTime();
           const ageMin = Math.max(1, Math.round((Date.now() - draftTs) / 60000));
           if (await askDraftRecovery(ageMin)) {
+            studyRestored = true;
             applyEditorContent(localDraft.findings || '');
             if (localDraft.impression) setImpression(localDraft.impression);
             if (localDraft.advice) setAdvice(localDraft.advice);
@@ -1080,7 +1124,7 @@ const ReportingPage = () => {
       } catch (recoverErr) {
         console.warn('[REPORTING] Study draft crash-recovery check failed', recoverErr);
       }
-      markContentLoaded(null); // PACS-only: one report per study, no service scope
+      markContentLoaded(null, studyRestored); // PACS-only: one report per study, no service scope
     } catch (err) {
       console.error('[REPORTING] Study context init failure', err);
       setError('SYSTEM_INITIALIZATION_ERROR: Could not prepare the study reporting workspace. ' + (err.message || ''));
@@ -1107,15 +1151,20 @@ const ReportingPage = () => {
     if (!appointmentId || isFinalized || !isOnline) return;
 
     const pollLiveUpdates = async () => {
+      // Nobody is looking — don't spend the doctor's bandwidth (or the server's).
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         // 1. Fetch appointment details to see if status or notes changed
         const appRes = await apiClient.get(`/appointments/${appointmentId}`).catch(() => null);
         if (appRes?.data) {
+          // Same mapping as the initial load: the report always names the
+          // referring DOCTOR (polling used to drop it back to the raw source).
+          const fresh = { ...appRes.data, referredBy: appRes.data.referringDoctorName || appRes.data.referredBy };
           setActiveAppointment(prev => {
-            if (!prev) return appRes.data;
-            if (prev.status !== appRes.data.status || prev.notes !== appRes.data.notes || prev.technicianComments !== appRes.data.technicianComments) {
-              console.log('[LIVE_UPDATE] Appointment updated:', appRes.data.status);
-              return appRes.data;
+            if (!prev) return fresh;
+            if (prev.status !== fresh.status || prev.notes !== fresh.notes || prev.technicianComments !== fresh.technicianComments) {
+              console.log('[LIVE_UPDATE] Appointment updated:', fresh.status);
+              return fresh;
             }
             return prev;
           });
@@ -1124,7 +1173,10 @@ const ReportingPage = () => {
         // 2. Fetch manifest — skip while DICOM is downloading to avoid bandwidth competition.
         // Manifest call also returns Pending/Queued statuses so we pick up freshly
         // uploaded ZIPs the moment the backend extraction worker finishes them.
-        if (!isHydratingRef.current) {
+        // Once the images are loaded there is nothing new to pick up — skip.
+        const seriesLoaded = (uploadedFilesRef.current || []).some(a =>
+          (a.rawFiles?.length > 0) || (a.needsHydration === false && a.seriesUID) || a.type === 'DICOM SERIES' || a.isExtracted);
+        if (!isHydratingRef.current && !seriesLoaded) {
           const manifestRes = await apiClient.get(`/Study/${appointmentId}/manifest`).catch(() => null);
           const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || null;
           if (manifestAssets) {
@@ -1167,7 +1219,9 @@ const ReportingPage = () => {
       }
     };
 
-    const interval = setInterval(pollLiveUpdates, 5000); // Poll every 5 seconds
+    // Every 30 s (was 5 s: ~24 requests a minute per open report). Status and
+    // new uploads still arrive within half a minute.
+    const interval = setInterval(pollLiveUpdates, 30000);
     return () => clearInterval(interval);
   }, [appointmentId, isFinalized, isOnline]);
 
@@ -1967,8 +2021,11 @@ const ReportingPage = () => {
 
   useEffect(() => {
     const handleDicomShortcuts = (e) => {
-      // Only activate shortcuts when DICOM viewer is active
-      if (!isDicomImage) return;
+      // Viewer keys work whenever the image viewer is on screen with images
+      // (DICOM tab or the Report Pad). This used to need a LOCAL upload
+      // (isDicomImage), so for normal server-loaded studies nothing worked.
+      if (!(isDicomImage || (dicomTabActiveRef.current && uploadedFiles.length > 0))) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl/Cmd combos belong to the report shortcuts
 
       // Ignore shortcuts when typing in input fields OR anywhere inside the
       // NarrativeEditor (covers Ribbon buttons that don't have isContentEditable
@@ -2140,26 +2197,34 @@ const ReportingPage = () => {
         }
       }
 
-      // Ctrl+S to save report
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault();
-        handleSaveReport(false);
-        console.log('[SHORTCUT] Save Report (Ctrl+S)');
-      }
-
-      // Ctrl+Shift+S opens the Sign dialog (password re-auth, 21 CFR Part 11).
-      // Signing is no longer a silent "save as final" — it goes through the
-      // editor's FinalizeDialog → /reporting/report/finalize.
-      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
-        e.preventDefault();
-        if (!isFinalized) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
-        console.log('[SHORTCUT] Open Sign dialog (Ctrl+Shift+S)');
-      }
     };
 
     window.addEventListener('keydown', handleDicomShortcuts);
     return () => window.removeEventListener('keydown', handleDicomShortcuts);
   }, [isDicomImage, activeAssetIndex, uploadedFiles.length]);
+
+  // Report shortcuts — everywhere on the page, whatever is focused:
+  //   Ctrl/Cmd+S        save now
+  //   Ctrl/Cmd+Shift+S  open the sign-off (doctors only)
+  // Inside the editor, the editor's own Ctrl+S already saves — skip it there.
+  const reportKeysRef = useRef({});
+  useEffect(() => { reportKeysRef.current = { isFinalized, canSign }; }, [isFinalized, canSign]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== 's') return;
+      const { isFinalized: locked, canSign: mayS } = reportKeysRef.current;
+      if (e.shiftKey) {
+        e.preventDefault();
+        if (!locked && mayS) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
+        return;
+      }
+      if (e.target?.closest?.('.narrative-editor-container')) return;
+      e.preventDefault();
+      handleSaveReportRef.current?.(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Keyboard shortcuts help modal
   const renderShortcutsHelp = () => {
