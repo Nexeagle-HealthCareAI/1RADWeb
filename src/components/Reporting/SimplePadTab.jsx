@@ -30,13 +30,14 @@ export default function SimplePadTab({
   handlePreviewPrint,
   handleSaveReport,
   isTablet,
+  canSign = true,
 }) {
   // Images start hidden on tablets (one screen), visible on desktop.
   const [showImgs, setShowImgs] = React.useState(!isTablet);
 
   const openSign = React.useCallback(() => {
-    if (!isFinalized) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
-  }, [isFinalized]);
+    if (!isFinalized && canSign) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
+  }, [isFinalized, canSign]);
 
   const onKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); openSign(); }
@@ -139,11 +140,15 @@ export default function SimplePadTab({
             style={{ height: 46, padding: '0 16px', borderRadius: 14, border: 'none', background: 'transparent', color: C.primary, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {t('rp.saveNow')}
           </button>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 12, color: C.faint }}>{isFinalized ? '' : t('rp.signHint')}</span>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 12, color: C.faint }}>{isFinalized ? '' : canSign ? t('rp.signHint') : t('rp.doctorSigns')}</span>
           {isFinalized ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: C.okSoft, color: C.ok, borderRadius: 999, padding: '10px 18px', fontSize: 16, fontWeight: 800 }}
               title={t('rp.signedNote')}>
               ✓ {t('rp.signed')} · {reportStatus}
+            </span>
+          ) : !canSign ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', background: C.ground, color: C.muted, borderRadius: 16, padding: '0 20px', height: 54, fontSize: 15, fontWeight: 700, border: `1.5px solid ${C.line}` }}>
+              {t('rp.doctorSigns')}
             </span>
           ) : (
             <button type="button" onClick={openSign}

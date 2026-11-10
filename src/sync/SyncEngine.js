@@ -336,7 +336,7 @@ async function pushCycle() {
       // the local _localDirty flag so the next pull is allowed to overwrite
       // the cached row with the canonical server copy.
       if (item.type === 'REPORT' && item.payload?.appointmentId) {
-        try { await clearReportLocalDirty(item.payload.appointmentId); } catch (_) {}
+        try { await clearReportLocalDirty(item.payload.appointmentId, item.payload.appointmentServiceId || null); } catch (_) {}
       }
 
       // (A drained legacy APPOINTMENT_CREATE needs no follow-up: appointments

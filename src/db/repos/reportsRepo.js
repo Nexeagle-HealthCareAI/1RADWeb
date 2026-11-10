@@ -6,19 +6,27 @@
 //   3. ReportingPage autosave → write the in-flight draft to local storage
 //      so a tab close / browser crash doesn't lose work
 //
-// Layout choice: keyed by appointmentId, not by report Id. The product
-// surface treats "the report" as 1:1 with the appointment, and the user
-// always navigates by appointment ID. Keying on appointmentId means every
-// reader does a primary-key get instead of a secondary-index scan.
+// Layout: the primary key (the `appointmentId` field, for schema reasons) is
+// the REPORT key — "<visitId>|<studyId>" for a study on a multi-study visit,
+// or just "<visitId>" for a visit-level (legacy / single-study) report.
+// Keying by visit alone made every study on a visit share one cached row, so
+// offline, one study could show (and re-save) another study's text.
+// `visitId` and `appointmentServiceId` hold the real ids.
 
 import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
 
+export const reportKey = (visitId, serviceId) => (serviceId ? `${visitId}|${serviceId}` : visitId);
+
 export function fromServerDto(dto) {
   if (!dto || !dto.appointmentId) return null;
   const updatedAtIso = dto.updatedAt || null;
+  const serviceId = dto.appointmentServiceId ?? null;
   return {
-    appointmentId: dto.appointmentId,
+    appointmentId: reportKey(dto.appointmentId, serviceId),
+    visitId:       dto.appointmentId,
+    appointmentServiceId: serviceId,
+    status:        dto.status ?? null,
     id:             dto.id ?? null,
     doctorId:       dto.doctorId ?? null,
     templateId:     dto.templateId ?? null,
@@ -34,6 +42,10 @@ export function fromServerDto(dto) {
     // verbatim and echo back on save so a concurrent edit is detected.
     rowVersion:     dto.rowVersion ?? null,
     _updatedAtMs:   updatedAtIso ? new Date(updatedAtIso).getTime() : 0,
+    // The server's own time for this row. _updatedAtMs moves to "now" when a
+    // local draft is written; the pull watermark must not, or other people's
+    // changes made in between would never be pulled.
+    _serverMs:      updatedAtIso ? new Date(updatedAtIso).getTime() : 0,
     _localDirty:    0,
   };
 }
@@ -43,7 +55,7 @@ export async function applyServerDeltas(serverDtos) {
   const tombstones = [];
   const live       = [];
   for (const dto of serverDtos || []) {
-    if (dto.deletedAt) tombstones.push(dto.appointmentId);
+    if (dto.deletedAt) tombstones.push(reportKey(dto.appointmentId, dto.appointmentServiceId));
     else {
       const row = fromServerDto(dto);
       if (row) live.push(row);
@@ -67,17 +79,28 @@ export async function applyServerDeltas(serverDtos) {
 
 export async function highWatermarkIso() {
   const t = tables.reports();
-  const max = await t.orderBy('_updatedAtMs').reverse().limit(1).first();
-  if (!max || !max._updatedAtMs) return null;
+  let maxMs = 0;
+  await t.each((r) => {
+    const ms = r._serverMs ?? (r._localDirty ? 0 : r._updatedAtMs) ?? 0;
+    if (ms > maxMs) maxMs = ms;
+  });
+  if (!maxMs) return null;
   // +1ms past the last-seen row — the server's sub-ms UpdatedAt is always > our
   // ms-truncated value, which otherwise re-pulls the boundary rows every cycle.
-  return new Date(max._updatedAtMs + 1).toISOString();
+  return new Date(maxMs + 1).toISOString();
 }
 
-// One-shot read for the ReportingPage initial paint.
-export async function getReportByAppointmentId(appointmentId) {
+// One-shot read for the ReportingPage initial paint. With a study id, only
+// THAT study's row counts — never another study's row on the same visit.
+export async function getReportByAppointmentId(appointmentId, serviceId = null) {
   if (!appointmentId) return null;
-  return tables.reports().get(appointmentId);
+  const t = tables.reports();
+  if (!serviceId) return t.get(appointmentId);
+  const exact = await t.get(reportKey(appointmentId, serviceId));
+  if (exact) return exact;
+  // A visit-level row is only usable when it is known to be this study's.
+  const visitRow = await t.get(appointmentId);
+  return visitRow && visitRow.appointmentServiceId === serviceId ? visitRow : null;
 }
 
 // Reactive read — the editor doesn't currently subscribe, but other
@@ -92,14 +115,17 @@ export function watchReport(appointmentId) {
 // NOT overwrite the user's unsynced draft. The outbox is the thing that
 // eventually pushes this to the server; clearing _localDirty is the
 // SyncEngine's job after it sees the row come back from the server.
-export async function saveLocalDraft(appointmentId, draft) {
+export async function saveLocalDraft(appointmentId, draft, serviceId = null) {
   if (!appointmentId) return;
   const t = tables.reports();
   const nowMs = Date.now();
-  const existing = await t.get(appointmentId);
+  const key = reportKey(appointmentId, serviceId);
+  const existing = await t.get(key);
   await t.put({
     ...(existing || {}),
-    appointmentId,
+    appointmentId: key,
+    visitId: appointmentId,
+    appointmentServiceId: serviceId || null,
     findings:    draft.findings   ?? existing?.findings   ?? '',
     impression:  draft.impression ?? existing?.impression ?? '',
     advice:      draft.advice     ?? existing?.advice     ?? '',
@@ -129,10 +155,10 @@ export async function evictOlderThan(daysAgo) {
 // Called by the SyncEngine immediately after a successful push of the
 // outboxed draft so the next delta pull is allowed to overwrite this row
 // with the canonical server copy.
-export async function clearLocalDirty(appointmentId) {
+export async function clearLocalDirty(appointmentId, serviceId = null) {
   if (!appointmentId) return;
   const t = tables.reports();
-  const row = await t.get(appointmentId);
+  const row = await t.get(reportKey(appointmentId, serviceId));
   if (!row) return;
   await t.put({ ...row, _localDirty: 0 });
 }

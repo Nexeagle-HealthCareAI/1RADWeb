@@ -271,7 +271,7 @@ const KeywordManager = ({
                   />
                 </div>
                 <p style={{ fontSize: '11px', color: '#94a3b8', margin: '5px 0 0' }}>
-                  Type this trigger word in the editor, then press Space or Enter to expand.
+                  In the report, type / and this word (for example /normal_brain), then press Space or Enter to expand.
                 </p>
               </div>
             </div>

@@ -1211,6 +1211,26 @@ export default function AppointmentBoard() {
     }
   };
 
+  // Hand over one study's report (multi-study visits). Uses the per-study
+  // status endpoint; the server rolls the visit up to Delivered once every
+  // live study has been handed over.
+  const handleDeliverService = async (app, line) => {
+    if (!isOnline) {
+      showNotif('error', 'NO CONNECTION', 'You are offline — handing over a report needs a live connection.');
+      return;
+    }
+    try {
+      await apiClient.patch(`/appointments/${app.appointmentId}/services/${line.id}/status`, { status: 'DELIVERED' });
+      patchRow(app.appointmentId, (a) => ({
+        ...a,
+        services: (a.services || []).map(s => (s.id === line.id ? { ...s, status: 'DELIVERED', deliveredAt: new Date().toISOString() } : s)),
+      }));
+      reloadAppointments();
+    } catch (err) {
+      showNotif('error', 'NOT HANDED OVER', err?.response?.data?.message || 'Could not mark this report as handed over. Please try again.');
+    }
+  };
+
   const getNextAction = (status) => {
     switch (status) {
       case 'scheduled':   
@@ -3157,7 +3177,7 @@ export default function AppointmentBoard() {
                     orient without competing with the data. */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 160px',
+                  gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 250px',
                   gap: '8px',
                   alignItems: 'center',
                   padding: '0 4px 4px 6px',
@@ -3168,7 +3188,7 @@ export default function AppointmentBoard() {
                   <span style={{ textAlign: 'center' }}>Modality</span>
                   <span>Service</span>
                   <span>Status</span>
-                  <span style={{ textAlign: 'center' }}>Print Prescription</span>
+                  <span style={{ textAlign: 'center' }}>Print · hand over</span>
                 </div>
                 {lines.map((line, idx) => {
                   const accent   = accentFor(line.modality);
@@ -3183,7 +3203,7 @@ export default function AppointmentBoard() {
                         // Sub-row grid — consistent columns across the
                         // visit's services so the eye can scan straight
                         // down: modality · name · price · status · print.
-                        gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 160px',
+                        gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 250px',
                         gap: '8px',
                         alignItems: 'center',
                         padding: '5px 4px 5px 6px',
@@ -3248,6 +3268,7 @@ export default function AppointmentBoard() {
                           </span>
                         );
                       })()}
+                      <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <button
                         type="button"
                         disabled={!canPrint}
@@ -3284,6 +3305,23 @@ export default function AppointmentBoard() {
                         </svg>
                         Print Prescription
                       </button>
+                      {/* Hand over THIS study's report — a finished CT no longer
+                          waits for the USG on the same visit. The visit itself
+                          becomes Delivered once every study is handed over. */}
+                      {step === 3 && line.id && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeliverService(app, line); }}
+                          title="Mark this study's report as handed to the patient"
+                          style={{
+                            padding: '5px 9px', borderRadius: '7px', border: '1px solid #0369a1',
+                            background: 'white', color: '#0369a1', cursor: 'pointer',
+                            fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px', textTransform: 'uppercase',
+                            whiteSpace: 'nowrap', fontFamily: 'inherit',
+                          }}
+                        >📬 Hand over</button>
+                      )}
+                      </span>
                     </div>
                   );
                 })}
