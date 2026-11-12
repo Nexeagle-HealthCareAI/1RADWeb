@@ -77,7 +77,12 @@ export default function OverviewArea({ vp }) {
   React.useEffect(() => {
     let alive = true;
     setErr('');
-    fetchGlance(month).then(r => { if (alive) setD(r); }).catch(e => { if (alive) setErr(apiError(e) || t('gl.failed')); });
+    fetchGlance(month).then(r => {
+      if (!alive) return;
+      // An older API (before finance/glance) answers with something else: say so instead of breaking.
+      if (!r || !r.today || !r.month) { setD(null); setErr(t('gl.failed')); return; }
+      setD(r);
+    }).catch(e => { if (alive) setErr(apiError(e) || t('gl.failed')); });
     return () => { alive = false; };
   }, [month, ver]);
 

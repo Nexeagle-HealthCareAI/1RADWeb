@@ -24,7 +24,7 @@ function Row({ label, value, strong, colour, note }) {
   );
 }
 
-export default function BillPanel({ bill, ver, canTake, canFix, onTake, onFix, onPrintBill, onPrintReceipt, onClose }) {
+export default function BillPanel({ bill, ver, canTake, canFix, onTake, onFix, onPrintBill, onPrintReceipt, onPrintThermal, onMore, onClose }) {
   const [h, setH] = React.useState(null);
   const [err, setErr] = React.useState('');
   React.useEffect(() => {
@@ -111,7 +111,9 @@ export default function BillPanel({ bill, ver, canTake, canFix, onTake, onFix, o
         )}
         <Button kind="quiet" icon="print" onClick={() => onPrintBill?.()}>{t('mn.bill.print')}</Button>
         {receipts.length > 0 && <Button kind="quiet" icon="print" onClick={() => onPrintReceipt?.()}>{t('mn.bill.receipt')}</Button>}
+        {onPrintThermal && <Button kind="quiet" icon="print" onClick={() => onPrintThermal()}>{t('mn.bill.thermal')}</Button>}
         {canFix && h?.hasMoney && !cancelled && <Button kind="outline" onClick={() => onFix?.(h)}>{t('mn.bill.correct')}</Button>}
+        {onMore && <Button kind="quiet" onClick={() => onMore()}>{t('mn.bill.more')}</Button>}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import { LINK_COLOURS, linkWord, tn } from './owUtil';
 const pctOrNone = (v) => (v == null ? t('ow.st.v.noLimit') : `${Number(v)}%`);
 const onOff = (v) => (v ? t('ow.st.v.on') : t('ow.st.v.off'));
 const RULES = [
+  { k: 'auto', get: (b, c) => !!c?.autoBilling, show: onOff },
   { k: 'desk', get: b => Number(b.frontDeskDiscountLimitPercent), show: v => `${v}%` },
   { k: 'acc', get: b => (b.accountantDiscountLimitPercent == null ? null : Number(b.accountantDiscountLimitPercent)), show: pctOrNone },
   { k: 'reason', get: b => !!b.discountReasonRequired, show: onOff },
@@ -124,7 +125,7 @@ export default function SameSetupArea({ toast, vp }) {
               );
             })}
           </div>
-          {[...RULES.map(r => ({ k: r.k, vals: centres.map(c => r.show(r.get(c.billing))), raw: centres.map(c => r.get(c.billing)) })),
+          {[...RULES.map(r => ({ k: r.k, vals: centres.map(c => r.show(r.get(c.billing, c))), raw: centres.map(c => r.get(c.billing, c)) })),
             { k: 'prices', vals: centres.map(c => { const n = c.centre.hospitalId === mainId ? 0 : diffFromMain(c.centre.hospitalId); return n ? `${tn('ow.st.v.tests', { n: c.priceCount })} · ${tn('ow.st.v.priceDiff', { n })}` : tn('ow.st.v.tests', { n: c.priceCount }); }),
               raw: centres.map(c => (c.centre.hospitalId === mainId ? 0 : diffFromMain(c.centre.hospitalId))) }].map(row => {
             const mi = Math.max(0, centres.findIndex(c => c.centre.hospitalId === mainId));
@@ -176,8 +177,8 @@ export default function SameSetupArea({ toast, vp }) {
           </thead>
           <tbody>
             {RULES.map(r => {
-              const vals = centres.map(c => r.get(c.billing));
-              const main = r.get(centres.find(c => c.centre.hospitalId === mainId)?.billing || centres[0].billing);
+              const vals = centres.map(c => r.get(c.billing, c));
+              const main = r.get((centres.find(c => c.centre.hospitalId === mainId) || centres[0]).billing, centres.find(c => c.centre.hospitalId === mainId) || centres[0]);
               const same = vals.every(v => v === vals[0]);
               return (
                 <tr key={r.k}>

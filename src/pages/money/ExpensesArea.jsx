@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { t } from '../../i18n';
 import { Button, Chip, Sheet, Tag } from '../../components/saral/Saral';
 import { C, inr } from '../../components/saral/tokens';
@@ -16,6 +17,7 @@ const FROMS = ['CASH', 'UPI', 'BANK', 'NONE'];
 const headWord = (h) => { const k = `mn.ex.h.${h}`; const w = t(k); return w === k ? h : w; };
 
 export default function ExpensesArea({ toast, vp }) {
+  const navigate = useNavigate();
   const [tab, setTab] = React.useState('TOPAY');
   const [head, setHead] = React.useState('');
   const [rows, setRows] = React.useState(null);
@@ -52,6 +54,7 @@ export default function ExpensesArea({ toast, vp }) {
           <div style={{ fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{t('mn.ex.title')}</div>
           <div style={{ fontSize: 15, color: C.muted }}>{t('mn.ex.help')}</div>
         </div>
+        <Button kind="quiet" onClick={() => navigate('/money/tools?tab=EXPENSES')}>{t('mn.exp.more')}</Button>
         <Button kind="primary" icon="plus" onClick={() => setAdding(true)}>{t('mn.ex.add')}</Button>
       </div>
 

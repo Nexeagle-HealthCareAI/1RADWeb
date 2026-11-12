@@ -4,7 +4,8 @@ import { Button, Chip, Icon, Tag } from '../../components/saral/Saral';
 import { C, inr } from '../../components/saral/tokens';
 import { apiError, fieldStyle } from '../../components/saral/formUtil';
 import { fetchBillByNumber, fetchBills } from '../../api/billing/moneyApi';
-import { printA4Invoice, printReceiptSlip } from '../../utils/billing/printHandlers';
+import { useNavigate } from 'react-router-dom';
+import { printA4Invoice, printReceiptSlip, printThermalSlip } from '../../utils/billing/printHandlers';
 import BillPanel from './BillPanel';
 import CollectSheet from './CollectSheet';
 import FixSheet from './FixSheet';
@@ -43,6 +44,8 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
   const [fix, setFix] = React.useState(null);
   const [ver, setVer] = React.useState(0);
   const seq = React.useRef(0);
+  const navigate = useNavigate();
+  const fullTools = role === 'owner' || role === 'acc'; // the older billing tools were for these roles
 
   React.useEffect(() => { const h = setTimeout(() => setQ(search.trim()), 300); return () => clearTimeout(h); }, [search]);
 
@@ -91,6 +94,10 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
     const fresh = (await fetchBillByNumber(bill.displayId).catch(() => null)) || bill;
     await printReceiptSlip(fresh, printCtx);
   };
+  const printThermal = async (bill) => {
+    const fresh = (await fetchBillByNumber(bill.displayId).catch(() => null)) || bill;
+    await printThermalSlip(fresh, { ...printCtx, notify: (m) => toast.show(String(m?.message || m || '')) });
+  };
 
   // Counter summary from the bills on screen (today's bills).
   const sum = counter ? rows.reduce((a, r) => ({
@@ -104,7 +111,8 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
   const panel = (
     <BillPanel bill={sel} ver={ver} canTake={canTake} canFix={canFix}
       onTake={() => setCollect(sel)} onFix={(h) => setFix(h)}
-      onPrintBill={() => printBill(sel)} onPrintReceipt={() => printReceipt(sel)}
+      onPrintBill={() => printBill(sel)} onPrintReceipt={() => printReceipt(sel)} onPrintThermal={() => printThermal(sel)}
+      onMore={fullTools ? () => navigate('/money/tools', { state: { openInvoice: sel } }) : null}
       onClose={twoPane ? null : () => setSel(null)} />
   );
 
@@ -112,7 +120,10 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
     <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 0 }}>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ padding: vp.phone ? '12px 12px 6px' : '18px 22px 8px', display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{counter ? t('mn.nav.counter') : t('mn.nav.bills')}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{counter ? t('mn.nav.counter') : t('mn.nav.bills')}</div>
+            {fullTools && <Button kind="outline" icon="plus" onClick={() => navigate('/money/tools', { state: { newBill: Date.now() } })}>{t('mn.bills.new')}</Button>}
+          </div>
           {counter && <div style={{ fontSize: 15, color: C.muted }}>{t('mn.counter.help')}</div>}
           {counter && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 10 }}>

@@ -6,6 +6,7 @@ import { C, inr } from '../../components/saral/tokens';
 import { apiError, fieldStyle } from '../../components/saral/formUtil';
 import { downloadMonthPack } from '../../api/billing/moneyApi';
 import { downloadGstr1, fetchCreditNotes } from '../../api/billing/creditNotesApi';
+import { printCreditNote } from '../../utils/billing/printHandlers';
 import { istDate, istDay } from './mnUtil';
 
 const BillingPage = React.lazy(() => import('../BillingPage'));
@@ -27,7 +28,7 @@ function save(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export default function ReportsArea({ toast, vp }) {
+export default function ReportsArea({ toast, vp, printCtx }) {
   const navigate = useNavigate();
   const [month, setMonth] = React.useState(monthOf(-1));
   const [busy, setBusy] = React.useState('');
@@ -52,8 +53,10 @@ export default function ReportsArea({ toast, vp }) {
     { id: 'partners', who: 'owner', label: 'mn.rp.open', act: () => navigate('/money/partners') },
     { id: 'due', who: 'owner', label: 'mn.rp.open', act: () => navigate('/money/bills') },
     { id: 'charts', who: 'owner', label: 'mn.rp.open', act: () => setCharts(c => !c) },
+    { id: 'services', who: 'owner', label: 'mn.rp.open', act: () => navigate('/money/tools?tab=SERVICES') },
+    { id: 'tools', who: 'acc', label: 'mn.rp.open', act: () => navigate('/money/tools') },
   ];
-  const title = { pack: 'mn.rp.pack', gst: 'mn.rp.gst', cn: 'mn.rp.cn', tests: 'mn.rp.tests', partners: 'mn.rp.partners', due: 'mn.rp.due', charts: 'mn.rp.charts' };
+  const title = { pack: 'mn.rp.pack', gst: 'mn.rp.gst', cn: 'mn.rp.cn', tests: 'mn.rp.tests', partners: 'mn.rp.partners', due: 'mn.rp.due', charts: 'mn.rp.charts', services: 'mn.rp.services', tools: 'mn.rp.tools' };
 
   return (
     <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 24px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gridAutoRows: 'max-content', gap: 14, alignContent: 'start' }}>
@@ -94,6 +97,7 @@ export default function ReportsArea({ toast, vp }) {
                 <span style={{ display: 'block', fontSize: 13, color: C.faint }}>{istDate(n.createdAt)} · {n.reason}{n.issuedBy ? ` · ${n.issuedBy}` : ''}</span>
               </span>
               <span style={{ fontWeight: 800, color: C.danger }}>−{inr(n.amount)}</span>
+              <Button kind="quiet" icon="print" onClick={() => printCreditNote(n, { activeCenter: printCtx?.activeCenter, taxProfile: printCtx?.taxProfile })}>{t('mn.rp.print')}</Button>
             </div>
           ))}
         </div>

@@ -1,8 +1,9 @@
 import React from 'react';
 import { t } from '../../i18n';
-import { Button, Chip } from '../../components/saral/Saral';
+import { Button, Chip, Sheet } from '../../components/saral/Saral';
 import { C } from '../../components/saral/tokens';
 import { apiError } from '../../components/saral/formUtil';
+import apiClient from '../../api/apiClient';
 import { saveBillingSettings, useBillingSettings } from '../../api/billing/billingSettingsApi';
 import TaxBillingSettings from '../../components/Admin/TaxBillingSettings';
 
@@ -25,6 +26,28 @@ export default function SetupArea({ centre, toast, vp, isOnline = true }) {
   const [f, setF] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [tryPct, setTryPct] = React.useState(15);
+  // Automatic billing (Hospital.IsAutoBillingEnabled): a bill is made by itself when a
+  // visit is completed. The same switch as Price list ▸ Billing Settings; shown first here.
+  const [auto, setAuto] = React.useState(null);
+  const [autoAsk, setAutoAsk] = React.useState(false);
+  const [autoBusy, setAutoBusy] = React.useState(false);
+  React.useEffect(() => {
+    if (!centre?.id) return undefined;
+    let alive = true;
+    apiClient.get(`/hospitals/${centre.id}`, { suppressErrorToast: true })
+      .then(r => { if (alive) setAuto(!!(r.data?.isAutoBillingEnabled ?? r.data?.IsAutoBillingEnabled)); })
+      .catch(() => { if (alive) setAuto(!!centre?.isAutoBillingEnabled); });
+    return () => { alive = false; };
+  }, [centre?.id, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveAuto = async () => {
+    setAutoBusy(true);
+    try {
+      const r = await apiClient.put(`/hospitals/${centre.id}/auto-billing`, { enabled: !auto }, { suppressErrorToast: true });
+      setAuto(!!(r.data?.isAutoBillingEnabled ?? !auto));
+      toast.show(!auto ? t('mn.st.autoOnDone') : t('mn.st.autoOffDone'));
+      setAutoAsk(false);
+    } catch (e) { toast.show(apiError(e) || t('mn.st.failed')); } finally { setAutoBusy(false); }
+  };
 
   React.useEffect(() => {
     if (!settings) return;
@@ -74,6 +97,24 @@ export default function SetupArea({ centre, toast, vp, isOnline = true }) {
         {['rules', 'prices', 'tax'].map(k => <Chip key={k} on={tab === k} onClick={() => setTab(k)}>{t(`mn.st.tab.${k}`)}</Chip>)}
       </div>
 
+      {tab === 'rules' && auto != null && (
+        <div style={{ ...card, borderColor: auto ? '#BBF7D0' : C.line }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 240px' }}>
+              <div style={h}>{t('mn.st.auto')}</div>
+              <div style={{ fontSize: 14, color: C.muted }}>{auto ? t('mn.st.autoOnSub') : t('mn.st.autoOffSub')}</div>
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 800, padding: '4px 12px', borderRadius: 999, background: auto ? C.okSoft : '#F3F4F6', color: auto ? C.ok : C.muted }}>
+              {auto ? t('mn.st.autoOn') : t('mn.st.autoOff')}
+            </span>
+            <Button kind={auto ? 'outline' : 'ok'} onClick={() => setAutoAsk(true)}>{auto ? t('mn.st.autoTurnOff') : t('mn.st.autoTurnOn')}</Button>
+          </div>
+        </div>
+      )}
+      <Sheet open={autoAsk} onClose={() => !autoBusy && setAutoAsk(false)} title={auto ? t('mn.st.autoTurnOff') : t('mn.st.autoTurnOn')}
+        footer={<Button kind="primary" size="lg" disabled={autoBusy} onClick={saveAuto}>{autoBusy ? '…' : (auto ? t('mn.st.autoTurnOff') : t('mn.st.autoTurnOn'))}</Button>}>
+        <div style={{ fontSize: 16, lineHeight: 1.5 }}>{auto ? t('mn.st.autoOffAsk') : t('mn.st.autoOnAsk')}</div>
+      </Sheet>
       {tab === 'rules' && !f && <div style={{ color: C.faint }}>{t('mn.st.loading')}</div>}
       {tab === 'rules' && f && (
         <>

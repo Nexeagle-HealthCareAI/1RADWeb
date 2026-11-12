@@ -64,7 +64,10 @@ const getIstDateStr = (iso) => {
 
 // `embedded`: shown inside Money (redesign) for the areas not rebuilt yet — no own
 // title or tab row, and `initialView` picks the tab.
-export default function BillingPage({ embedded = false, initialView = null } = {}) {
+// `showTabs` (Money ▸ All billing tools): embedded, but with the full tab row, so every
+// older tool stays one click away. `openInvoice` opens that bill in the bill drawer;
+// `startNewBill` opens the new-bill drawer.
+export default function BillingPage({ embedded = false, initialView = null, showTabs = false, openInvoice = null, startNewBill = false } = {}) {
   const { activeCenter } = useAuth();
   const { isOnline, addToOutbox, performSync, pendingCount } = useOffline();
   
@@ -682,6 +685,10 @@ export default function BillingPage({ embedded = false, initialView = null } = {
     newInvoiceData, setNewInvoiceData,
   });
 
+  // Money ▸ Bills hands over a bill ("More on this bill") or asks for a new bill.
+  useEffect(() => { if (openInvoice) handleOpenInvoice(openInvoice); }, [openInvoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (startNewBill) setIsNewInvoiceDrawerOpen(true); }, [startNewBill]);
+
   const {
     filteredInvoices,
     futureAppointments,
@@ -806,6 +813,18 @@ export default function BillingPage({ embedded = false, initialView = null } = {
       )}
 
       {/* ── DESKTOP HEADER (non-mobile only) ───────────────────────────── */}
+      {embedded && showTabs && (
+        <nav aria-label="Billing tools" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: isMobile ? '10px 12px' : '0 0 12px', scrollbarWidth: 'none' }}>
+          {BILLING_TABS.map(tab => {
+            const on = billingViewMode === tab.id;
+            return (
+              <button key={tab.id} type="button" onClick={() => setBillingViewMode(tab.id)} aria-current={on ? 'page' : undefined}
+                style={{ flexShrink: 0, height: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: on ? 'none' : '1.5px solid #CBD5E1', background: on ? '#111827' : 'white', color: on ? 'white' : '#334155' }}>{tab.label}</button>
+            );
+          })}
+        </nav>
+      )}
       {!isMobile && embedded && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}><div id="billing-header-actions-portal"></div></div>
       )}

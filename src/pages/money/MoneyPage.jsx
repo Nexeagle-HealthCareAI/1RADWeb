@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import apiClient from '../../api/apiClient';
 import useAuth from '../../auth/useAuth';
 import { useBillingSettings } from '../../api/billing/billingSettingsApi';
@@ -33,6 +33,8 @@ const AREAS = [
   { id: 'exp', icon: '⊖', roles: ['owner', 'acc'] },
   { id: 'reports', icon: '⤓', roles: ['owner', 'acc'] },
   { id: 'setup', icon: '⚙', roles: ['owner'] },
+  // Every tool of the older billing screen, so nothing is lost while the new screens take over.
+  { id: 'tools', icon: '☰', roles: ['owner', 'acc'] },
 ];
 const LANDING = { owner: 'overview', desk: 'counter', acc: 'bills' };
 
@@ -40,6 +42,7 @@ export default function MoneyPage() {
   useLang();
   const { area } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { activeCenter, currentUser } = useAuth();
   const role = moneyRole(currentUser);
   const settings = useBillingSettings(activeCenter?.id);
@@ -86,8 +89,22 @@ export default function MoneyPage() {
     if (cur.id === 'book') return <CashBookArea role={role} toast={toast} vp={vp} />;
     if (cur.id === 'overview') return <OverviewArea vp={vp} />;
     if (cur.id === 'exp') return <ExpensesArea toast={toast} vp={vp} />;
-    if (cur.id === 'reports') return <ReportsArea toast={toast} vp={vp} />;
+    if (cur.id === 'reports') return <ReportsArea toast={toast} vp={vp} printCtx={printCtx} />;
     if (cur.id === 'setup') return <SetupArea centre={activeCenter} toast={toast} vp={vp} />;
+    if (cur.id === 'tools') {
+      const tab = new URLSearchParams(location.search).get('tab');
+      const known = ['INVOICES', 'REFERRAL_CUTS', 'EXPENSES', 'DAYBOOK', 'CREDIT_NOTES', 'SERVICES', 'FINANCE', 'ANALYTICS'];
+      return (
+        <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? 0 : '14px 22px' }}>
+          <div style={{ margin: vp.phone ? '10px 12px' : '0 0 12px', fontSize: 14, color: C.muted, background: 'white',
+            border: `1px dashed ${C.lineStrong}`, borderRadius: 12, padding: '8px 12px' }}>{t('mn.tools.help')}</div>
+          <React.Suspense fallback={<div style={{ padding: 20, color: C.faint }}>…</div>}>
+            <BillingPage embedded showTabs initialView={known.includes(tab) ? tab : 'INVOICES'}
+              openInvoice={location.state?.openInvoice || null} startNewBill={!!location.state?.newBill} />
+          </React.Suspense>
+        </div>
+      );
+    }
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? 0 : '14px 22px' }}>
         {!cur.partners && <div style={{ margin: vp.phone ? '10px 12px' : '0 0 12px', fontSize: 14, color: C.muted, background: 'white',

@@ -92,6 +92,15 @@ export const en = {
   'mn.fix.title': 'Correct bill {no}', 'mn.fix.help': 'Say how much should come off and why. The owner approves it, then a credit note is made and any money due back is returned the way they choose.',
   'mn.fix.amount': 'Lower the bill by', 'mn.fix.newTotal': 'New total {amount}', 'mn.fix.reason': 'What went wrong?', 'mn.fix.send': 'Send to owner',
   'mn.fix.sent': 'Sent to the owner for approval.', 'mn.fix.failed': 'Could not send it.',
+  'mn.nav.tools': 'All billing tools', 'mn.tools.help': 'Every billing tool from before the new Money screens: new bills, partner discounts and extra charges, advances and refunds, free requests, bulk expense changes, exports and service performance.',
+  'mn.bill.thermal': 'Thermal slip', 'mn.bill.more': 'More on this bill', 'mn.bills.new': 'New bill',
+  'mn.exp.more': 'Edit, delete or export', 'mn.rp.services': 'Service performance', 'mn.rp.servicesSub': 'Each test: count, money, discounts and partner share, compared with an earlier period.',
+  'mn.rp.tools': 'All billing tools', 'mn.rp.toolsSub': 'The full older billing screen, with every tool it had.', 'mn.rp.print': 'Print',
+  'mn.st.auto': 'Automatic billing', 'mn.st.autoOn': 'On', 'mn.st.autoOff': 'Off', 'mn.st.autoTurnOn': 'Turn on', 'mn.st.autoTurnOff': 'Turn off',
+  'mn.st.autoOnSub': 'A bill is made by itself, from the price list, when a visit is completed.', 'mn.st.autoOffSub': 'Bills are made by hand at the counter or with New bill.',
+  'mn.st.autoOnAsk': 'From now on, a bill is made by itself from the price list whenever a visit is completed. Bills already made are not changed.',
+  'mn.st.autoOffAsk': 'From now on, bills are not made by themselves. Make them at the counter or with New bill. Bills already made are not changed.',
+  'mn.st.autoOnDone': 'Automatic billing is on.', 'mn.st.autoOffDone': 'Automatic billing is off.',
 };
 
 export const hi = {
@@ -184,6 +193,15 @@ export const hi = {
   'mn.fix.title': 'बिल {no} में सुधार', 'mn.fix.help': 'कितना घटाना है और क्यों, लिखें। मालिक मंज़ूर करें तो क्रेडिट नोट बनेगा और लौटाने वाला पैसा उनके चुने तरीके से लौटेगा।',
   'mn.fix.amount': 'बिल इतना घटाएँ', 'mn.fix.newTotal': 'नया कुल {amount}', 'mn.fix.reason': 'क्या गलत हुआ?', 'mn.fix.send': 'मालिक को भेजें',
   'mn.fix.sent': 'मंज़ूरी के लिए मालिक को भेज दिया।', 'mn.fix.failed': 'नहीं भेजा जा सका।',
+  'mn.nav.tools': 'सभी बिलिंग टूल', 'mn.tools.help': 'नए पैसा स्क्रीन से पहले के सारे बिलिंग टूल: नया बिल, पार्टनर छूट और अतिरिक्त शुल्क, एडवांस और रिफ़ंड, फ़्री की माँग, खर्च में एक साथ बदलाव, एक्सपोर्ट और जाँच का प्रदर्शन।',
+  'mn.bill.thermal': 'थर्मल पर्ची', 'mn.bill.more': 'इस बिल पर और', 'mn.bills.new': 'नया बिल',
+  'mn.exp.more': 'बदलें, हटाएँ या एक्सपोर्ट', 'mn.rp.services': 'जाँच का प्रदर्शन', 'mn.rp.servicesSub': 'हर जाँच: संख्या, पैसा, छूट और पार्टनर हिस्सा, पहले की अवधि से तुलना।',
+  'mn.rp.tools': 'सभी बिलिंग टूल', 'mn.rp.toolsSub': 'पुरानी पूरी बिलिंग स्क्रीन, उसके सारे टूल के साथ।', 'mn.rp.print': 'प्रिंट',
+  'mn.st.auto': 'अपने-आप बिल', 'mn.st.autoOn': 'चालू', 'mn.st.autoOff': 'बंद', 'mn.st.autoTurnOn': 'चालू करें', 'mn.st.autoTurnOff': 'बंद करें',
+  'mn.st.autoOnSub': 'जाँच पूरी होते ही रेट लिस्ट से बिल अपने-आप बनता है।', 'mn.st.autoOffSub': 'बिल काउंटर पर या "नया बिल" से हाथ से बनते हैं।',
+  'mn.st.autoOnAsk': 'अब से हर जाँच पूरी होने पर रेट लिस्ट से बिल अपने-आप बनेगा। पहले बने बिल नहीं बदलेंगे।',
+  'mn.st.autoOffAsk': 'अब से बिल अपने-आप नहीं बनेंगे। काउंटर पर या "नया बिल" से बनाएँ। पहले बने बिल नहीं बदलेंगे।',
+  'mn.st.autoOnDone': 'अपने-आप बिल चालू है।', 'mn.st.autoOffDone': 'अपने-आप बिल बंद है।',
 };
 
 export const bn = {
@@ -276,4 +294,13 @@ export const bn = {
   'mn.fix.title': 'বিল {no} সংশোধন', 'mn.fix.help': 'কত কমবে আর কেন, লিখুন। মালিক অনুমোদন করলে ক্রেডিট নোট তৈরি হবে আর ফেরতের টাকা তাঁর বাছা উপায়ে ফেরত যাবে।',
   'mn.fix.amount': 'বিল এতটা কমান', 'mn.fix.newTotal': 'নতুন মোট {amount}', 'mn.fix.reason': 'কী ভুল হয়েছিল?', 'mn.fix.send': 'মালিককে পাঠান',
   'mn.fix.sent': 'অনুমোদনের জন্য মালিককে পাঠানো হয়েছে।', 'mn.fix.failed': 'পাঠানো গেল না।',
+  'mn.nav.tools': 'সব বিলিং টুল', 'mn.tools.help': 'নতুন টাকা স্ক্রিনের আগের সব বিলিং টুল: নতুন বিল, পার্টনার ছাড় ও অতিরিক্ত চার্জ, অগ্রিম ও ফেরত, ফ্রি-র অনুরোধ, একসঙ্গে খরচ বদল, এক্সপোর্ট আর পরীক্ষার পারফরম্যান্স।',
+  'mn.bill.thermal': 'থার্মাল স্লিপ', 'mn.bill.more': 'এই বিলে আরও', 'mn.bills.new': 'নতুন বিল',
+  'mn.exp.more': 'বদলান, মুছুন বা এক্সপোর্ট', 'mn.rp.services': 'পরীক্ষার পারফরম্যান্স', 'mn.rp.servicesSub': 'প্রতিটি পরীক্ষা: সংখ্যা, টাকা, ছাড় ও পার্টনারের ভাগ, আগের সময়ের সঙ্গে তুলনা।',
+  'mn.rp.tools': 'সব বিলিং টুল', 'mn.rp.toolsSub': 'পুরনো পুরো বিলিং স্ক্রিন, তার সব টুল সহ।', 'mn.rp.print': 'প্রিন্ট',
+  'mn.st.auto': 'নিজে থেকে বিল', 'mn.st.autoOn': 'চালু', 'mn.st.autoOff': 'বন্ধ', 'mn.st.autoTurnOn': 'চালু করুন', 'mn.st.autoTurnOff': 'বন্ধ করুন',
+  'mn.st.autoOnSub': 'পরীক্ষা শেষ হলেই রেট লিস্ট থেকে বিল নিজে থেকে তৈরি হয়।', 'mn.st.autoOffSub': 'বিল কাউন্টারে বা "নতুন বিল" দিয়ে হাতে তৈরি হয়।',
+  'mn.st.autoOnAsk': 'এখন থেকে প্রতিটি পরীক্ষা শেষ হলে রেট লিস্ট থেকে বিল নিজে থেকে তৈরি হবে। আগের বিল বদলাবে না।',
+  'mn.st.autoOffAsk': 'এখন থেকে বিল নিজে থেকে তৈরি হবে না। কাউন্টারে বা "নতুন বিল" দিয়ে তৈরি করুন। আগের বিল বদলাবে না।',
+  'mn.st.autoOnDone': 'নিজে থেকে বিল চালু।', 'mn.st.autoOffDone': 'নিজে থেকে বিল বন্ধ।',
 };
