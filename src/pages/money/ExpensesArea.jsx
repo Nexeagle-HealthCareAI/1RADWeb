@@ -46,7 +46,7 @@ export default function ExpensesArea({ toast, vp }) {
   const heads = [...new Set((rows || []).map(e => e.category).filter(Boolean))];
 
   return (
-    <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 24px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 14, alignContent: 'start' }}>
+    <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 24px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gridAutoRows: 'max-content', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 260px' }}>
           <div style={{ fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{t('mn.ex.title')}</div>

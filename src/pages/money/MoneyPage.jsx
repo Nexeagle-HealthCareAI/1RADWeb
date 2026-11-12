@@ -11,6 +11,8 @@ import BillsArea from './BillsArea';
 import CashBookArea from './CashBookArea';
 import OverviewArea from './OverviewArea';
 import ExpensesArea from './ExpensesArea';
+import ReportsArea from './ReportsArea';
+import SetupArea from './SetupArea';
 import { moneyRole } from './mnUtil';
 
 const BillingPage = React.lazy(() => import('../BillingPage'));
@@ -29,8 +31,8 @@ const AREAS = [
   { id: 'book', icon: '⇅', roles: ['owner', 'acc'] },
   { id: 'partners', icon: '⚭', roles: ['owner', 'acc'], partners: true },
   { id: 'exp', icon: '⊖', roles: ['owner', 'acc'] },
-  { id: 'reports', icon: '⤓', roles: ['owner', 'acc'], old: 'CREDIT_NOTES' },
-  { id: 'setup', icon: '⚙', roles: ['owner'], old: 'FINANCE' },
+  { id: 'reports', icon: '⤓', roles: ['owner', 'acc'] },
+  { id: 'setup', icon: '⚙', roles: ['owner'] },
 ];
 const LANDING = { owner: 'overview', desk: 'counter', acc: 'bills' };
 
@@ -84,6 +86,8 @@ export default function MoneyPage() {
     if (cur.id === 'book') return <CashBookArea role={role} toast={toast} vp={vp} />;
     if (cur.id === 'overview') return <OverviewArea vp={vp} />;
     if (cur.id === 'exp') return <ExpensesArea toast={toast} vp={vp} />;
+    if (cur.id === 'reports') return <ReportsArea toast={toast} vp={vp} />;
+    if (cur.id === 'setup') return <SetupArea centre={activeCenter} toast={toast} vp={vp} />;
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? 0 : '14px 22px' }}>
         {!cur.partners && <div style={{ margin: vp.phone ? '10px 12px' : '0 0 12px', fontSize: 14, color: C.muted, background: 'white',

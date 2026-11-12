@@ -76,7 +76,7 @@ export default function CashBookArea({ role, toast, vp }) {
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0, flexDirection: vp.desktop ? 'row' : 'column' }}>
-      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 20px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, alignContent: 'start' }}>
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 20px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridAutoRows: 'max-content', gap: 14, alignContent: 'start' }}>
         <div>
           <div style={{ fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{t('mn.cb.title')}</div>
           <div style={{ fontSize: 15, color: C.muted }}>{t('mn.cb.help')}</div>

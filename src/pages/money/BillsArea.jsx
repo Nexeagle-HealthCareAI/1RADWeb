@@ -139,7 +139,7 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
           {!loading && !err && <div style={{ fontSize: 14, color: C.faint }}>{t('mn.bills.n', { n: total })}</div>}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? '0 12px 90px' : '0 22px 20px', display: 'grid', gap: 8, alignContent: 'start' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? '0 12px 90px' : '0 22px 20px', display: 'grid', gridAutoRows: 'max-content', gap: 8, alignContent: 'start' }}>
           {err && (
             <div role="alert" style={{ background: C.dangerSoft, color: C.danger, borderRadius: 14, padding: 14, fontWeight: 700, display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={{ flex: 1 }}>{err}</span><Button kind="quiet" onClick={() => setVer(v => v + 1)}>{t('mn.retry')}</Button>

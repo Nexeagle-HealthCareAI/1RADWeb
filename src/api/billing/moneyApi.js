@@ -113,3 +113,9 @@ export const payExpense = async (id, mode, reference) => {
   const res = await apiClient.post(`/finance/expenses/${id}/pay`, { mode, reference: reference || null }, { suppressErrorToast: true });
   return res.data;
 };
+
+/** Money ▸ Reports: download the CA's month pack (month = 'YYYY-MM'). */
+export const downloadMonthPack = async (month) => {
+  const res = await apiClient.get('/finance/month-pack', { params: { month }, responseType: 'blob', suppressErrorToast: true });
+  return res.data;
+};

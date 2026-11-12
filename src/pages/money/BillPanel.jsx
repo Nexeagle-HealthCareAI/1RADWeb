@@ -56,7 +56,7 @@ export default function BillPanel({ bill, ver, canTake, canFix, onTake, onFix, o
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px', display: 'grid', gap: 16, alignContent: 'start' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px', display: 'grid', gridAutoRows: 'max-content', gap: 16, alignContent: 'start' }}>
         {err && <div role="alert" style={{ color: C.danger, fontWeight: 700 }}>{err}</div>}
         <div>
           {(h?.lines || bill.items || []).map((l, i) => (

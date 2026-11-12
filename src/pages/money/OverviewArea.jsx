@@ -86,7 +86,7 @@ export default function OverviewArea({ vp }) {
   const lab = { fontSize: 13, fontWeight: 800, letterSpacing: 1, color: C.faint, marginBottom: 8 };
 
   return (
-    <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 24px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, alignContent: 'start' }}>
+    <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: vp.phone ? '12px 12px 90px' : '18px 22px 24px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridAutoRows: 'max-content', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 260px' }}>
           <div style={{ fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{t('mn.ov.title')}</div>
