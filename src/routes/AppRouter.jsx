@@ -27,6 +27,7 @@ const ReferralsPage = lazy(() => import('../pages/ReferralsPage'));
 const StaffPage = lazy(() => import('../pages/StaffPage'));
 const StaffDashboardPage = lazy(() => import('../pages/StaffDashboardPage'));
 const BillingPage = lazy(() => import('../pages/BillingPage'));
+const MoneyPage = lazy(() => import('../pages/money/MoneyPage'));
 const ReportingPage = lazy(() => import('../pages/ReportingPage'));
 
 // One fresh reporting page per visit/study: moving to the next patient must
@@ -286,6 +287,15 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
               <DoctorBoard />
+            </ProtectedRoute>
+          }
+        />
+        {/* Money (redesign, Nov 2026). Front desk, accountant and owner each see their part. */}
+        <Route
+          path="/money/:area?"
+          element={
+            <ProtectedRoute moduleRoutes={['/money', '/billing']} requiredModule="RIS">
+              <MoneyPage />
             </ProtectedRoute>
           }
         />

@@ -1,0 +1,132 @@
+// Words for the Money screens (redesign, Nov 2026). {amount}, {n}, {pct}, {no},
+// {name}, {date} are filled in at run time. Hindi and Bengali drafted in-house:
+// have a native speaker check before a wide roll-out.
+
+export const en = {
+  'mn.title': 'Money',
+  'mn.nav.overview': 'Overview', 'mn.nav.counter': 'Today at the counter', 'mn.nav.bills': 'Bills', 'mn.nav.book': 'Cash book',
+  'mn.nav.partners': 'Partners', 'mn.nav.exp': 'Expenses', 'mn.nav.reports': 'Reports', 'mn.nav.setup': 'Setup',
+  'mn.oldScreen': 'This part still uses the old screen. It is being redesigned.',
+
+  'mn.search': 'Bill number, name or mobile',
+  'mn.st.all': 'All', 'mn.st.due': 'Still to pay', 'mn.st.paid': 'Paid', 'mn.st.cancelled': 'Cancelled',
+  'mn.d.today': 'Today', 'mn.d.yesterday': 'Yesterday', 'mn.d.week': 'Last 7 days', 'mn.d.month': 'This month', 'mn.d.any': 'Any date',
+  'mn.bills.n': '{n} bills', 'mn.more': 'Show more', 'mn.none': 'No bills here.', 'mn.loadFailed': 'Could not load bills. Check the internet and try again.', 'mn.retry': 'Try again',
+  'mn.tag.paid': 'Paid', 'mn.tag.part': 'Part paid', 'mn.tag.due': 'Not paid', 'mn.tag.cancelled': 'Cancelled', 'mn.tag.free': 'Free',
+  'mn.due': '{amount} to pay', 'mn.pickBill': 'Pick a bill to see its money history.',
+
+  'mn.counter.taken': 'Taken today', 'mn.counter.toTake': 'Still to take', 'mn.counter.bills': 'Bills today',
+  'mn.counter.help': 'Patients billed today. Tap a bill to take money.',
+
+  'mn.bill.title': 'Bill {no}', 'mn.bill.tests': 'Tests', 'mn.bill.bill': 'Bill', 'mn.bill.discount': 'Discount', 'mn.bill.partnerDisc': 'From partner share',
+  'mn.bill.deduction': 'Deduction', 'mn.bill.extra': 'Extra charges', 'mn.bill.total': 'To pay', 'mn.bill.paid': 'Paid', 'mn.bill.left': 'Still to pay',
+  'mn.bill.reason': 'Why: {reason}', 'mn.bill.by': 'by {name}', 'mn.bill.partner': 'Sent by {name}',
+  'mn.bill.history': 'Money history', 'mn.bill.locked': 'A bill with money on it is never edited or deleted. A correction becomes a credit note, so the history stays complete.',
+  'mn.bill.collect': 'Take {amount}', 'mn.bill.print': 'Print bill', 'mn.bill.receipt': 'Print receipt', 'mn.bill.correct': 'Correct this bill',
+  'mn.bill.loadFailed': 'Could not open this bill.',
+  'mn.ev.BILL_MADE': 'Bill made', 'mn.ev.PAYMENT': 'Paid', 'mn.ev.REFUND': 'Money given back', 'mn.ev.ADVANCE_HELD': 'Kept as advance',
+  'mn.ev.CREDIT_NOTE': 'Credit note', 'mn.ev.REFUND_VOUCHER': 'Refund voucher', 'mn.ev.APPROVAL_ASKED': 'Sent to owner', 'mn.ev.APPROVAL_DONE': 'Owner answered', 'mn.ev.CANCELLED': 'Bill cancelled',
+  'mn.ev.approved': 'approved', 'mn.ev.rejected': 'said no',
+
+  'mn.pay.title': 'Take money', 'mn.pay.discount': 'Discount', 'mn.pay.none': 'None', 'mn.pay.rupees': '₹ amount', 'mn.pay.why': 'Why?',
+  'mn.pay.r.senior': 'Senior citizen', 'mn.pay.r.staff': 'Staff or family', 'mn.pay.r.regular': 'Regular patient', 'mn.pay.r.camp': 'Camp or charity', 'mn.pay.r.doctor': 'Doctor asked', 'mn.pay.r.other': 'Other',
+  'mn.pay.otherReason': 'Write the reason', 'mn.pay.limit': 'Your limit is {pct}% ({amount}).',
+  'mn.pay.above': 'This is above your {pct}% limit. Send it to the owner, or take the full amount now.',
+  'mn.pay.ask': 'Send to owner for {amount} off', 'mn.pay.asked': 'Sent to the owner. Take the money when they approve.',
+  'mn.pay.with': 'Paid with', 'mn.pay.cash': 'Cash', 'mn.pay.upi': 'UPI', 'mn.pay.card': 'Card', 'mn.pay.bank': 'Bank',
+  'mn.pay.ref': 'Reference (UTR / last 4 digits)', 'mn.pay.split': 'Split: add another way', 'mn.pay.remove': 'Remove this part',
+  'mn.pay.gave': 'Patient gave (cash)', 'mn.pay.change': 'Give back {amount}', 'mn.pay.keepAdvance': 'Keep {amount} as advance instead',
+  'mn.pay.sum': 'Taking {amount}', 'mn.pay.leftAfter': '{amount} will still be due', 'mn.pay.tooMuch': 'That is more than the bill. Lower an amount, or keep the extra as advance.',
+  'mn.pay.take': 'Take {amount}', 'mn.pay.done': 'Paid {amount}. Receipt {no}.', 'mn.pay.doneNoNo': 'Paid {amount}.', 'mn.pay.failed': 'Could not take the payment.',
+  'mn.pay.needReason': 'Pick why the discount is given.', 'mn.pay.printNow': 'Print receipt',
+
+  'mn.fix.title': 'Correct bill {no}', 'mn.fix.help': 'Say how much should come off and why. The owner approves it, then a credit note is made and any money due back is returned the way they choose.',
+  'mn.fix.amount': 'Lower the bill by', 'mn.fix.newTotal': 'New total {amount}', 'mn.fix.reason': 'What went wrong?', 'mn.fix.send': 'Send to owner',
+  'mn.fix.sent': 'Sent to the owner for approval.', 'mn.fix.failed': 'Could not send it.',
+};
+
+export const hi = {
+  'mn.title': 'पैसा',
+  'mn.nav.overview': 'सारांश', 'mn.nav.counter': 'आज काउंटर पर', 'mn.nav.bills': 'बिल', 'mn.nav.book': 'कैश बुक',
+  'mn.nav.partners': 'पार्टनर', 'mn.nav.exp': 'खर्च', 'mn.nav.reports': 'रिपोर्ट', 'mn.nav.setup': 'सेटअप',
+  'mn.oldScreen': 'यह हिस्सा अभी पुरानी स्क्रीन पर है। इसे नया बनाया जा रहा है।',
+
+  'mn.search': 'बिल नंबर, नाम या मोबाइल',
+  'mn.st.all': 'सभी', 'mn.st.due': 'पैसा बाकी', 'mn.st.paid': 'चुका दिया', 'mn.st.cancelled': 'रद्द',
+  'mn.d.today': 'आज', 'mn.d.yesterday': 'कल', 'mn.d.week': 'पिछले 7 दिन', 'mn.d.month': 'इस महीने', 'mn.d.any': 'कोई भी तारीख',
+  'mn.bills.n': '{n} बिल', 'mn.more': 'और दिखाएँ', 'mn.none': 'यहाँ कोई बिल नहीं।', 'mn.loadFailed': 'बिल नहीं खुले। इंटरनेट देखकर फिर कोशिश करें।', 'mn.retry': 'फिर कोशिश करें',
+  'mn.tag.paid': 'चुका दिया', 'mn.tag.part': 'कुछ बाकी', 'mn.tag.due': 'नहीं चुकाया', 'mn.tag.cancelled': 'रद्द', 'mn.tag.free': 'मुफ़्त',
+  'mn.due': '{amount} बाकी', 'mn.pickBill': 'पैसे का पूरा हिसाब देखने के लिए कोई बिल चुनें।',
+
+  'mn.counter.taken': 'आज मिले', 'mn.counter.toTake': 'अभी लेना है', 'mn.counter.bills': 'आज के बिल',
+  'mn.counter.help': 'आज बने बिल। पैसा लेने के लिए बिल पर टैप करें।',
+
+  'mn.bill.title': 'बिल {no}', 'mn.bill.tests': 'जाँच', 'mn.bill.bill': 'बिल', 'mn.bill.discount': 'छूट', 'mn.bill.partnerDisc': 'पार्टनर हिस्से से',
+  'mn.bill.deduction': 'कटौती', 'mn.bill.extra': 'अतिरिक्त शुल्क', 'mn.bill.total': 'देना है', 'mn.bill.paid': 'चुकाया', 'mn.bill.left': 'बाकी',
+  'mn.bill.reason': 'कारण: {reason}', 'mn.bill.by': '{name} ने दी', 'mn.bill.partner': '{name} ने भेजा',
+  'mn.bill.history': 'पैसे का हिसाब', 'mn.bill.locked': 'जिस बिल पर पैसा आ चुका है, वह कभी बदला या मिटाया नहीं जाता। सुधार क्रेडिट नोट से होता है, ताकि पूरा हिसाब बना रहे।',
+  'mn.bill.collect': '{amount} लें', 'mn.bill.print': 'बिल छापें', 'mn.bill.receipt': 'रसीद छापें', 'mn.bill.correct': 'बिल में सुधार',
+  'mn.bill.loadFailed': 'यह बिल नहीं खुला।',
+  'mn.ev.BILL_MADE': 'बिल बना', 'mn.ev.PAYMENT': 'पैसा मिला', 'mn.ev.REFUND': 'पैसा लौटाया', 'mn.ev.ADVANCE_HELD': 'एडवांस में रखा',
+  'mn.ev.CREDIT_NOTE': 'क्रेडिट नोट', 'mn.ev.REFUND_VOUCHER': 'रिफ़ंड वाउचर', 'mn.ev.APPROVAL_ASKED': 'मालिक को भेजा', 'mn.ev.APPROVAL_DONE': 'मालिक का जवाब', 'mn.ev.CANCELLED': 'बिल रद्द',
+  'mn.ev.approved': 'मंज़ूर', 'mn.ev.rejected': 'मना किया',
+
+  'mn.pay.title': 'पैसा लें', 'mn.pay.discount': 'छूट', 'mn.pay.none': 'कोई नहीं', 'mn.pay.rupees': '₹ रकम', 'mn.pay.why': 'क्यों?',
+  'mn.pay.r.senior': 'वरिष्ठ नागरिक', 'mn.pay.r.staff': 'स्टाफ़ या परिवार', 'mn.pay.r.regular': 'पुराना मरीज़', 'mn.pay.r.camp': 'कैंप या सेवा', 'mn.pay.r.doctor': 'डॉक्टर ने कहा', 'mn.pay.r.other': 'अन्य',
+  'mn.pay.otherReason': 'कारण लिखें', 'mn.pay.limit': 'आपकी सीमा {pct}% ({amount}) है।',
+  'mn.pay.above': 'यह आपकी {pct}% सीमा से ज़्यादा है। मालिक को भेजें, या अभी पूरा पैसा लें।',
+  'mn.pay.ask': '{amount} छूट के लिए मालिक को भेजें', 'mn.pay.asked': 'मालिक को भेज दिया। मंज़ूरी मिलने पर पैसा लें।',
+  'mn.pay.with': 'कैसे दिया', 'mn.pay.cash': 'नकद', 'mn.pay.upi': 'UPI', 'mn.pay.card': 'कार्ड', 'mn.pay.bank': 'बैंक',
+  'mn.pay.ref': 'रेफ़रेंस (UTR / आख़िरी 4 अंक)', 'mn.pay.split': 'बाँटें: दूसरा तरीका जोड़ें', 'mn.pay.remove': 'यह हिस्सा हटाएँ',
+  'mn.pay.gave': 'मरीज़ ने दिए (नकद)', 'mn.pay.change': '{amount} वापस दें', 'mn.pay.keepAdvance': 'इसकी जगह {amount} एडवांस में रखें',
+  'mn.pay.sum': '{amount} ले रहे हैं', 'mn.pay.leftAfter': '{amount} फिर भी बाकी रहेंगे', 'mn.pay.tooMuch': 'यह बिल से ज़्यादा है। रकम घटाएँ, या बाकी एडवांस में रखें।',
+  'mn.pay.take': '{amount} लें', 'mn.pay.done': '{amount} मिले। रसीद {no}।', 'mn.pay.doneNoNo': '{amount} मिले।', 'mn.pay.failed': 'पैसा दर्ज नहीं हुआ।',
+  'mn.pay.needReason': 'छूट का कारण चुनें।', 'mn.pay.printNow': 'रसीद छापें',
+
+  'mn.fix.title': 'बिल {no} में सुधार', 'mn.fix.help': 'कितना घटाना है और क्यों, लिखें। मालिक मंज़ूर करें तो क्रेडिट नोट बनेगा और लौटाने वाला पैसा उनके चुने तरीके से लौटेगा।',
+  'mn.fix.amount': 'बिल इतना घटाएँ', 'mn.fix.newTotal': 'नया कुल {amount}', 'mn.fix.reason': 'क्या गलत हुआ?', 'mn.fix.send': 'मालिक को भेजें',
+  'mn.fix.sent': 'मंज़ूरी के लिए मालिक को भेज दिया।', 'mn.fix.failed': 'नहीं भेजा जा सका।',
+};
+
+export const bn = {
+  'mn.title': 'টাকা',
+  'mn.nav.overview': 'সারাংশ', 'mn.nav.counter': 'আজ কাউন্টারে', 'mn.nav.bills': 'বিল', 'mn.nav.book': 'ক্যাশ বই',
+  'mn.nav.partners': 'পার্টনার', 'mn.nav.exp': 'খরচ', 'mn.nav.reports': 'রিপোর্ট', 'mn.nav.setup': 'সেটআপ',
+  'mn.oldScreen': 'এই অংশটি এখনও পুরনো স্ক্রিনে। নতুন করে তৈরি হচ্ছে।',
+
+  'mn.search': 'বিল নম্বর, নাম বা মোবাইল',
+  'mn.st.all': 'সব', 'mn.st.due': 'টাকা বাকি', 'mn.st.paid': 'মেটানো', 'mn.st.cancelled': 'বাতিল',
+  'mn.d.today': 'আজ', 'mn.d.yesterday': 'গতকাল', 'mn.d.week': 'গত ৭ দিন', 'mn.d.month': 'এই মাস', 'mn.d.any': 'যেকোনো তারিখ',
+  'mn.bills.n': '{n}টি বিল', 'mn.more': 'আরও দেখুন', 'mn.none': 'এখানে কোনো বিল নেই।', 'mn.loadFailed': 'বিল খোলা গেল না। ইন্টারনেট দেখে আবার চেষ্টা করুন।', 'mn.retry': 'আবার চেষ্টা করুন',
+  'mn.tag.paid': 'মেটানো', 'mn.tag.part': 'কিছু বাকি', 'mn.tag.due': 'মেটানো হয়নি', 'mn.tag.cancelled': 'বাতিল', 'mn.tag.free': 'বিনামূল্যে',
+  'mn.due': '{amount} বাকি', 'mn.pickBill': 'টাকার পুরো হিসাব দেখতে একটি বিল বাছুন।',
+
+  'mn.counter.taken': 'আজ পাওয়া গেছে', 'mn.counter.toTake': 'এখনও নিতে হবে', 'mn.counter.bills': 'আজকের বিল',
+  'mn.counter.help': 'আজ তৈরি বিল। টাকা নিতে বিলে ট্যাপ করুন।',
+
+  'mn.bill.title': 'বিল {no}', 'mn.bill.tests': 'পরীক্ষা', 'mn.bill.bill': 'বিল', 'mn.bill.discount': 'ছাড়', 'mn.bill.partnerDisc': 'পার্টনারের ভাগ থেকে',
+  'mn.bill.deduction': 'কাটা', 'mn.bill.extra': 'অতিরিক্ত চার্জ', 'mn.bill.total': 'দিতে হবে', 'mn.bill.paid': 'দেওয়া হয়েছে', 'mn.bill.left': 'বাকি',
+  'mn.bill.reason': 'কারণ: {reason}', 'mn.bill.by': '{name} দিয়েছেন', 'mn.bill.partner': '{name} পাঠিয়েছেন',
+  'mn.bill.history': 'টাকার হিসাব', 'mn.bill.locked': 'যে বিলে টাকা এসেছে তা কখনও বদলানো বা মোছা হয় না। সংশোধন ক্রেডিট নোটে হয়, যাতে পুরো হিসাব থাকে।',
+  'mn.bill.collect': '{amount} নিন', 'mn.bill.print': 'বিল প্রিন্ট', 'mn.bill.receipt': 'রসিদ প্রিন্ট', 'mn.bill.correct': 'বিল সংশোধন',
+  'mn.bill.loadFailed': 'এই বিলটি খোলা গেল না।',
+  'mn.ev.BILL_MADE': 'বিল তৈরি', 'mn.ev.PAYMENT': 'টাকা পাওয়া', 'mn.ev.REFUND': 'টাকা ফেরত', 'mn.ev.ADVANCE_HELD': 'অ্যাডভান্সে রাখা',
+  'mn.ev.CREDIT_NOTE': 'ক্রেডিট নোট', 'mn.ev.REFUND_VOUCHER': 'রিফান্ড ভাউচার', 'mn.ev.APPROVAL_ASKED': 'মালিককে পাঠানো', 'mn.ev.APPROVAL_DONE': 'মালিকের উত্তর', 'mn.ev.CANCELLED': 'বিল বাতিল',
+  'mn.ev.approved': 'অনুমোদিত', 'mn.ev.rejected': 'না বলেছেন',
+
+  'mn.pay.title': 'টাকা নিন', 'mn.pay.discount': 'ছাড়', 'mn.pay.none': 'নেই', 'mn.pay.rupees': '₹ পরিমাণ', 'mn.pay.why': 'কেন?',
+  'mn.pay.r.senior': 'প্রবীণ নাগরিক', 'mn.pay.r.staff': 'স্টাফ বা পরিবার', 'mn.pay.r.regular': 'পুরনো রোগী', 'mn.pay.r.camp': 'ক্যাম্প বা সেবা', 'mn.pay.r.doctor': 'ডাক্তার বলেছেন', 'mn.pay.r.other': 'অন্য',
+  'mn.pay.otherReason': 'কারণ লিখুন', 'mn.pay.limit': 'আপনার সীমা {pct}% ({amount})।',
+  'mn.pay.above': 'এটি আপনার {pct}% সীমার বেশি। মালিককে পাঠান, বা এখনই পুরো টাকা নিন।',
+  'mn.pay.ask': '{amount} ছাড়ের জন্য মালিককে পাঠান', 'mn.pay.asked': 'মালিককে পাঠানো হয়েছে। অনুমোদন হলে টাকা নিন।',
+  'mn.pay.with': 'কীভাবে দিলেন', 'mn.pay.cash': 'নগদ', 'mn.pay.upi': 'UPI', 'mn.pay.card': 'কার্ড', 'mn.pay.bank': 'ব্যাংক',
+  'mn.pay.ref': 'রেফারেন্স (UTR / শেষ ৪ সংখ্যা)', 'mn.pay.split': 'ভাগ করুন: আরেকটি উপায়', 'mn.pay.remove': 'এই অংশ সরান',
+  'mn.pay.gave': 'রোগী দিলেন (নগদ)', 'mn.pay.change': '{amount} ফেরত দিন', 'mn.pay.keepAdvance': 'বদলে {amount} অ্যাডভান্সে রাখুন',
+  'mn.pay.sum': '{amount} নেওয়া হচ্ছে', 'mn.pay.leftAfter': 'তবুও {amount} বাকি থাকবে', 'mn.pay.tooMuch': 'এটি বিলের চেয়ে বেশি। পরিমাণ কমান, বা বাড়তিটা অ্যাডভান্সে রাখুন।',
+  'mn.pay.take': '{amount} নিন', 'mn.pay.done': '{amount} পাওয়া গেছে। রসিদ {no}।', 'mn.pay.doneNoNo': '{amount} পাওয়া গেছে।', 'mn.pay.failed': 'টাকা নেওয়া গেল না।',
+  'mn.pay.needReason': 'ছাড়ের কারণ বাছুন।', 'mn.pay.printNow': 'রসিদ প্রিন্ট',
+
+  'mn.fix.title': 'বিল {no} সংশোধন', 'mn.fix.help': 'কত কমবে আর কেন, লিখুন। মালিক অনুমোদন করলে ক্রেডিট নোট তৈরি হবে আর ফেরতের টাকা তাঁর বাছা উপায়ে ফেরত যাবে।',
+  'mn.fix.amount': 'বিল এতটা কমান', 'mn.fix.newTotal': 'নতুন মোট {amount}', 'mn.fix.reason': 'কী ভুল হয়েছিল?', 'mn.fix.send': 'মালিককে পাঠান',
+  'mn.fix.sent': 'অনুমোদনের জন্য মালিককে পাঠানো হয়েছে।', 'mn.fix.failed': 'পাঠানো গেল না।',
+};
