@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  RadAI — floating, draggable in-app help desk.
+//  RadAI — in-app help desk. Opened from the "Ask RadAI" button in the top bar
+//  (desktop and phone headers); the chat slides in as a drawer from the right.
 //
 //  Type or speak (Hindi/English) a question about how to use 1Rad; the answer
 //  comes from the backend (Gemini), grounded on an app knowledge base. RadAI
@@ -9,17 +10,11 @@
 //  web only; not the desktop app / Firefox) and is OFF by default. No patient
 //  data is sent; the AI key stays server-side.
 // ════════════════════════════════════════════════════════════════════════════
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { notifyToast } from '../utils/toast';
 
-const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-// Launcher: a pill with "Ask RadAI" on desktop; on phones and tablets just the
-// round logo (54 px), parked above the bottom bar so it doesn't cover the list.
-const isCompact = () => typeof window !== 'undefined' && window.innerWidth < 1024;
-const lw = () => (isCompact() ? 54 : 162);
-const LH = 54;  // launcher pill height
 const LOGO = `${import.meta.env.BASE_URL}Logo.png`;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const SUGGESTIONS = [
@@ -34,25 +29,56 @@ const SR = (typeof window !== 'undefined') ? (window.SpeechRecognition || window
 const wakeSupported = !!SR;
 const WAKE = /(hey\s+rad\s*ai|ok\s+rad\s*ai|hey\s+rad\b|rad\s*ai|radai)/i;
 
-const loadPos = () => {
-  if (typeof window === 'undefined') return { x: 20, y: 20 };
-  // Default: bottom-right, above the page edge.
-  let p = { x: window.innerWidth - lw() - 16, y: window.innerHeight - LH - (isCompact() ? 104 : 90) };
-  try {
-    const raw = localStorage.getItem('radai_pos_v2');
-    if (raw) {
-      const j = JSON.parse(raw);
-      if (j && Number.isFinite(j.x) && Number.isFinite(j.y)) p = j;
-    }
-  } catch { /* ignore */ }
-  // Alw()AYS clamp into the current viewport. A position saved on a larger screen
-  // (or before a rotate / dev-tools resize) would otherwise land off-screen and
-  // the launcher would be invisible — which reads as "RadAI is gone".
-  return {
-    x: clamp(p.x, 8, Math.max(8, window.innerWidth - lw() - 8)),
-    y: clamp(p.y, 8, Math.max(8, window.innerHeight - LH - 8)),
-  };
+// ── Shared open/hands-free state, so the header button (TopNav / MobileHeader)
+// and the drawer (mounted once in AppLayout) stay in step without prop drilling.
+let shared = { open: false, handsFree: false };
+const listeners = new Set();
+const setShared = (patch) => {
+  const next = { ...shared, ...patch };
+  if (next.open === shared.open && next.handsFree === shared.handsFree) return;
+  shared = next;
+  listeners.forEach((l) => l());
 };
+const subscribe = (l) => { listeners.add(l); return () => listeners.delete(l); };
+const getShared = () => shared;
+const useShared = () => useSyncExternalStore(subscribe, getShared, getShared);
+const toggleRadAI = () => setShared({ open: !shared.open });
+
+/** Top-bar launcher: a pill on desktop, the round logo on phones. */
+export function RadAIButton({ compact = false }) {
+  const { open, handsFree } = useShared();
+  return (
+    <button
+      type="button"
+      onClick={toggleRadAI}
+      title="Ask RadAI — help with using 1Rad"
+      aria-label="Ask RadAI for help"
+      aria-expanded={open}
+      className="radai-launch"
+      style={{
+        position: 'relative', flexShrink: 0, height: compact ? 34 : 38,
+        padding: compact ? 0 : '0 14px 0 4px', width: compact ? 34 : 'auto',
+        borderRadius: 999, border: 'none', cursor: 'pointer',
+        background: 'linear-gradient(135deg,#7c3aed,#4f46e5)',
+        boxShadow: open ? '0 0 0 3px rgba(124,58,237,0.25)' : '0 4px 12px -4px rgba(79,70,229,0.55)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+      }}
+    >
+      {handsFree && (
+        <span title="Hands-free listening" style={{ position: 'absolute', top: -2, right: -2, width: 11, height: 11, borderRadius: '50%', background: '#ef4444', border: '2px solid white', animation: 'radaiPulse 1.4s infinite' }} />
+      )}
+      <span style={{ width: compact ? 28 : 30, height: compact ? 28 : 30, borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+        <img src={LOGO} alt="" draggable={false} style={{ width: compact ? 21 : 23, height: compact ? 21 : 23, objectFit: 'contain', pointerEvents: 'none' }} />
+      </span>
+      {!compact && (
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 4, pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.92)' }}>Ask</span>
+          <span className="radai-shimmer" style={{ fontSize: 13.5, fontWeight: 950, letterSpacing: '0.4px' }}>RadAI</span>
+        </span>
+      )}
+    </button>
+  );
+}
 
 const blobToDataUrl = (blob) => new Promise((res) => {
   const r = new FileReader();
@@ -64,11 +90,11 @@ const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in windo
 
 export default function RadAI() {
   const location = useLocation();
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState(loadPos);
-  const posRef = useRef(pos);
-  const [compact, setCompact] = useState(isCompact);
-  const setPosBoth = (p) => { posRef.current = p; setPos(p); };
+  const { open } = useShared();
+  const setOpen = (v) => setShared({ open: typeof v === 'function' ? v(shared.open) : v });
+  // Phones and small tablets: full-width drawer over a dimmed page. Desktop: a
+  // side drawer with no dimming, so the page behind stays usable.
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024);
 
   const [messages, setMessages] = useState([
     { id: uid(), role: 'assistant', text: "Hi! I'm RadAI 🤖 — your 1Rad Flow helper. Ask me anything about using the app, in Hindi or English. You can type or tap the mic." },
@@ -90,17 +116,24 @@ export default function RadAI() {
 
   useEffect(() => { try { localStorage.setItem('radai_lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('radai_sound', soundOn ? '1' : '0'); } catch { /* ignore */ } }, [soundOn]);
-  useEffect(() => { try { localStorage.setItem('radai_handsfree', handsFree ? '1' : '0'); } catch { /* ignore */ } }, [handsFree]);
+  useEffect(() => { try { localStorage.setItem('radai_handsfree', handsFree ? '1' : '0'); } catch { /* ignore */ } setShared({ handsFree }); }, [handsFree]);
 
-  // Keep the launcher on-screen if the window resizes.
   useEffect(() => {
-    const onResize = () => { setCompact(isCompact()); setPosBoth({
-      x: clamp(posRef.current.x, 8, window.innerWidth - lw() - 8),
-      y: clamp(posRef.current.y, 8, window.innerHeight - LH - 8),
-    }); };
+    const onResize = () => setNarrow(window.innerWidth < 1024);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Esc closes the drawer.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setShared({ open: false }); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  // Close it when moving to another page on a phone (it covers the whole screen there).
+  useEffect(() => { if (narrow) setShared({ open: false }); }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (open && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -132,30 +165,6 @@ export default function RadAI() {
   // call setState directly inside the effect.
   useEffect(() => { if (!open) { try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } } }, [open]);
   useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } }, []);
-
-  // Drag the launcher; a click (no drag) toggles the panel.
-  const onPointerDown = (e) => {
-    e.preventDefault();
-    const sx = e.clientX, sy = e.clientY;
-    const origin = { ...posRef.current };
-    let moved = false;
-    const onMove = (ev) => {
-      const dx = ev.clientX - sx, dy = ev.clientY - sy;
-      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
-      if (moved) setPosBoth({
-        x: clamp(origin.x + dx, 8, window.innerWidth - lw() - 8),
-        y: clamp(origin.y + dy, 8, window.innerHeight - LH - 8),
-      });
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      if (moved) { try { localStorage.setItem('radai_pos_v2', JSON.stringify(posRef.current)); } catch { /* ignore */ } }
-      else setOpen((o) => !o);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
 
   const ask = async (payload, spoken = false) => {
     setBusy(true);
@@ -411,12 +420,6 @@ export default function RadAI() {
     return [];
   })();
 
-  // Panel anchored to the launcher, clamped on-screen.
-  const PW = Math.min(380, (typeof window !== 'undefined' ? window.innerWidth : 380) - 24);
-  const PH = Math.min(540, (typeof window !== 'undefined' ? window.innerHeight : 540) - 24);
-  const panelLeft = clamp(pos.x + lw() - PW, 12, (typeof window !== 'undefined' ? window.innerWidth : PW) - PW - 12);
-  const panelTop = clamp(pos.y - PH - 12, 12, (typeof window !== 'undefined' ? window.innerHeight : PH) - PH - 12);
-
   const headerBtn = {
     border: 'none', background: 'rgba(255,255,255,0.18)', color: 'white',
     height: '28px', minWidth: '28px', padding: '0 8px', borderRadius: '14px',
@@ -426,41 +429,17 @@ export default function RadAI() {
 
   return (
     <>
-      {/* Launcher — NexEagle logo + animated "RadAI" wordmark */}
-      <button
-        onPointerDown={onPointerDown}
-        title="Ask RadAI — help (drag to move)"
-        aria-label="Ask RadAI for help"
-        style={{
-          position: 'fixed', left: pos.x, top: pos.y, height: LH, padding: compact ? '0 7px' : '0 18px 0 7px', borderRadius: LH / 2,
-          border: 'none', cursor: 'grab', zIndex: 2147483600, touchAction: 'none',
-          background: 'linear-gradient(135deg,#7c3aed,#4f46e5)',
-          boxShadow: open ? '0 10px 28px -6px rgba(79,70,229,0.7)' : '0 8px 22px -6px rgba(79,70,229,0.55)',
-          display: 'flex', alignItems: 'center', gap: '9px',
-        }}
-      >
-        {/* Live-mic dot — hands-free is always-on listening; show it clearly. */}
-        {handsFree && (
-          <span title="Hands-free listening" style={{ position: 'absolute', top: '-3px', right: '-3px', width: '13px', height: '13px', borderRadius: '50%', background: '#ef4444', border: '2px solid white', animation: 'radaiPulse 1.4s infinite' }} />
-        )}
-        <span style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}>
-          <img src={LOGO} alt="NexEagle" draggable={false} style={{ width: '32px', height: '32px', objectFit: 'contain', pointerEvents: 'none' }} />
-        </span>
-        {!compact && (
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: '4px', pointerEvents: 'none' }}>
-            <span style={{ fontSize: '13px', fontWeight: 800, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.3px' }}>Ask</span>
-            <span className="radai-shimmer" style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '0.5px' }}>RadAI</span>
-          </span>
-        )}
-      </button>
-
+      {open && narrow && (
+        <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 2147483600, background: 'rgba(15,23,42,0.35)', animation: 'radaiFade 0.2s ease-out' }} />
+      )}
       {open && (
-        <div style={{
-          position: 'fixed', left: panelLeft, top: panelTop, width: PW, height: PH, zIndex: 2147483601,
-          background: 'white', borderRadius: '22px', border: '1px solid rgba(124,58,237,0.14)',
-          boxShadow: '0 30px 70px -14px rgba(79,70,229,0.4), 0 8px 24px -8px rgba(15,23,42,0.2)',
+        <aside role="dialog" aria-label="RadAI help" style={{
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: narrow ? '100%' : 420, maxWidth: '100vw', zIndex: 2147483601,
+          background: 'white', borderLeft: '1px solid rgba(124,58,237,0.14)',
+          boxShadow: '-24px 0 60px -20px rgba(79,70,229,0.35), -4px 0 16px -8px rgba(15,23,42,0.18)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          animation: 'radaiPanelIn 0.22s cubic-bezier(0.16,1,0.3,1)', transformOrigin: 'bottom right',
+          paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)',
+          animation: 'radaiDrawerIn 0.24s cubic-bezier(0.16,1,0.3,1)',
         }}>
           {/* Header */}
           <div style={{ position: 'relative', padding: '15px 16px', background: 'linear-gradient(135deg,#7c3aed 0%,#5b21b6 55%,#4f46e5 100%)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'space-between', overflow: 'hidden' }}>
@@ -471,9 +450,9 @@ export default function RadAI() {
               </span>
               <div>
                 <div className="radai-shimmer-dark" style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '0.3px' }}>RadAI</div>
-                <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'rgba(255,255,255,0.82)', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
+                <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'rgba(255,255,255,0.82)', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px', whiteSpace: 'nowrap' }}>
                   <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 0 0 rgba(74,222,128,0.6)', animation: 'radaiOnline 1.6s infinite' }} />
-                  Online · by NexEagle · हिंदी / English
+                  Online · हिंदी / English
                 </div>
               </div>
             </div>
@@ -583,21 +562,24 @@ export default function RadAI() {
             </div>
             <div style={{ textAlign: 'center', fontSize: '8.5px', fontWeight: 700, color: '#cbd5e1', marginTop: '7px', letterSpacing: '0.3px' }}>Powered by NexEagle · answers may be imperfect</div>
           </div>
-        </div>
+        </aside>
       )}
 
-      <style>{`
+      <style>{RADAI_CSS}</style>
+    </>
+  );
+}
+
+const RADAI_CSS = `
         @keyframes radaiPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.5); } 50% { box-shadow: 0 0 0 7px rgba(220,38,38,0); } }
         .radai-shimmer, .radai-shimmer-dark { background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; animation: radaiShine 2.6s linear infinite; }
         .radai-shimmer { background-image: linear-gradient(90deg,#ffffff 0%,#ffffff 38%,#c4b5fd 50%,#ffffff 62%,#ffffff 100%); }
         .radai-shimmer-dark { background-image: linear-gradient(90deg,#ffffff 0%,#ffffff 40%,#a5b4fc 50%,#ffffff 60%,#ffffff 100%); }
         @keyframes radaiShine { to { background-position: -200% center; } }
-        @keyframes radaiPanelIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: none; } }
+        @keyframes radaiDrawerIn { from { transform: translateX(100%); } to { transform: none; } }
+        @keyframes radaiFade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes radaiMsgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @keyframes radaiOnline { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,0.6); } 70% { box-shadow: 0 0 0 5px rgba(74,222,128,0); } 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); } }
         .radai-dot { width: 7px; height: 7px; border-radius: 50%; background: #a5b4fc; display: inline-block; animation: radaiBounce 1s infinite; }
         @keyframes radaiBounce { 0%,60%,100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-5px); opacity: 1; } }
-      `}</style>
-    </>
-  );
-}
+`;
