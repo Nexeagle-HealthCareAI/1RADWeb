@@ -3,6 +3,16 @@
 // have a native speaker check before a wide roll-out.
 
 export const en = {
+  'mn.ex.title': 'Expenses', 'mn.ex.help': 'What the centre pays out. Money paid from the drawer shows in the cash book the same day.',
+  'mn.ex.toPay': 'To pay', 'mn.ex.paid': 'Paid', 'mn.ex.paidMonth': 'Paid this month', 'mn.ex.all': 'All heads', 'mn.ex.add': 'Add expense',
+  'mn.ex.none': 'Nothing here.', 'mn.ex.payroll': 'From Staff & salary', 'mn.ex.markPaid': 'Mark paid', 'mn.ex.loadFailed': 'Could not load expenses.',
+  'mn.ex.h.Rent': 'Rent', 'mn.ex.h.Utilities': 'Electricity & utilities', 'mn.ex.h.Consumables': 'Film, gel & consumables', 'mn.ex.h.Reagents': 'Contrast & reagents',
+  'mn.ex.h.Maintenance': 'Maintenance / AMC', 'mn.ex.h.Marketing': 'Marketing', 'mn.ex.h.Staff Salary': 'Salaries', 'mn.ex.h.Other': 'Other',
+  'mn.ex.amount': 'Amount', 'mn.ex.what': 'For what', 'mn.ex.to': 'Paid to (shop / person)', 'mn.ex.head': 'Head', 'mn.ex.from': 'Paid from',
+  'mn.ex.f.CASH': "Today's cash drawer", 'mn.ex.f.UPI': 'UPI', 'mn.ex.f.BANK': 'Bank', 'mn.ex.f.NONE': 'Not paid yet',
+  'mn.ex.fn.CASH': 'Comes off the cash in the drawer today.', 'mn.ex.fn.UPI': 'From the centre UPI account.', 'mn.ex.fn.BANK': 'Bank transfer or cheque.', 'mn.ex.fn.NONE': 'Goes under To pay; mark it paid later.',
+  'mn.ex.ref': 'Reference (optional)', 'mn.ex.save': 'Save', 'mn.ex.saveToPay': 'Save under To pay', 'mn.ex.saved': 'Expense saved.', 'mn.ex.failed': 'Could not save.',
+  'mn.ex.payTitle': 'Pay {amount}', 'mn.ex.payDone': 'Marked paid.',
   'mn.ov.title': 'Overview', 'mn.ov.help': 'Bills made in the period. Billed = collected + still to collect.',
   'mn.ov.p.today': 'Today', 'mn.ov.p.week': 'Last 7 days', 'mn.ov.p.month': 'This month', 'mn.ov.p.last': 'Last month',
   'mn.ov.billed': 'Billed', 'mn.ov.billedSub': '{n} bills · {amount} discount', 'mn.ov.collected': 'Collected', 'mn.ov.collectedSub': 'on these bills',
@@ -68,6 +78,16 @@ export const en = {
 };
 
 export const hi = {
+  'mn.ex.title': 'खर्च', 'mn.ex.help': 'सेंटर जो पैसा देता है। दराज़ से दिया पैसा उसी दिन कैश बुक में दिखता है।',
+  'mn.ex.toPay': 'देना है', 'mn.ex.paid': 'दे दिया', 'mn.ex.paidMonth': 'इस महीने दिया', 'mn.ex.all': 'सभी मद', 'mn.ex.add': 'खर्च जोड़ें',
+  'mn.ex.none': 'यहाँ कुछ नहीं।', 'mn.ex.payroll': 'स्टाफ़ और वेतन से', 'mn.ex.markPaid': 'दे दिया लिखें', 'mn.ex.loadFailed': 'खर्च नहीं खुले।',
+  'mn.ex.h.Rent': 'किराया', 'mn.ex.h.Utilities': 'बिजली व अन्य', 'mn.ex.h.Consumables': 'फ़िल्म, जेल व सामान', 'mn.ex.h.Reagents': 'कॉन्ट्रास्ट व रसायन',
+  'mn.ex.h.Maintenance': 'मरम्मत / AMC', 'mn.ex.h.Marketing': 'प्रचार', 'mn.ex.h.Staff Salary': 'वेतन', 'mn.ex.h.Other': 'अन्य',
+  'mn.ex.amount': 'रकम', 'mn.ex.what': 'किस लिए', 'mn.ex.to': 'किसे दिया (दुकान / व्यक्ति)', 'mn.ex.head': 'मद', 'mn.ex.from': 'कहाँ से दिया',
+  'mn.ex.f.CASH': 'आज का कैश दराज़', 'mn.ex.f.UPI': 'UPI', 'mn.ex.f.BANK': 'बैंक', 'mn.ex.f.NONE': 'अभी नहीं दिया',
+  'mn.ex.fn.CASH': 'आज दराज़ के नकद से घटेगा।', 'mn.ex.fn.UPI': 'सेंटर के UPI खाते से।', 'mn.ex.fn.BANK': 'बैंक ट्रांसफ़र या चेक।', 'mn.ex.fn.NONE': '"देना है" में जाएगा; बाद में दे दिया लिखें।',
+  'mn.ex.ref': 'रेफ़रेंस (ज़रूरी नहीं)', 'mn.ex.save': 'सहेजें', 'mn.ex.saveToPay': '"देना है" में सहेजें', 'mn.ex.saved': 'खर्च सहेजा गया।', 'mn.ex.failed': 'सहेजा नहीं जा सका।',
+  'mn.ex.payTitle': '{amount} दें', 'mn.ex.payDone': 'दे दिया लिखा गया।',
   'mn.ov.title': 'सारांश', 'mn.ov.help': 'इस अवधि में बने बिल। बिल = मिला + अभी लेना है।',
   'mn.ov.p.today': 'आज', 'mn.ov.p.week': 'पिछले 7 दिन', 'mn.ov.p.month': 'इस महीने', 'mn.ov.p.last': 'पिछले महीने',
   'mn.ov.billed': 'बिल बने', 'mn.ov.billedSub': '{n} बिल · {amount} छूट', 'mn.ov.collected': 'मिला', 'mn.ov.collectedSub': 'इन बिलों पर',
@@ -133,6 +153,16 @@ export const hi = {
 };
 
 export const bn = {
+  'mn.ex.title': 'খরচ', 'mn.ex.help': 'সেন্টার যা টাকা দেয়। ড্রয়ার থেকে দেওয়া টাকা সেদিনই ক্যাশ বইয়ে দেখা যায়।',
+  'mn.ex.toPay': 'দিতে হবে', 'mn.ex.paid': 'দেওয়া হয়েছে', 'mn.ex.paidMonth': 'এই মাসে দেওয়া', 'mn.ex.all': 'সব খাত', 'mn.ex.add': 'খরচ যোগ করুন',
+  'mn.ex.none': 'এখানে কিছু নেই।', 'mn.ex.payroll': 'স্টাফ ও বেতন থেকে', 'mn.ex.markPaid': 'দেওয়া হয়েছে', 'mn.ex.loadFailed': 'খরচ খোলা গেল না।',
+  'mn.ex.h.Rent': 'ভাড়া', 'mn.ex.h.Utilities': 'বিদ্যুৎ ও অন্যান্য', 'mn.ex.h.Consumables': 'ফিল্ম, জেল ও সামগ্রী', 'mn.ex.h.Reagents': 'কনট্রাস্ট ও রাসায়নিক',
+  'mn.ex.h.Maintenance': 'মেরামত / AMC', 'mn.ex.h.Marketing': 'প্রচার', 'mn.ex.h.Staff Salary': 'বেতন', 'mn.ex.h.Other': 'অন্য',
+  'mn.ex.amount': 'পরিমাণ', 'mn.ex.what': 'কীসের জন্য', 'mn.ex.to': 'কাকে দেওয়া (দোকান / ব্যক্তি)', 'mn.ex.head': 'খাত', 'mn.ex.from': 'কোথা থেকে দেওয়া',
+  'mn.ex.f.CASH': 'আজকের ক্যাশ ড্রয়ার', 'mn.ex.f.UPI': 'UPI', 'mn.ex.f.BANK': 'ব্যাংক', 'mn.ex.f.NONE': 'এখনও দেওয়া হয়নি',
+  'mn.ex.fn.CASH': 'আজ ড্রয়ারের নগদ থেকে কমবে।', 'mn.ex.fn.UPI': 'সেন্টারের UPI অ্যাকাউন্ট থেকে।', 'mn.ex.fn.BANK': 'ব্যাংক ট্রান্সফার বা চেক।', 'mn.ex.fn.NONE': '"দিতে হবে"-তে যাবে; পরে দেওয়া হয়েছে লিখুন।',
+  'mn.ex.ref': 'রেফারেন্স (ঐচ্ছিক)', 'mn.ex.save': 'সেভ করুন', 'mn.ex.saveToPay': '"দিতে হবে"-তে সেভ করুন', 'mn.ex.saved': 'খরচ সেভ হয়েছে।', 'mn.ex.failed': 'সেভ করা গেল না।',
+  'mn.ex.payTitle': '{amount} দিন', 'mn.ex.payDone': 'দেওয়া হয়েছে লেখা হল।',
   'mn.ov.title': 'সারাংশ', 'mn.ov.help': 'এই সময়ে তৈরি বিল। বিল = পাওয়া + এখনও নিতে হবে।',
   'mn.ov.p.today': 'আজ', 'mn.ov.p.week': 'গত ৭ দিন', 'mn.ov.p.month': 'এই মাস', 'mn.ov.p.last': 'গত মাস',
   'mn.ov.billed': 'বিল হয়েছে', 'mn.ov.billedSub': '{n}টি বিল · {amount} ছাড়', 'mn.ov.collected': 'পাওয়া গেছে', 'mn.ov.collectedSub': 'এই বিলগুলিতে',

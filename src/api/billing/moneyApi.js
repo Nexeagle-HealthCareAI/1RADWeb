@@ -89,3 +89,27 @@ export const fetchOverview = async (from, to) => {
   const res = await apiClient.get('/finance/overview', { params: { from, to }, suppressErrorToast: true });
   return res.data;
 };
+
+/** Money ▸ Expenses: one page; state 'TOPAY' | 'PAID'. */
+export const fetchExpensePage = async ({ state, startDate, endDate, category, pageSize = 100 } = {}) => {
+  const params = { pageSize, state };
+  if (startDate) params.startDate = startDate;
+  if (endDate) params.endDate = endDate;
+  if (category) params.category = category;
+  const res = await apiClient.get('/finance/expenses', { params, suppressErrorToast: true });
+  const d = res.data;
+  return Array.isArray(d) ? { items: d, totalCount: d.length } : d;
+};
+
+/** Add an expense. status 'Paid' (with paymentMode) or 'Pending' (to pay). */
+export const addExpense = async (body, idempotencyKey) => {
+  const res = await apiClient.post('/finance/expense', body,
+    { headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}, suppressErrorToast: true });
+  return res.data;
+};
+
+/** Mark a to-pay expense paid now. mode: 'CASH' | 'UPI' | 'BANK'. */
+export const payExpense = async (id, mode, reference) => {
+  const res = await apiClient.post(`/finance/expenses/${id}/pay`, { mode, reference: reference || null }, { suppressErrorToast: true });
+  return res.data;
+};
