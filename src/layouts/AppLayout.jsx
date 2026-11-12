@@ -159,8 +159,8 @@ export default function AppLayout() {
       />
 
       {/* Background DICOM Prefetch Status — on the DICOM-heavy surfaces:
-          Technician board, Doctor board, and the open report (/reporting/:id). */}
-      {(['/technician', '/doctor-board'].includes(location.pathname)
+          Doctor board and the open report (/reporting/:id). */}
+      {(['/doctor-board'].includes(location.pathname)
         || location.pathname.startsWith('/reporting')) && <PrefetchStatusIndicator />}
 
       <MobileHeader 

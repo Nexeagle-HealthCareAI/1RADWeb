@@ -23,7 +23,7 @@ export const ROLE_HOME = {
   admindoctor: '/admin-board',
   admin: '/admin-board',
   receptionist: '/appointment-board',
-  technician: '/technician',
+  technician: '/doctor-board', // Scan room removed (Nov 2026): technicians land on Reporting
   doctor: '/doctor-board',
   accountant: '/money',
 };
@@ -67,12 +67,6 @@ export const NAV_ITEMS = [
     label: 'Admin Approval',
     route: '/approvals',
     allowedRoles: ['admindoctor', 'admin'],
-  },
-  {
-    label: 'Imaging',
-    route: '/technician',
-    allowedRoles: ['admindoctor', 'technician'],
-    requiredModule: 'RIS',
   },
   {
     label: 'Reporting',
@@ -129,10 +123,10 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
   admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
   receptionist: ['/appointment-board', '/operations-board', '/studies', '/money'],
-  technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
+  technician: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
   doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
   accountant: ['/billing', '/money', '/partners', '/operations-board'],
 };

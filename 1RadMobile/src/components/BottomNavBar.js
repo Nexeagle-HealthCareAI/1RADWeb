@@ -7,7 +7,6 @@ import {
   Shield,
   Calendar,
   DollarSign,
-  Scan,
   Stethoscope
 } from 'lucide-react-native';
 
@@ -37,13 +36,6 @@ export default function BottomNavBar({ userRole = 'doctor' }) {
         label: 'FINANCE',
         icon: DollarSign,
         route: 'Finance',
-        roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
-      },
-      {
-        name: 'ScanningBay',
-        label: 'SCANNING\nBAY',
-        icon: Scan,
-        route: 'ScanningBay',
         roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
       },
       {

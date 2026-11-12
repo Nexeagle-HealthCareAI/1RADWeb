@@ -1297,7 +1297,7 @@ const ReportingPage = () => {
   }, [visionDraft, applyEditorContent]);
 
   // Persist a freshly-uploaded ZIP / DICOM file to the backend so other devices and
-  // the technician/admin board can see it. Mirrors the flow used in TechnicianPage.
+  // the admin board can see it.
   const persistStudyAsset = async (file) => {
     if (!appointmentId) {
       console.warn('[REPORTING] No appointmentId — skipping backend persistence.');
@@ -3902,7 +3902,7 @@ const ReportingPage = () => {
         paddingBottom: isMobile ? '64px' : '0' 
       }}>
 
-        {/* DICOM TAB — MOBILE: simplified TechnicianPage-style layout.
+        {/* DICOM TAB — MOBILE: simplified layout.
             Intentionally does NOT use the .panel-center class — that class has a
             mobile media-query rule forcing height: 65vh + flex-row that fights
             this layout. We give the wrapper its own inline-only styles instead. */}

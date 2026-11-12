@@ -20,7 +20,6 @@ const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
 const AccessDenied = lazy(() => import('../pages/AccessDenied'));
 const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
 const PartnersPage = lazy(() => import('../pages/partners/PartnersPage'));
-const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
 const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
 const AdminBoard = lazy(() => import('../pages/AdminBoard'));
 const ReferralsPage = lazy(() => import('../pages/ReferralsPage'));
@@ -145,7 +144,7 @@ export default function AppRouter() {
         element={
           <ProtectedRoute
             allowedRoles={['admindoctor', 'admin', 'doctor', 'technician', 'receptionist', 'accountant']}
-            moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}
+            moduleRoutes={['/doctor-board', '/appointment-board', '/admin-board']}
             requiredModule="PACS">
             <DicomViewerPage />
           </ProtectedRoute>
@@ -276,14 +275,6 @@ export default function AppRouter() {
           }
         />
         <Route
-          path="/technician"
-          element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'technician']} requiredModule="RIS">
-              <TechnicianPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/doctor-board"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
@@ -320,7 +311,7 @@ export default function AppRouter() {
         <Route
           path="/reporting/:id"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board']}>
               <KeyedReportingPage />
             </ProtectedRoute>
           }
@@ -329,7 +320,7 @@ export default function AppRouter() {
         <Route
           path="/reporting"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/studies']} requiredModule="PACS">
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/studies']} requiredModule="PACS">
               <KeyedReportingPage />
             </ProtectedRoute>
           }
@@ -386,7 +377,7 @@ export default function AppRouter() {
         <Route
           path="/patient-timeline/:appointmentId"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/appointment-board', '/admin-board']}>
               <PatientTimelinePage />
             </ProtectedRoute>
           }
