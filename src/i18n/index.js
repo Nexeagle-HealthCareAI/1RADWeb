@@ -62,8 +62,8 @@ export function t(key, vars) {
 }
 
 const NAV_KEYS = {
-  '/admin-board': 'nav.dashboard', '/appointment-board': 'nav.appointments', '/billing': 'nav.billing',
-  '/approvals': 'nav.approvals', '/technician': 'nav.imaging', '/doctor-board': 'nav.reporting',
+  '/admin-board': 'nav.dashboard', '/appointment-board': 'nav.appointments', '/billing': 'nav.billing', '/money': 'nav.money', '/owner': 'nav.owner',
+  '/approvals': 'nav.approvals', '/doctor-board': 'nav.reporting',
   '/partners': 'pt.title', '/referrals': 'nav.referrals', '/staff': 'nav.staff', '/operations-board': 'nav.operations',
   '/configuration': 'nav.configuration', '/subscription': 'nav.subscription', '/dicom-bridge': 'nav.bridge',
   '/studies': 'nav.studies', '/settings': 'nav.settings',

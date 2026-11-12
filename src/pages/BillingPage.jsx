@@ -62,7 +62,12 @@ const getIstDateStr = (iso) => {
   return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
 };
 
-export default function BillingPage() {
+// `embedded`: shown inside Money (redesign) for the areas not rebuilt yet — no own
+// title or tab row, and `initialView` picks the tab.
+// `showTabs` (Money ▸ All billing tools): embedded, but with the full tab row, so every
+// older tool stays one click away. `openInvoice` opens that bill in the bill drawer;
+// `startNewBill` opens the new-bill drawer.
+export default function BillingPage({ embedded = false, initialView = null, showTabs = false, openInvoice = null, startNewBill = false } = {}) {
   const { activeCenter } = useAuth();
   const { isOnline, addToOutbox, performSync, pendingCount } = useOffline();
   
@@ -71,7 +76,8 @@ export default function BillingPage() {
   // --- STATE ---
   const [paymentSuccess, setPaymentSuccess] = useState(null); // { amount, method, patientName, invoiceId }
 
-  const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
+  const [billingViewMode, setBillingViewMode] = useState(initialView || 'INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
+  useEffect(() => { if (initialView) setBillingViewMode(initialView); }, [initialView]);
   // Patient advances (overpayment credits). Surfaced inline on each invoice
   // (status badge + the view drawer's refund button) instead of a separate tab.
   const [outstandingCredits, setOutstandingCredits] = useState([]);
@@ -679,6 +685,10 @@ export default function BillingPage() {
     newInvoiceData, setNewInvoiceData,
   });
 
+  // Money ▸ Bills hands over a bill ("More on this bill") or asks for a new bill.
+  useEffect(() => { if (openInvoice) handleOpenInvoice(openInvoice); }, [openInvoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (startNewBill) setIsNewInvoiceDrawerOpen(true); }, [startNewBill]);
+
   const {
     filteredInvoices,
     futureAppointments,
@@ -762,10 +772,10 @@ export default function BillingPage() {
   ];
 
   return (
-    <div className="billing-page" style={{ padding: isMobile ? '0' : '40px', background: '#f8fafc', minHeight: '100vh' }}>
+    <div className="billing-page" style={{ padding: isMobile || embedded ? '0' : '40px', background: '#f8fafc', minHeight: embedded ? 0 : '100vh' }}>
 
       {/* ── ANDROID TOP APP BAR (mobile only, sticky) ───────────────────── */}
-      {isMobile && (
+      {isMobile && !embedded && (
         <div className="billing-android-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💳</div>
@@ -787,7 +797,7 @@ export default function BillingPage() {
 
       {/* UI review: billing used to add a second bottom bar under the app's own.
           On phones its sections are now a scrolling row of tabs under the title. */}
-      {isMobile && (
+      {isMobile && !embedded && (
         <nav aria-label="Billing sections" style={{ position: 'sticky', top: 56, zIndex: 400, display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', scrollbarWidth: 'none' }}>
           {BILLING_TABS.map(tab => {
             const on = billingViewMode === tab.id;
@@ -803,7 +813,22 @@ export default function BillingPage() {
       )}
 
       {/* ── DESKTOP HEADER (non-mobile only) ───────────────────────────── */}
-      {!isMobile && (
+      {embedded && showTabs && (
+        <nav aria-label="Billing tools" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: isMobile ? '10px 12px' : '0 0 12px', scrollbarWidth: 'none' }}>
+          {BILLING_TABS.map(tab => {
+            const on = billingViewMode === tab.id;
+            return (
+              <button key={tab.id} type="button" onClick={() => setBillingViewMode(tab.id)} aria-current={on ? 'page' : undefined}
+                style={{ flexShrink: 0, height: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: on ? 'none' : '1.5px solid #CBD5E1', background: on ? '#111827' : 'white', color: on ? 'white' : '#334155' }}>{tab.label}</button>
+            );
+          })}
+        </nav>
+      )}
+      {!isMobile && embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}><div id="billing-header-actions-portal"></div></div>
+      )}
+      {!isMobile && !embedded && (
         <>
           <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
             <div>

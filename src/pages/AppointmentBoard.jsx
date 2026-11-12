@@ -22,6 +22,7 @@ import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { formatToken } from '../utils/tokenFormat';
+import ChangeHistory from '../components/saral/ChangeHistory';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import useLiveAppointments from '../hooks/useLiveAppointments';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
@@ -1080,7 +1081,14 @@ export default function AppointmentBoard() {
     }
   };
 
-  const itemsPerPage = 5;
+  // Busy days (~200 visits): the compact list shows 50 one-line visits a page on
+  // desktop; the full cards (5 a page) are one click away. Phones keep the cards.
+  const [listView, setListViewState] = useState(() => {
+    try { return localStorage.getItem('ab_list_view') || 'compact'; } catch { return 'compact'; }
+  });
+  const setListView = (v) => { setListViewState(v); setCurrentPage(1); try { localStorage.setItem('ab_list_view', v); } catch { /* per-device convenience only */ } };
+  const compactList = !isMobile && listView === 'compact';
+  const itemsPerPage = compactList ? 50 : isMobile ? 10 : 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
   // PAST used to render the WHOLE filtered list regardless of page (while
   // still computing totalPages/showing page controls as if it were paged) —
@@ -2719,6 +2727,66 @@ export default function AppointmentBoard() {
   // ============================================================
   //  APPOINTMENT TABLE ROW
   // ============================================================
+  // ── Compact list (busy days): one 42px line per visit ────────────────────
+  // Token, time, patient, tests, referred by, stage, paid tick, and the same
+  // next action / view / edit the full card offers. Click the line to view.
+  const renderCompactList = () => {
+    const cols = '62px 76px minmax(150px,1.3fr) minmax(150px,1.4fr) minmax(110px,1fr) 128px 52px 168px';
+    const head = { fontSize: '10px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' };
+    return (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden', minWidth: 900 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, padding: '9px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0, zIndex: 1 }}>
+          <span style={head}>{tr('ab.col.token')}</span><span style={head}>{tr('ab.col.time')}</span><span style={head}>{tr('ab.col.patient')}</span>
+          <span style={head}>{tr('ab.col.tests')}</span><span style={head}>{tr('ab.col.ref')}</span><span style={head}>{tr('ab.col.stage')}</span>
+          <span style={head}>{tr('ab.col.paid')}</span><span style={{ ...head, textAlign: 'right' }}>{tr('ab.col.do')}</span>
+        </div>
+        {paginatedAppointments.map((app, i) => {
+          const meta = STATUS_META[app.status] || STATUS_META.unknown;
+          const next = getNextAction(app.status);
+          const lines = getServiceLines(app);
+          const tests = lines.map(l => l.serviceName).filter(Boolean);
+          const time = app.dateTime ? new Date(app.dateTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true }) : '—';
+          const tok = app.tokenNo ?? app.dailyTokenNumber;
+          const overdue = isOverdue(app.appointmentId);
+          const paid = paidApptIds.has(app.appointmentId);
+          const cancelled = app.status === 'cancelled';
+          const age = [app.patientAge, app.patientGender ? String(app.patientGender).charAt(0).toUpperCase() : ''].filter(Boolean).join('/');
+          return (
+            <div key={app.appointmentId} role="button" tabIndex={0} onClick={() => setViewAppointment(app)}
+              onKeyDown={e => { if (e.key === 'Enter') setViewAppointment(app); }}
+              style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, alignItems: 'center', padding: '0 14px', height: 42, cursor: 'pointer',
+                borderTop: i ? '1px solid #f1f5f9' : 'none', fontSize: 13.5, color: cancelled ? '#94a3b8' : '#0f172a',
+                boxShadow: overdue || app.priority === 'STAT' ? 'inset 3px 0 0 #dc2626' : app.priority === 'URGENT' ? 'inset 3px 0 0 #d97706' : 'none' }}>
+              <span style={{ fontWeight: 900, color: '#0f52ba', fontVariantNumeric: 'tabular-nums' }}>{tok != null ? formatToken(tok) : '—'}</span>
+              <span style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{time}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: cancelled ? 'line-through' : 'none' }}>
+                <b style={{ fontWeight: 800 }}>{app.patientName}</b>{age && <span style={{ color: '#94a3b8' }}> · {age}</span>}
+                {app.priority && app.priority !== 'ROUTINE' && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 900, color: app.priority === 'STAT' ? '#dc2626' : '#d97706' }}>{app.priority}</span>}
+              </span>
+              <span title={tests.join(', ')} style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {tests.length > 2 ? `${tests[0]} +${tests.length - 1}` : tests.join(', ') || '—'}
+              </span>
+              <span style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.referredBy || '—'}</span>
+              <span><span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 800,
+                padding: '3px 9px', borderRadius: 999, background: meta.bg, color: meta.color }}>{meta.label}</span></span>
+              <span title={paid ? tr('ab.paid') : ''} style={{ fontWeight: 900, color: paid ? '#059669' : '#cbd5e1' }}>{paid ? '✓ ₹' : '—'}</span>
+              <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                {next && !cancelled && (
+                  <button type="button" onClick={() => handleAction(app.appointmentId, next.action)}
+                    style={{ height: 30, padding: '0 10px', borderRadius: 8, border: 'none', background: next.color, color: 'white', fontSize: 11.5, fontWeight: 900, cursor: 'pointer' }}>{next.label}</button>
+                )}
+                {!cancelled && (
+                  <button type="button" onClick={() => startEditingAppointment(app)} aria-label={tr('ab.edit')}
+                    style={{ height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', color: '#334155', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>{tr('ab.edit')}</button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderAppointmentRow = (app) => {
     const meta = STATUS_META[app.status] || STATUS_META.unknown;
     const next = getNextAction(app.status);
@@ -7767,6 +7835,8 @@ export default function AppointmentBoard() {
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{app.notes}</div>
               </div>
             )}
+            {/* Who changed what on this visit (audit trail, plain words). */}
+            {(app.appointmentId || app.id) && <ChangeHistory kind="visit" id={app.appointmentId || app.id} />}
           </div>
 
           {/* Footer actions */}
@@ -8839,6 +8909,15 @@ export default function AppointmentBoard() {
             {filteredAppointments.length} Record{filteredAppointments.length !== 1 ? 's' : ''} Found
             {totalPages > 1 && <span style={{ marginLeft: '10px', color: '#0f52ba' }}>— Page {currentPage} of {totalPages}</span>}
           </span>
+          {!isMobile && (
+            <div role="group" aria-label={tr('ab.view')} style={{ display: 'flex', gap: 6 }}>
+              {[['compact', tr('ab.compact')], ['cards', tr('ab.cards')]].map(([v, label]) => (
+                <button key={v} type="button" onClick={() => setListView(v)} aria-pressed={listView === v}
+                  style={{ height: 34, padding: '0 14px', borderRadius: 999, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    border: listView === v ? 'none' : '1.5px solid #CBD5E1', background: listView === v ? '#111827' : 'white', color: listView === v ? 'white' : '#334155' }}>{label}</button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Appointments List - Responsive Display */}
@@ -8854,6 +8933,8 @@ export default function AppointmentBoard() {
                 {searchQuery ? 'Try adjusting your search criteria' : 'No appointments scheduled'}
               </div>
             </div>
+          ) : compactList ? (
+            renderCompactList()
           ) : isMobile ? (
             /* Mobile/Tablet: Card Layout */
             <div className="appointments-cards">

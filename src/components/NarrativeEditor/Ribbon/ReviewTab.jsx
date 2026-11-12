@@ -12,6 +12,7 @@ export default function ReviewTab({
   onToggleSpellcheck,
   voiceSupported = false,
   voiceActive = false,
+  voiceMode = null,
   onToggleVoice,
   onOpenVersionHistory,
   onSaveVersion,
@@ -275,7 +276,7 @@ export default function ReviewTab({
           <Group label="Voice">
             <BigBtn
               icon={<Icon d={ICONS.mic} size={20} />}
-              label={voiceActive ? 'Listening…' : 'Dictate'}
+              label={voiceActive ? (voiceMode === 'cloud' ? 'Listening (cloud)…' : 'Listening…') : 'Dictate'}
               title={voiceActive ? 'Stop dictation' : 'Start voice dictation'}
               active={voiceActive}
               onClick={onToggleVoice}

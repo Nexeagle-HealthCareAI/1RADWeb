@@ -13,6 +13,8 @@ import { notifyToast } from '../utils/toast';
 import useAuth from '../auth/useAuth';
 import useReportAutosave, { reportDraftKey } from '../hooks/useReportAutosave';
 import useReportAi from '../hooks/useReportAi';
+import useKeyImages from '../hooks/useKeyImages';
+import { getAiPolicy } from '../components/NarrativeEditor/hooks/speechEngine';
 import usePatientTimeline from '../hooks/usePatientTimeline';
 import { nativeStorage, nativeWord } from '../hooks/useElectron';
 import { openReportInWord } from '../utils/exportWord';
@@ -58,6 +60,11 @@ const ReportingPage = () => {
   // links from older builds) keep working unchanged.
   const initialServiceIdFromUrl = searchParams.get('serviceId') || null;
   const [activeServiceId, setActiveServiceId] = useState(initialServiceIdFromUrl);
+  // Key images, saved per study on the server (★ in the viewer / K).
+  const keyNotify = useCallback((type, title, message) => notifyToast({ title, message }, type), []);
+  const { keyImages, keyImageSops, toggleKeyImage: toggleSavedKeyImage } = useKeyImages({
+    appointmentId: studyId ? null : appointmentId, serviceId: activeServiceId, studyId, notify: keyNotify,
+  });
   const [appointmentServices, setAppointmentServices] = useState([]);
   const [editorText, setEditorText] = useState('');
   const [templates, setTemplates] = useState([]);
@@ -116,7 +123,6 @@ const ReportingPage = () => {
   const [layoutMode, setLayoutMode] = useState('1x1');
   const [viewportProps, setViewportProps] = useState({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
   const [resetTrigger, setResetTrigger] = useState(0);
-  const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -410,7 +416,7 @@ const ReportingPage = () => {
   const {
     aiReview, setAiReview,
     handleAiAssist, runRadAiCleanup, acceptAiReview,
-  } = useReportAi({ activeService, activeAppointment, appointmentId, editorRef, applyEditorContent, showNotif });
+  } = useReportAi({ activeService, activeAppointment, appointmentId, imagingStudyId: studyId || null, editorRef, applyEditorContent, showNotif });
 
   // Prior-study copy-forward — pull a previous report's findings into the
   // current report with a comparison line. Flattens any .word-page wrappers so
@@ -1241,13 +1247,57 @@ const ReportingPage = () => {
   };
 
   // --- DICOM HANDLERS ---
-  const toggleKeyImage = () => {
-    const key = `${activeAssetIndex}_${currentSlice}`;
-    setKeyImages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  // The viewer passes the exact file (with its DICOM instance UID); the K
+  // shortcut doesn't, so fall back to the slice on screen.
+  const toggleKeyImage = (_imageId, file) => {
+    const asset = visibleUploadedFiles[activeAssetIndex];
+    const f = file || asset?.rawFiles?.[currentSlice - 1];
+    const sop = f?.sopInstanceUID;
+    const owning = (sop && visibleUploadedFiles.find(a => a?.rawFiles?.some(r => r?.sopInstanceUID === sop))) || asset;
+    const idx = owning?.rawFiles?.findIndex(r => r === f || (sop && r?.sopInstanceUID === sop)) ?? -1;
+    toggleSavedKeyImage(f, owning, idx >= 0 ? idx : null);
   };
 
+  // The viewer-shortcut listener is mounted with few deps; read the latest
+  // toggle (it closes over the saved key-image list) through a ref.
+  const toggleKeyImageRef = useRef(toggleKeyImage);
+  useEffect(() => { toggleKeyImageRef.current = toggleKeyImage; });
+
+  // ── Draft from key images (AI) — draft only; the doctor reviews and signs.
+  const [visionEnabled, setVisionEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAiPolicy().then(p => { if (alive) setVisionEnabled(!!(p?.visionDraftEnabled && p?.reportAiEnabled)); });
+    return () => { alive = false; };
+  }, []);
+  const [visionDraft, setVisionDraft] = useState(null); // { busy } | { open, findingsHtml, impression, draftId, imagesUsed, stripsMasked }
+  const runVisionDraft = useCallback(async () => {
+    setVisionDraft({ busy: true });
+    try {
+      const res = await apiClient.post('/reporting/vision-draft', studyId
+        ? { imagingStudyId: studyId }
+        : { appointmentId, appointmentServiceId: activeServiceId || null });
+      const body = res?.data || {};
+      if (!body.success) throw new Error(body.error || body.data?.error || 'No draft returned.');
+      setVisionDraft({ open: true, ...body.data });
+    } catch (e) {
+      setVisionDraft(null);
+      notifyToast({ title: 'No AI draft', message: e?.response?.data?.error || e?.message || 'Could not draft from the images.' }, 'warning', { duration: 7000 });
+    }
+  }, [studyId, appointmentId, activeServiceId]);
+  const applyVisionDraft = useCallback((how, useImpression) => {
+    const d = visionDraft;
+    if (!d?.findingsHtml) return;
+    const current = editorRef.current?.editor?.getHTML?.() ?? '';
+    applyEditorContent(how === 'append' && current.replace(/<[^>]*>/g, '').trim() ? `${current}${d.findingsHtml}` : d.findingsHtml);
+    if (useImpression && d.impression) setImpression(d.impression);
+    if (d.draftId) apiClient.post(`/reporting/ai-drafts/${d.draftId}/applied`).catch(() => {});
+    setVisionDraft(null);
+    notifyToast({ title: 'AI draft added', message: 'Check every line against the images before signing.' }, 'info');
+  }, [visionDraft, applyEditorContent]);
+
   // Persist a freshly-uploaded ZIP / DICOM file to the backend so other devices and
-  // the technician/admin board can see it. Mirrors the flow used in TechnicianPage.
+  // the admin board can see it.
   const persistStudyAsset = async (file) => {
     if (!appointmentId) {
       console.warn('[REPORTING] No appointmentId — skipping backend persistence.');
@@ -2143,7 +2193,7 @@ const ReportingPage = () => {
           console.log('[SHORTCUT] Toggle Cine (Space)');
           break;
         case 'k':
-          toggleKeyImage();
+          toggleKeyImageRef.current?.(null, null);
           console.log('[SHORTCUT] Toggle Key Image (K)');
           break;
         case 'v':
@@ -2659,7 +2709,7 @@ const ReportingPage = () => {
             resetTrigger={resetTrigger}
             setResetTrigger={setResetTrigger}
             setShowShortcutsHelp={setShowShortcutsHelp}
-            keyImages={keyImages}
+            keyImages={keyImageSops}
             toggleKeyImage={toggleKeyImage}
             loadingProgress={loadingProgress}
             processingStatus={processingStatus}
@@ -3852,7 +3902,7 @@ const ReportingPage = () => {
         paddingBottom: isMobile ? '64px' : '0' 
       }}>
 
-        {/* DICOM TAB — MOBILE: simplified TechnicianPage-style layout.
+        {/* DICOM TAB — MOBILE: simplified layout.
             Intentionally does NOT use the .panel-center class — that class has a
             mobile media-query rule forcing height: 65vh + flex-row that fights
             this layout. We give the wrapper its own inline-only styles instead. */}
@@ -3887,6 +3937,12 @@ const ReportingPage = () => {
             handleSaveReport={handleSaveReport}
             isTablet={isTablet}
             canSign={canSign}
+            keyImageCount={keyImages.length}
+            visionEnabled={visionEnabled}
+            visionDraft={visionDraft}
+            onVisionDraft={runVisionDraft}
+            onApplyVisionDraft={applyVisionDraft}
+            onDiscardVisionDraft={() => setVisionDraft(null)}
           />
         )}
 

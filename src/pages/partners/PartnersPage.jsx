@@ -13,7 +13,7 @@ import { apiError, fieldStyle } from '../../components/saral/formUtil';
 import PartnerSheet from './PartnerSheet';
 import PartnerFormSheet from './PartnerFormSheet';
 import { LinksSheet, UploadSheet } from './BulkSheets';
-import { longDate } from './ptUtil';
+import { longDate, setPayWhenBilled } from './ptUtil';
 
 /**
  * Partners and payouts (Saral). Who is owed what - worked out on the server
@@ -63,7 +63,7 @@ export default function PartnersPage() {
   React.useEffect(() => {
     const my = ++seq.current;
     apiClient.get('/referrers/outstanding', { params: { search: q || undefined, show, page: 1, pageSize: PAGE }, suppressErrorToast: true })
-      .then(r => { if (my === seq.current) { setData(r.data || null); setErr(''); setLoading(false); } })
+      .then(r => { if (my === seq.current) { setPayWhenBilled(r.data?.payWhenBilled); setData(r.data || null); setErr(''); setLoading(false); } })
       .catch(e => { if (my === seq.current) { setErr(apiError(e) || t('pt.loadFailed')); setLoading(false); } });
   }, [q, show, ver]);
 
@@ -112,6 +112,7 @@ export default function PartnersPage() {
   };
 
   const totals = data?.totals || { payableNow: 0, awaitingPatient: 0, deficit: 0, partnersToPay: 0 };
+  const whenBilled = data?.payWhenBilled !== false;
   const items = data?.items || [];
 
   const header = (
@@ -142,6 +143,7 @@ export default function PartnersPage() {
     );
   };
 
+  const rowCols = 'minmax(160px,2fr) minmax(84px,0.8fr) repeat(4, minmax(76px,0.8fr)) 60px';
   const card = (p) => (
     <div key={p.referrerId} style={{ background: 'white', border: `1px solid ${C.line}`, borderRadius: 18, padding: 14, display: 'grid', gap: 10 }}>
       <button type="button" onClick={() => { setStartPay(false); setSel(p); }} style={{ all: 'unset', cursor: 'pointer', display: 'grid', gap: 6 }}>
@@ -153,7 +155,8 @@ export default function PartnersPage() {
         <div style={{ fontSize: 15, color: C.muted }}>{[p.specialty, p.contact, p.lastPaidAt ? t('pt.lastPaid', { date: longDate(p.lastPaidAt) }) : t('pt.neverPaid')].filter(Boolean).join(' · ')}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {p.payableNow > 0 && <Tag bg={C.okSoft} fg={C.ok}>{t('pt.ready', { amount: inr(p.payableNow) })}</Tag>}
-          {p.awaitingPatient > 0 && <Tag bg={C.dueSoft} fg={C.dueInk}>{t('pt.waiting', { amount: inr(p.awaitingPatient) })}</Tag>}
+          {p.awaitingPatient > 0 && <Tag bg={C.dueSoft} fg={C.dueInk}>{t(whenBilled ? 'pt.noBill' : 'pt.waiting', { amount: inr(p.awaitingPatient) })}</Tag>}
+          {p.patientOwes > 0 && <Tag bg="#FFF7ED" fg={C.dueInk}>{t('pt.patientOwes', { amount: inr(p.patientOwes) })}</Tag>}
           {p.deficit > 0 && <Tag bg={C.dangerSoft} fg={C.danger}>{t('pt.owes', { amount: inr(p.deficit) })}</Tag>}
           {p.payableNow <= 0 && p.awaitingPatient <= 0 && p.deficit <= 0 && <Tag bg="#F3F4F6" fg="#374151">{t('pt.settled')}</Tag>}
         </div>
@@ -172,8 +175,10 @@ export default function PartnersPage() {
         {!isOnline && <div role="status" style={{ background: C.dueSoft, color: C.dueInk, borderRadius: 14, padding: '10px 14px', fontSize: 16, fontWeight: 700 }}>{t('fd.offline')}</div>}
 
         <div style={{ display: 'grid', gridTemplateColumns: vp.phone ? '1fr' : 'repeat(3, 1fr)', gap: 10 }}>
-          {tile(t('pt.tReady'), inr(totals.payableNow), t('pt.tReadySub', { n: totals.partnersToPay }), 'ok', () => setShow('payable'))}
-          {tile(t('pt.tWaiting'), inr(totals.awaitingPatient), t('pt.tWaitingSub'), 'due', () => setShow('awaiting'))}
+          {tile(t('pt.tReady'), inr(totals.payableNow), whenBilled
+            ? t('pt.tReadySubBilled', { n: totals.partnersToPay, amount: inr(totals.patientOwes || 0) })
+            : t('pt.tReadySub', { n: totals.partnersToPay }), 'ok', () => setShow('payable'))}
+          {tile(t(whenBilled ? 'pt.tNoBill' : 'pt.tWaiting'), inr(totals.awaitingPatient), t(whenBilled ? 'pt.tNoBillSub' : 'pt.tWaitingSub'), 'due', () => setShow('awaiting'))}
           {tile(t('pt.tOwed'), inr(totals.deficit), t('pt.tOwedSub'), 'danger', () => setShow('deficit'))}
         </div>
 
@@ -184,7 +189,7 @@ export default function PartnersPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-          {SHOWS.map(s => <Chip key={s} on={show === s} onClick={() => setShow(s)}>{t(`pt.show.${s}`)}</Chip>)}
+          {SHOWS.map(s => <Chip key={s} on={show === s} onClick={() => setShow(s)}>{t(s === 'awaiting' && whenBilled ? 'pt.tNoBill' : `pt.show.${s}`)}</Chip>)}
         </div>
 
         {err && <div role="alert" style={{ background: C.dangerSoft, color: C.danger, borderRadius: 14, padding: '12px 14px', fontSize: 16, fontWeight: 700, display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -192,9 +197,50 @@ export default function PartnersPage() {
         {loading && !data && <div style={{ fontSize: 17, color: C.muted, padding: 24, textAlign: 'center' }}>{t('ps.loading')}</div>}
         {data && !items.length && <div style={{ fontSize: 17, color: C.muted, padding: 24, textAlign: 'center', background: 'white', borderRadius: 18, border: `1px dashed ${C.lineStrong}` }}>{t(show === 'all' ? 'pt.emptyAll' : 'pt.empty')}</div>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: vp.phone ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-          {items.map(card)}
-        </div>
+        {vp.phone ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+            {items.map(card)}
+          </div>
+        ) : items.length > 0 && (
+          /* Desktop (Nov 2026): one 44px line per partner, so a busy month's partners
+             fit on a screen. Click the line to open the partner; Pay pays now. */
+          <div style={{ background: 'white', border: `1px solid ${C.line}`, borderRadius: 16, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: rowCols, gap: 10, padding: '9px 14px', background: C.ground, borderBottom: `1px solid ${C.line}`,
+              fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: C.faint }}>
+              <span>{t('pt.col.partner').toUpperCase()}</span><span>{t('pt.col.last').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t('pt.col.ready').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t(whenBilled ? 'pt.tNoBill' : 'pt.tWaiting').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t('pt.col.owes').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t('pt.col.year').toUpperCase()}</span><span />
+            </div>
+            {items.map((p, i) => (
+              <div key={p.referrerId} role="button" tabIndex={0} onClick={() => { setStartPay(false); setSel(p); }}
+                onKeyDown={e => { if (e.key === 'Enter') { setStartPay(false); setSel(p); } }}
+                style={{ display: 'grid', gridTemplateColumns: rowCols, gap: 10, alignItems: 'center', padding: '0 14px', height: 46, cursor: 'pointer', fontSize: 14.5,
+                  borderTop: i ? '1px solid #F3F4F6' : 'none' }}>
+                <span style={{ minWidth: 0, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</b>
+                  <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 999, background: p.isDoctor ? C.primarySoft : '#F3F4F6', color: p.isDoctor ? C.primary : '#374151' }}>
+                    {p.isDoctor ? t('ps.doctor') : t('ps.agent')}</span>
+                  {!p.hasPan && <span title={t('pt.noPan')} style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: C.dueInk }}>{t('pt.noPanShort')}</span>}
+                </span>
+                <span style={{ color: C.muted, fontSize: 13 }}>{p.lastPaidAt ? longDate(p.lastPaidAt) : t('pt.neverPaid')}</span>
+                <span style={{ textAlign: 'right', fontWeight: 800, color: p.payableNow > 0 ? C.ok : C.faint, fontVariantNumeric: 'tabular-nums' }}>{p.payableNow > 0 ? inr(p.payableNow) : '—'}</span>
+                <span style={{ textAlign: 'right', color: p.awaitingPatient > 0 ? C.dueInk : C.faint, fontVariantNumeric: 'tabular-nums' }}>{p.awaitingPatient > 0 ? inr(p.awaitingPatient) : '—'}</span>
+                <span style={{ textAlign: 'right', color: p.patientOwes > 0 ? C.dueInk : p.deficit > 0 ? C.danger : C.faint, fontVariantNumeric: 'tabular-nums' }}>
+                  {p.deficit > 0 ? `−${inr(p.deficit)}` : p.patientOwes > 0 ? inr(p.patientOwes) : '—'}</span>
+                <span style={{ textAlign: 'right', color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{inr(p.paidThisYear || 0)}</span>
+                <span style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                  {isFinance && p.payableNow > 0 && (
+                    <button type="button" onClick={() => { setStartPay(true); setSel(p); }}
+                      style={{ height: 32, padding: '0 12px', borderRadius: 10, border: 'none', background: C.due, color: 'white', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {t('pt.payShort')}</button>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {data && items.length < (data.total || 0) && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 15, color: C.muted }}>{t('fd.of', { shown: items.length, total: data.total })}</span>

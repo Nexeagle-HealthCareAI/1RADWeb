@@ -6,9 +6,10 @@ import { C, inr } from '../../components/saral/tokens';
 import { Err, More, Note } from '../../components/saral/parts';
 import { apiError } from '../../components/saral/formUtil';
 import PayoutSheet from './PayoutSheet';
+import ChangeHistory from '../../components/saral/ChangeHistory';
 import PartnerFormSheet from './PartnerFormSheet';
 import { ApprovalSheet, ConfirmSheet, ManualAmountSheet, MergeSheet } from './PartnerActions';
-import { currentFy, longDate, mobileDigits, rowState, shortDate } from './ptUtil';
+import { currentFy, longDate, mobileDigits, patientOwes, rowState, shortDate } from './ptUtil';
 import { printStatement } from './statement';
 import { csvCell, csvNumber, downloadCsv } from '../../utils/csv';
 
@@ -163,6 +164,7 @@ export default function PartnerSheet({ partner: initial, roster, linkStatus, sta
                     <div style={{ textAlign: 'right', display: 'grid', gap: 4, justifyItems: 'end' }}>
                       <div style={{ fontSize: 17, fontWeight: 800, color: st === 'owed' ? C.danger : C.ink }}>{st === 'owed' ? `− ${inr(-r.amount)}` : inr(r.amount)}</div>
                       <Tag bg={bg} fg={fg} style={{ fontSize: 13, padding: '3px 10px' }}>{t(label)}</Tag>
+                      {st === 'ready' && patientOwes(r) && <Tag bg={C.dueSoft} fg={C.dueInk} style={{ fontSize: 12, padding: '2px 8px' }}>{t('pt.patientOwesRow')}</Tag>}
                       {isFinance && st !== 'owed' && (
                         <button type="button" onClick={() => setApprove({ kind: 'amount', row: r })}
                           style={{ background: 'none', border: 'none', color: C.primary, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, padding: '4px 0', minHeight: 32, cursor: 'pointer' }}>{t('ps.changeAmount')}</button>
@@ -265,6 +267,8 @@ export default function PartnerSheet({ partner: initial, roster, linkStatus, sta
               </div>
             </More>
           )}
+          {/* Who changed what: shares, payouts and the partner's own details. */}
+          {full?.referrerId && <ChangeHistory kind="partner" id={full.referrerId} />}
         </div>
       </Sheet>
 

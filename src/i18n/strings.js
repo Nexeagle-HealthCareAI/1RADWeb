@@ -7,7 +7,7 @@ const en = {
   'tab.bills': 'Bills', 'tab.partners': 'Partner share', 'tab.expenses': 'Expenses', 'tab.daybook': 'Day book', 'tab.creditNotes': 'Credit notes', 'tab.services': 'Tests', 'tab.pricing': 'Price list', 'tab.analytics': 'Charts',
   // navigation
   'nav.dashboard': 'Dashboard', 'nav.appointments': 'Front desk', 'nav.billing': 'Billing',
-  'nav.approvals': 'Approvals', 'nav.imaging': 'Scan room', 'nav.reporting': 'Reports',
+  'nav.approvals': 'Approvals', 'nav.reporting': 'Reports',
   'nav.referrals': 'Referral partners', 'nav.staff': 'Staff & salary', 'nav.operations': 'Patient tracker',
   'nav.configuration': 'Settings for reports', 'nav.subscription': 'Plan & payment', 'nav.bridge': 'Scanner link',
   'nav.studies': 'Scans (PACS)', 'nav.settings': 'My settings', 'nav.signout': 'Sign out', 'nav.menu': 'Menu',
@@ -34,7 +34,6 @@ const en = {
   // pages
   'page.appointments': 'Front desk', 'page.finance': 'Billing', 'page.operations': 'Patient tracker',
   'page.operationsSub': 'Where every patient is today, and what is late',
-  'page.scanRoom': 'Scan room', 'page.scanRoomSub': 'Today’s scans and image upload',
   'page.reports': 'Reports to write', 'page.reportsSub': 'Write and sign today’s reports',
   // common actions
   'act.new': 'New booking', 'act.view': 'Open', 'act.print': 'Print', 'act.edit': 'Change', 'act.cancel': 'Cancel visit',
@@ -50,7 +49,7 @@ const en = {
 const hi = {
   'tab.bills': 'बिल', 'tab.partners': 'पार्टनर हिस्सा', 'tab.expenses': 'खर्च', 'tab.daybook': 'रोज़नामचा', 'tab.creditNotes': 'क्रेडिट नोट', 'tab.services': 'जाँच', 'tab.pricing': 'रेट लिस्ट', 'tab.analytics': 'चार्ट',
   'nav.dashboard': 'डैशबोर्ड', 'nav.appointments': 'फ़्रंट डेस्क', 'nav.billing': 'बिल और पैसा',
-  'nav.approvals': 'मंज़ूरी', 'nav.imaging': 'स्कैन रूम', 'nav.reporting': 'रिपोर्ट',
+  'nav.approvals': 'मंज़ूरी', 'nav.reporting': 'रिपोर्ट',
   'nav.referrals': 'रेफ़रल पार्टनर', 'nav.staff': 'स्टाफ़ और वेतन', 'nav.operations': 'मरीज़ ट्रैकर',
   'nav.configuration': 'रिपोर्ट सेटिंग', 'nav.subscription': 'प्लान और भुगतान', 'nav.bridge': 'स्कैनर कनेक्शन',
   'nav.studies': 'स्कैन (PACS)', 'nav.settings': 'मेरी सेटिंग', 'nav.signout': 'बाहर निकलें', 'nav.menu': 'मेन्यू',
@@ -71,7 +70,6 @@ const hi = {
   'filter.show': 'फ़िल्टर', 'filter.hide': 'फ़िल्टर छिपाएँ', 'filter.notArrived': 'अभी नहीं आए',
   'page.appointments': 'फ़्रंट डेस्क', 'page.finance': 'बिल और पैसा', 'page.operations': 'मरीज़ ट्रैकर',
   'page.operationsSub': 'आज हर मरीज़ कहाँ है, और क्या देर से चल रहा है',
-  'page.scanRoom': 'स्कैन रूम', 'page.scanRoomSub': 'आज के स्कैन और तस्वीरें अपलोड',
   'page.reports': 'लिखनी हैं रिपोर्ट', 'page.reportsSub': 'आज की रिपोर्ट लिखें और साइन करें',
   'act.new': 'नई बुकिंग', 'act.view': 'खोलें', 'act.print': 'छापें', 'act.edit': 'बदलें', 'act.cancel': 'विज़िट रद्द करें',
   'act.move': 'आगे बढ़ाएँ', 'act.refresh': 'ताज़ा करें', 'act.export': 'Excel डाउनलोड', 'act.search': 'मोबाइल नंबर या नाम',
@@ -85,7 +83,7 @@ const hi = {
 const bn = {
   'tab.bills': 'বিল', 'tab.partners': 'পার্টনারের ভাগ', 'tab.expenses': 'খরচ', 'tab.daybook': 'দৈনিক হিসাব', 'tab.creditNotes': 'ক্রেডিট নোট', 'tab.services': 'পরীক্ষা', 'tab.pricing': 'রেট লিস্ট', 'tab.analytics': 'চার্ট',
   'nav.dashboard': 'ড্যাশবোর্ড', 'nav.appointments': 'ফ্রন্ট ডেস্ক', 'nav.billing': 'বিল ও টাকা',
-  'nav.approvals': 'অনুমোদন', 'nav.imaging': 'স্ক্যান রুম', 'nav.reporting': 'রিপোর্ট',
+  'nav.approvals': 'অনুমোদন', 'nav.reporting': 'রিপোর্ট',
   'nav.referrals': 'রেফারাল পার্টনার', 'nav.staff': 'স্টাফ ও বেতন', 'nav.operations': 'রোগী ট্র্যাকার',
   'nav.configuration': 'রিপোর্ট সেটিং', 'nav.subscription': 'প্ল্যান ও পেমেন্ট', 'nav.bridge': 'স্ক্যানার সংযোগ',
   'nav.studies': 'স্ক্যান (PACS)', 'nav.settings': 'আমার সেটিং', 'nav.signout': 'বেরিয়ে যান', 'nav.menu': 'মেনু',
@@ -106,7 +104,6 @@ const bn = {
   'filter.show': 'ফিল্টার', 'filter.hide': 'ফিল্টার লুকান', 'filter.notArrived': 'এখনও আসেননি',
   'page.appointments': 'ফ্রন্ট ডেস্ক', 'page.finance': 'বিল ও টাকা', 'page.operations': 'রোগী ট্র্যাকার',
   'page.operationsSub': 'আজ কোন রোগী কোথায়, আর কী দেরি হচ্ছে',
-  'page.scanRoom': 'স্ক্যান রুম', 'page.scanRoomSub': 'আজকের স্ক্যান ও ছবি আপলোড',
   'page.reports': 'রিপোর্ট লিখতে হবে', 'page.reportsSub': 'আজকের রিপোর্ট লিখুন ও সই করুন',
   'act.new': 'নতুন বুকিং', 'act.view': 'খুলুন', 'act.print': 'ছাপুন', 'act.edit': 'বদলান', 'act.cancel': 'ভিজিট বাতিল',
   'act.move': 'এগিয়ে দিন', 'act.refresh': 'রিফ্রেশ', 'act.export': 'Excel ডাউনলোড', 'act.search': 'মোবাইল নম্বর বা নাম',
@@ -120,5 +117,9 @@ const bn = {
 import * as FD from './strings.frontdesk';
 import * as PT from './strings.partners';
 import * as RP from './strings.reporting';
+import * as MN from './strings.money';
+import * as OW from './strings.owner';
+import * as GL from './strings.glance';
+import * as CK from './strings.check';
 
-export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn } };
+export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en, ...MN.en, ...OW.en, ...GL.en, ...CK.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi, ...MN.hi, ...OW.hi, ...GL.hi, ...CK.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn, ...MN.bn, ...OW.bn, ...GL.bn, ...CK.bn } };

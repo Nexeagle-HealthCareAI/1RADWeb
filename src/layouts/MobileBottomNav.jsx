@@ -58,7 +58,7 @@ export default function MobileBottomNav({ onMenuClick, isMenuOpen, onTabClick })
 
   const TABS = [
     { label: t('nav.today'), route: '/appointment-board', icon: '/appointment-board' },
-    { label: t('nav.money'), route: '/billing', icon: '/billing' },
+    { label: t('nav.money'), route: '/money', icon: '/billing' },
     { label: t('nav.menu'), action: onMenuClick, icon: isMenuOpen ? 'close' : 'menu' },
     { label: t('nav.scans'), route: '/studies', icon: '/studies' },
     { label: t('nav.reporting'), route: '/doctor-board', icon: '/doctor-board' },

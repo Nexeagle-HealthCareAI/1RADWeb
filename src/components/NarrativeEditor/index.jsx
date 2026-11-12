@@ -2703,6 +2703,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           voiceSupported={voice.supported}
           voiceActive={voice.active}
           onToggleVoice={voice.toggle}
+          voiceMode={voice.mode}
           showFormattingMarks={showFormattingMarks}
           onToggleFormattingMarks={() => setShowFormattingMarks(v => !v)}
           wordCountGoal={wordCountGoal}
