@@ -90,6 +90,12 @@ export const fetchOverview = async (from, to) => {
   return res.data;
 };
 
+/** Money ▸ Overview, the centre at a glance. month = 'YYYY-MM' (default: this month). */
+export const fetchGlance = async (month) => {
+  const res = await apiClient.get('/finance/glance', { params: month ? { month } : {}, suppressErrorToast: true });
+  return res.data;
+};
+
 /** Money ▸ Expenses: one page; state 'TOPAY' | 'PAID'. */
 export const fetchExpensePage = async ({ state, startDate, endDate, category, pageSize = 100 } = {}) => {
   const params = { pageSize, state };
