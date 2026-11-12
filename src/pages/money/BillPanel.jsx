@@ -4,6 +4,7 @@ import { Button, Tag } from '../../components/saral/Saral';
 import { C, inr } from '../../components/saral/tokens';
 import { fetchBillHistory } from '../../api/billing/moneyApi';
 import { billTag, istDate, istTime } from './mnUtil';
+import ChangeHistory from '../../components/saral/ChangeHistory';
 
 /**
  * One bill: its lines, how the total was reached, and its money history (made,
@@ -103,6 +104,7 @@ export default function BillPanel({ bill, ver, canTake, canFix, onTake, onFix, o
           })}
         </div>
         {h?.hasMoney && <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, background: C.ground, borderRadius: 12, padding: '10px 12px' }}>{t('mn.bill.locked')}</div>}
+        <ChangeHistory key={bill.invoiceId} kind="bill" id={bill.invoiceId} />
       </div>
 
       <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.line}`, display: 'flex', gap: 8, flexWrap: 'wrap' }}>

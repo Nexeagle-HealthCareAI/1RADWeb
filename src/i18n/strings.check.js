@@ -17,6 +17,9 @@ export const en = {
   'ck.fix.SHARE_ON_CANCELLED': 'Partners', 'ck.fix.DUPLICATE': 'Open bill', 'ck.fix.NOT_CLOSED': 'Cash book', 'ck.fix.CASH_DIFFERENCE': 'Cash book',
   'ck.ok.NO_BILL': 'Every visit billed', 'ck.ok.CANCELLED_VISIT': 'No bills on cancelled visits', 'ck.ok.PAID_MISMATCH': 'Payments match', 'ck.ok.TOTAL_MISMATCH': 'Totals match',
   'ck.ok.SHARE_ON_CANCELLED': 'Partner shares match', 'ck.ok.DUPLICATE': 'No duplicates', 'ck.ok.NOT_CLOSED': 'Drawer closed', 'ck.ok.CASH_DIFFERENCE': 'Cash count matches',
+  'ch.title': 'Who changed what', 'ch.failed': 'Could not load the changes.', 'ch.none': 'No changes recorded yet.', 'ch.system': 'the system',
+  'ab.view': 'List style', 'ab.compact': 'Compact', 'ab.cards': 'Cards', 'ab.col.token': 'Token', 'ab.col.time': 'Time', 'ab.col.patient': 'Patient', 'ab.col.tests': 'Tests', 'ab.col.ref': 'Referred by', 'ab.col.stage': 'Stage', 'ab.col.paid': 'Paid', 'ab.col.do': 'Do', 'ab.paid': 'Bill paid in full', 'ab.edit': 'Edit',
+  'pt.col.partner': 'Partner', 'pt.col.last': 'Last paid', 'pt.col.ready': 'Ready to pay', 'pt.col.owes': 'Patient owes', 'pt.col.year': 'This year', 'pt.payShort': 'Pay', 'pt.noPan': 'No PAN on record: higher TDS applies', 'pt.noPanShort': 'No PAN',
 };
 
 export const hi = {
@@ -35,6 +38,9 @@ export const hi = {
   'ck.fix.SHARE_ON_CANCELLED': 'पार्टनर', 'ck.fix.DUPLICATE': 'बिल खोलें', 'ck.fix.NOT_CLOSED': 'कैश बुक', 'ck.fix.CASH_DIFFERENCE': 'कैश बुक',
   'ck.ok.NO_BILL': 'हर मरीज़ का बिल बना', 'ck.ok.CANCELLED_VISIT': 'रद्द मरीज़ों पर बिल नहीं', 'ck.ok.PAID_MISMATCH': 'भुगतान मिलते हैं', 'ck.ok.TOTAL_MISMATCH': 'कुल मिलते हैं',
   'ck.ok.SHARE_ON_CANCELLED': 'पार्टनर हिस्से ठीक', 'ck.ok.DUPLICATE': 'दोहराव नहीं', 'ck.ok.NOT_CLOSED': 'दराज़ बंद', 'ck.ok.CASH_DIFFERENCE': 'नकद गिनती मिली',
+  'ch.title': 'किसने क्या बदला', 'ch.failed': 'बदलाव नहीं आ सके।', 'ch.none': 'अभी कोई बदलाव दर्ज नहीं।', 'ch.system': 'सिस्टम',
+  'ab.view': 'सूची का रूप', 'ab.compact': 'छोटी सूची', 'ab.cards': 'कार्ड', 'ab.col.token': 'टोकन', 'ab.col.time': 'समय', 'ab.col.patient': 'मरीज़', 'ab.col.tests': 'जाँच', 'ab.col.ref': 'किसने भेजा', 'ab.col.stage': 'स्थिति', 'ab.col.paid': 'पैसा', 'ab.col.do': 'करें', 'ab.paid': 'बिल पूरा मिला', 'ab.edit': 'बदलें',
+  'pt.col.partner': 'पार्टनर', 'pt.col.last': 'आख़िरी भुगतान', 'pt.col.ready': 'अभी देना', 'pt.col.owes': 'मरीज़ पर बाकी', 'pt.col.year': 'इस साल दिया', 'pt.payShort': 'दें', 'pt.noPan': 'PAN दर्ज नहीं: ज़्यादा TDS लगेगा', 'pt.noPanShort': 'PAN नहीं',
 };
 
 export const bn = {
@@ -53,4 +59,7 @@ export const bn = {
   'ck.fix.SHARE_ON_CANCELLED': 'পার্টনার', 'ck.fix.DUPLICATE': 'বিল খুলুন', 'ck.fix.NOT_CLOSED': 'ক্যাশ বুক', 'ck.fix.CASH_DIFFERENCE': 'ক্যাশ বুক',
   'ck.ok.NO_BILL': 'প্রতিটি রোগীর বিল হয়েছে', 'ck.ok.CANCELLED_VISIT': 'বাতিল রোগীতে বিল নেই', 'ck.ok.PAID_MISMATCH': 'পেমেন্ট মিলছে', 'ck.ok.TOTAL_MISMATCH': 'মোট মিলছে',
   'ck.ok.SHARE_ON_CANCELLED': 'পার্টনারের ভাগ ঠিক', 'ck.ok.DUPLICATE': 'দু’বার লেখা নেই', 'ck.ok.NOT_CLOSED': 'ড্রয়ার বন্ধ', 'ck.ok.CASH_DIFFERENCE': 'নগদ গোনা মিলছে',
+  'ch.title': 'কে কী বদলেছেন', 'ch.failed': 'বদলগুলো আনা গেল না।', 'ch.none': 'এখনও কোনো বদল লেখা নেই।', 'ch.system': 'সিস্টেম',
+  'ab.view': 'তালিকার ধরন', 'ab.compact': 'ছোট তালিকা', 'ab.cards': 'কার্ড', 'ab.col.token': 'টোকেন', 'ab.col.time': 'সময়', 'ab.col.patient': 'রোগী', 'ab.col.tests': 'পরীক্ষা', 'ab.col.ref': 'কে পাঠিয়েছেন', 'ab.col.stage': 'অবস্থা', 'ab.col.paid': 'টাকা', 'ab.col.do': 'করুন', 'ab.paid': 'বিল পুরো পাওয়া', 'ab.edit': 'বদলান',
+  'pt.col.partner': 'পার্টনার', 'pt.col.last': 'শেষ পেমেন্ট', 'pt.col.ready': 'এখন দেওয়ার', 'pt.col.owes': 'রোগীর বাকি', 'pt.col.year': 'এ বছর দেওয়া', 'pt.payShort': 'দিন', 'pt.noPan': 'PAN নেই: বেশি TDS লাগবে', 'pt.noPanShort': 'PAN নেই',
 };

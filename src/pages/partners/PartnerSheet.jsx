@@ -6,6 +6,7 @@ import { C, inr } from '../../components/saral/tokens';
 import { Err, More, Note } from '../../components/saral/parts';
 import { apiError } from '../../components/saral/formUtil';
 import PayoutSheet from './PayoutSheet';
+import ChangeHistory from '../../components/saral/ChangeHistory';
 import PartnerFormSheet from './PartnerFormSheet';
 import { ApprovalSheet, ConfirmSheet, ManualAmountSheet, MergeSheet } from './PartnerActions';
 import { currentFy, longDate, mobileDigits, patientOwes, rowState, shortDate } from './ptUtil';
@@ -266,6 +267,8 @@ export default function PartnerSheet({ partner: initial, roster, linkStatus, sta
               </div>
             </More>
           )}
+          {/* Who changed what: shares, payouts and the partner's own details. */}
+          {full?.referrerId && <ChangeHistory kind="partner" id={full.referrerId} />}
         </div>
       </Sheet>
 

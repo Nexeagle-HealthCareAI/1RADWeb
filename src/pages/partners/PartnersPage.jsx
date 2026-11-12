@@ -143,6 +143,7 @@ export default function PartnersPage() {
     );
   };
 
+  const rowCols = 'minmax(160px,2fr) minmax(84px,0.8fr) repeat(4, minmax(76px,0.8fr)) 60px';
   const card = (p) => (
     <div key={p.referrerId} style={{ background: 'white', border: `1px solid ${C.line}`, borderRadius: 18, padding: 14, display: 'grid', gap: 10 }}>
       <button type="button" onClick={() => { setStartPay(false); setSel(p); }} style={{ all: 'unset', cursor: 'pointer', display: 'grid', gap: 6 }}>
@@ -196,9 +197,50 @@ export default function PartnersPage() {
         {loading && !data && <div style={{ fontSize: 17, color: C.muted, padding: 24, textAlign: 'center' }}>{t('ps.loading')}</div>}
         {data && !items.length && <div style={{ fontSize: 17, color: C.muted, padding: 24, textAlign: 'center', background: 'white', borderRadius: 18, border: `1px dashed ${C.lineStrong}` }}>{t(show === 'all' ? 'pt.emptyAll' : 'pt.empty')}</div>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: vp.phone ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-          {items.map(card)}
-        </div>
+        {vp.phone ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+            {items.map(card)}
+          </div>
+        ) : items.length > 0 && (
+          /* Desktop (Nov 2026): one 44px line per partner, so a busy month's partners
+             fit on a screen. Click the line to open the partner; Pay pays now. */
+          <div style={{ background: 'white', border: `1px solid ${C.line}`, borderRadius: 16, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: rowCols, gap: 10, padding: '9px 14px', background: C.ground, borderBottom: `1px solid ${C.line}`,
+              fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: C.faint }}>
+              <span>{t('pt.col.partner').toUpperCase()}</span><span>{t('pt.col.last').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t('pt.col.ready').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t(whenBilled ? 'pt.tNoBill' : 'pt.tWaiting').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t('pt.col.owes').toUpperCase()}</span>
+              <span style={{ textAlign: 'right' }}>{t('pt.col.year').toUpperCase()}</span><span />
+            </div>
+            {items.map((p, i) => (
+              <div key={p.referrerId} role="button" tabIndex={0} onClick={() => { setStartPay(false); setSel(p); }}
+                onKeyDown={e => { if (e.key === 'Enter') { setStartPay(false); setSel(p); } }}
+                style={{ display: 'grid', gridTemplateColumns: rowCols, gap: 10, alignItems: 'center', padding: '0 14px', height: 46, cursor: 'pointer', fontSize: 14.5,
+                  borderTop: i ? '1px solid #F3F4F6' : 'none' }}>
+                <span style={{ minWidth: 0, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</b>
+                  <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 999, background: p.isDoctor ? C.primarySoft : '#F3F4F6', color: p.isDoctor ? C.primary : '#374151' }}>
+                    {p.isDoctor ? t('ps.doctor') : t('ps.agent')}</span>
+                  {!p.hasPan && <span title={t('pt.noPan')} style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: C.dueInk }}>{t('pt.noPanShort')}</span>}
+                </span>
+                <span style={{ color: C.muted, fontSize: 13 }}>{p.lastPaidAt ? longDate(p.lastPaidAt) : t('pt.neverPaid')}</span>
+                <span style={{ textAlign: 'right', fontWeight: 800, color: p.payableNow > 0 ? C.ok : C.faint, fontVariantNumeric: 'tabular-nums' }}>{p.payableNow > 0 ? inr(p.payableNow) : '—'}</span>
+                <span style={{ textAlign: 'right', color: p.awaitingPatient > 0 ? C.dueInk : C.faint, fontVariantNumeric: 'tabular-nums' }}>{p.awaitingPatient > 0 ? inr(p.awaitingPatient) : '—'}</span>
+                <span style={{ textAlign: 'right', color: p.patientOwes > 0 ? C.dueInk : p.deficit > 0 ? C.danger : C.faint, fontVariantNumeric: 'tabular-nums' }}>
+                  {p.deficit > 0 ? `−${inr(p.deficit)}` : p.patientOwes > 0 ? inr(p.patientOwes) : '—'}</span>
+                <span style={{ textAlign: 'right', color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{inr(p.paidThisYear || 0)}</span>
+                <span style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                  {isFinance && p.payableNow > 0 && (
+                    <button type="button" onClick={() => { setStartPay(true); setSel(p); }}
+                      style={{ height: 32, padding: '0 12px', borderRadius: 10, border: 'none', background: C.due, color: 'white', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {t('pt.payShort')}</button>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {data && items.length < (data.total || 0) && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 15, color: C.muted }}>{t('fd.of', { shown: items.length, total: data.total })}</span>

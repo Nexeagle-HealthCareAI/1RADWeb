@@ -313,7 +313,19 @@ export const useInvoiceActions = ({
     const blankInvoiceData = { patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' };
 
     try {
-      await generateInvoice(payload, idemKey);
+      try {
+        await generateInvoice(payload, idemKey);
+      } catch (dupErr) {
+        // Same test already billed to this patient today (server: DUPLICATE_BILL_LINE).
+        // Ask once; only a clear yes bills it again.
+        if (dupErr?.response?.data?.errorCode !== 'DUPLICATE_BILL_LINE') throw dupErr;
+        const msg = dupErr.response.data.message || 'This test is already on a bill for this patient today.';
+        if (!window.confirm(`${msg}\n\nBill it again?`)) {
+          notify({ type: 'info', title: 'Not billed again', message: 'Nothing was billed. Open the earlier bill to take money on it.' });
+          return;
+        }
+        await generateInvoice({ ...payload, allowRepeat: true }, crypto.randomUUID());
+      }
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
