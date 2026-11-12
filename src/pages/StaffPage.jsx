@@ -4,7 +4,7 @@ import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
 import { nativeStorage } from '../hooks/useElectron';
 import StaffDashboardPage from './StaffDashboardPage';
-import LeavePolicyEditor from '../components/LeavePolicyEditor';
+import LeaveAndDaysArea from './staff/LeaveAndDaysArea';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 
@@ -149,6 +149,10 @@ export default function StaffPage() {
 
   // Leave application form
   const [leaveForm, setLeaveForm] = useState({ open: false, type: '', from: '', to: '', reason: '' });
+  // Nov 2026: leave balances come from the server ({ [year]: { [staffId]: { [type]: { taken, encashed, balance } } } }).
+  const [serverBalances, setServerBalances] = useState({});
+  const [leavePreview, setLeavePreview] = useState(null); // { leaveDays, skipped } for the dates in the leave form
+  const [leaveBusy, setLeaveBusy] = useState(false);
 
   // Notification + confirm modal (unified)
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
@@ -274,6 +278,17 @@ export default function StaffPage() {
     }
   }, [activeCenter?.id]);
 
+  const loadBalances = useCallback(async (year = new Date().getFullYear()) => {
+    try {
+      const res = await apiClient.get(`/leave/balances?year=${year}`, { suppressErrorToast: true });
+      const byStaff = {};
+      (res.data?.staff || []).forEach(p => {
+        byStaff[p.staffId] = Object.fromEntries((p.types || []).map(t => [t.type, t]));
+      });
+      setServerBalances(prev => ({ ...prev, [year]: byStaff }));
+    } catch { /* older API: the page falls back to working balances out locally */ }
+  }, []);
+
   const mapDocs = (raw) => (raw || []).map(d => ({
     id: d.documentId, name: d.fileName, category: d.category,
     size: d.fileSizeBytes, uploadedAt: d.uploadedAt, blobUrl: d.blobUrl,
@@ -344,6 +359,7 @@ export default function StaffPage() {
     fetchPersonnel();
     loadLocalData();
     loadLeavePolicy();
+    loadBalances();
   }, [fetchPersonnel, loadLocalData, loadLeavePolicy, activeCenter?.id]);
 
   // Re-fetch attendance from API when the selected month changes
@@ -705,6 +721,13 @@ export default function StaffPage() {
 
   // ── Leave helpers ──────────────────────────────────────────────────────────
   const getLeaveBalance = useCallback((staffId, targetYear = TODAY.getFullYear()) => {
+    // Server balances (working days only, carry-forward, opening balances) when loaded.
+    const server = serverBalances[targetYear]?.[staffId];
+    if (server) {
+      const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, Number(server[t]?.taken || 0) + Number(server[t]?.encashed || 0)]));
+      const balance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, Number(server[t]?.balance ?? 0) - Number(server[t]?.pending || 0))]));
+      return { used, balance };
+    }
     const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
     leaveData
       .filter(l => l.staffId === staffId && l.status === 'approved' && (
@@ -727,45 +750,57 @@ export default function StaffPage() {
       });
     const balance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, LEAVE_DEFAULTS[t] - used[t])]));
     return { used, balance };
-  }, [leaveData, LEAVE_TYPES, LEAVE_DEFAULTS]);
+  }, [leaveData, LEAVE_TYPES, LEAVE_DEFAULTS, serverBalances]);
+
+  // How many leave days the chosen dates use for this person (weekly offs and holidays skipped).
+  const previewKey = (leaveForm.open && selectedStaff?.id && leaveForm.from && leaveForm.to && leaveForm.to >= leaveForm.from)
+    ? `${selectedStaff.id}|${leaveForm.from}|${leaveForm.to}` : null;
+  useEffect(() => {
+    if (!previewKey) return undefined;
+    const [sid, from, to] = previewKey.split('|');
+    let alive = true;
+    apiClient.get(`/work-calendar/leave-days?staffId=${sid}&from=${from}&to=${to}`, { suppressErrorToast: true })
+      .then(res => { if (alive) setLeavePreview({ key: previewKey, ...(res.data || {}) }); })
+      .catch(() => { if (alive) setLeavePreview(null); });
+    return () => { alive = false; };
+  }, [previewKey]);
+  const shownPreview = leavePreview && leavePreview.key === previewKey ? leavePreview : null;
 
   const submitLeave = async (staffId) => {
     const { type, from, to, reason } = leaveForm;
+    if (!type)        { showNotif('warning', 'Pick a leave type', 'Choose which leave this is.'); return; }
     if (!from || !to) { showNotif('warning', 'Missing Dates', 'Please select start and end dates.'); return; }
     if (to < from)    { showNotif('warning', 'Invalid Range', 'End date cannot be before start date.'); return; }
-    const days = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
-    const { balance } = getLeaveBalance(staffId);
-    if (days > balance[type]) {
-      showNotif('warning', 'Insufficient Balance', `Only ${balance[type]} ${type} leave day(s) remaining.`);
-      return;
-    }
-    // Optimistic entry (id will be replaced after API responds)
-    const tempId = `lv_${Date.now()}`;
-    const entry = {
-      id: tempId, staffId, type, from, to, days,
-      reason: reason.trim(), status: 'pending', appliedOn: new Date().toISOString(),
-    };
-    const updated = [...leaveData, entry];
-    setLeaveData(updated);
-    await nativeStorage.set('1rad_staff_leave', updated);
-    showNotif('success', 'Leave Applied', `${days}-day ${type} leave submitted for approval.`);
-    setLeaveForm(p => ({ ...p, open: false }));
-
+    // The server counts working days, checks the balance and says no with a reason
+    // (Nov 2026). Only when the server cannot be reached is the leave kept on this device.
+    const calendarDays = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+    setLeaveBusy(true);
     try {
       const res = await apiClient.post(`/leave/${staffId}`, {
-        leaveType: type, fromDate: from, toDate: to, days, reason: reason.trim(),
-      });
-      // Replace temp id with the real DB id
+        leaveType: type, fromDate: from, toDate: to, days: calendarDays, reason: reason.trim(),
+      }, { suppressErrorToast: true });
       const realId = res.data?.leaveRequestId;
-      if (realId) {
-        setLeaveData(prev => {
-          const next = prev.map(l => l.id === tempId ? { ...l, id: realId } : l);
-          nativeStorage.set('1rad_staff_leave', next).catch(() => {});
-          return next;
-        });
-      }
+      setLeaveForm(p => ({ ...p, open: false }));
+      showNotif('success', 'Leave Applied', `${type} leave submitted for approval.`);
+      await loadLocalData();
+      loadBalances(new Date(from).getFullYear());
+      if (!realId) console.warn('[STAFF] Leave saved without an id.');
     } catch (err) {
-      console.warn('[STAFF] Leave save to API failed — kept locally.', err);
+      const msg = err?.response?.data?.message;
+      if (err?.response && msg) { showNotif('warning', 'Leave not applied', msg); return; }
+      if (err?.response) { showNotif('warning', 'Leave not applied', 'The server refused this leave.'); return; }
+      // Offline: keep it here and sync later (as before).
+      const entry = {
+        id: `lv_${Date.now()}`, staffId, type, from, to, days: calendarDays,
+        reason: reason.trim(), status: 'pending', appliedOn: new Date().toISOString(),
+      };
+      const updated = [...leaveData, entry];
+      setLeaveData(updated);
+      await nativeStorage.set('1rad_staff_leave', updated);
+      setLeaveForm(p => ({ ...p, open: false }));
+      showNotif('success', 'Leave Applied (offline)', `${type} leave kept on this device; it will be sent when online.`);
+    } finally {
+      setLeaveBusy(false);
     }
   };
 
@@ -779,6 +814,7 @@ export default function StaffPage() {
     if (!leaveId.startsWith('lv_')) {
       try {
         await apiClient.patch(`/leave/${leaveId}/status`, { status });
+        loadBalances();
       } catch (err) {
         console.warn('[STAFF] Leave status update to API failed — kept locally.', err);
       }
@@ -1934,7 +1970,7 @@ export default function StaffPage() {
         <button
           onClick={() => {
             if (!LEAVE_TYPES.length) {
-              showNotif('warning', 'No leave policy', 'Configure leave types in Staff & Payroll → Leave Policy before applying.');
+              showNotif('warning', 'No leave policy', 'Set up leave types in Staff & Payroll → Leave & working days → Leave types first.');
               return;
             }
             setLeaveForm({ open: true, type: LEAVE_TYPES[0], from: '', to: '', reason: '' });
@@ -2191,7 +2227,7 @@ export default function StaffPage() {
             {[
               { id: 'dashboard', label: 'Dashboard' },
               { id: 'roster',    label: 'Roster' },
-              { id: 'leave',     label: 'Leave Policy' },
+              { id: 'leave',     label: 'Leave & working days' },
             ].map(t => (
               <button
                 key={t.id}
@@ -2223,7 +2259,7 @@ export default function StaffPage() {
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={() => { fetchPersonnel(); loadLocalData(); loadLeavePolicy(); }}
+            onClick={() => { fetchPersonnel(); loadLocalData(); loadLeavePolicy(); loadBalances(); }}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '6px',
               padding: '10px 18px', borderRadius: '8px',
@@ -2269,9 +2305,10 @@ export default function StaffPage() {
       {/* ── Leave Policy tab ─────────────────────────────────────────── */}
       {mainTab === 'leave' && (
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: 'white', borderRadius: '14px', border: '1px solid #e8edf2', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          <LeavePolicyEditor
+          <LeaveAndDaysArea
             hospitalId={activeCenter?.id}
             currentUserName={currentUser?.fullName || currentUser?.email}
+            onBalancesChanged={() => { loadBalances(); loadLeavePolicy(); }}
           />
         </div>
       )}
@@ -3136,8 +3173,9 @@ export default function StaffPage() {
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Leave Type</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {[...LEAVE_TYPES, 'Unpaid Leave (LWP)'].map(t => {
-                    const isUnpaid = t === 'Unpaid Leave (LWP)';
+                  {[...LEAVE_TYPES, ...(leavePolicy.some(p => p.isPaid === false) ? [] : ['Unpaid Leave (LWP)'])].map(t => {
+                    // Unpaid types (the policy's own, or the built-in LWP) have no balance to show.
+                    const isUnpaid = t === 'Unpaid Leave (LWP)' || leavePolicy.find(p => p.name === t)?.isPaid === false;
                     const isActive = leaveForm.type === t;
                     return (
                       <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: '9px', border: `1.5px solid ${isActive ? '#0f52ba' : '#e2e8f0'}`, background: isActive ? '#eff6ff' : 'white', color: isActive ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', transition: 'all 0.12s' }}>
@@ -3162,6 +3200,13 @@ export default function StaffPage() {
                 ))}
               </div>
   
+              {shownPreview && (
+                <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', background: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '12px', color: '#0c4a6e', fontWeight: 600 }}>
+                  <strong>{shownPreview.leaveDays} leave day{shownPreview.leaveDays === 1 ? '' : 's'}</strong>
+                  {shownPreview.skipped?.length > 0 && <> · not counted: {shownPreview.skipped.join(', ')}</>}
+                </div>
+              )}
+
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
                   Reason <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
@@ -3171,7 +3216,7 @@ export default function StaffPage() {
   
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={() => setLeaveForm(p => ({ ...p, open: false }))} style={{ flex: 1, padding: '12px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '12px', color: '#64748b' }}>Cancel</button>
-                <button onClick={() => submitLeave(selectedStaff.id)} style={{ flex: 2, padding: '12px', borderRadius: '11px', background: 'linear-gradient(135deg,#0f52ba,#083889)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '12px' }}>Submit Leave</button>
+                <button onClick={() => submitLeave(selectedStaff.id)} disabled={leaveBusy || shownPreview?.leaveDays === 0} style={{ flex: 2, padding: '12px', borderRadius: '11px', background: 'linear-gradient(135deg,#0f52ba,#083889)', color: 'white', border: 'none', fontWeight: 800, cursor: leaveBusy ? 'wait' : 'pointer', fontSize: '12px', opacity: (leaveBusy || shownPreview?.leaveDays === 0) ? 0.6 : 1 }}>{leaveBusy ? 'Submitting…' : 'Submit Leave'}</button>
               </div>
             </div>
           </div>
