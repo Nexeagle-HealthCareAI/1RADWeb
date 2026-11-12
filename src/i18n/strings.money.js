@@ -3,6 +3,15 @@
 // have a native speaker check before a wide roll-out.
 
 export const en = {
+  'mn.ov.title': 'Overview', 'mn.ov.help': 'Bills made in the period. Billed = collected + still to collect.',
+  'mn.ov.p.today': 'Today', 'mn.ov.p.week': 'Last 7 days', 'mn.ov.p.month': 'This month', 'mn.ov.p.last': 'Last month',
+  'mn.ov.billed': 'Billed', 'mn.ov.billedSub': '{n} bills · {amount} discount', 'mn.ov.collected': 'Collected', 'mn.ov.collectedSub': 'on these bills',
+  'mn.ov.due': 'Still to collect', 'mn.ov.dueSub': 'see the bills', 'mn.ov.keeps': 'Centre keeps', 'mn.ov.keepsSub': 'after {amount} partner share',
+  'mn.ov.received': 'Money received', 'mn.ov.receivedSub': 'all money in, by how it was paid (refunds taken off)', 'mn.ov.expenses': 'Expenses paid',
+  'mn.ov.days': 'Day by day', 'mn.ov.legendBilled': 'Billed', 'mn.ov.legendReceived': 'Received', 'mn.ov.tests': 'What brings the money',
+  'mn.ov.patients': '{n} patients', 'mn.ov.needs': 'Needs you', 'mn.ov.n.approvals': '{n} requests waiting for your answer', 'mn.ov.n.old': '{n} bills unpaid for over 30 days ({amount})',
+  'mn.ov.n.days': '{n} days with cash not closed', 'mn.ov.n.tds': 'TDS for partner payouts is not set', 'mn.ov.n.none': 'Nothing needs you right now.', 'mn.ov.open': 'Open',
+  'mn.ov.cancelled': '{n} cancelled bills are not counted.', 'mn.ov.loadFailed': 'Could not load the overview.',
   'mn.cb.title': 'Cash book', 'mn.cb.help': 'Every rupee that moved, by day and by how it was paid. Close the day by counting the drawer.',
   'mn.cb.open': 'Open — close it', 'mn.cb.matched': 'Closed · matched', 'mn.cb.short': 'Closed · {amount} short', 'mn.cb.over': 'Closed · {amount} over', 'mn.cb.nothing': 'Nothing moved',
   'mn.cb.day': 'The day', 'mn.cb.in': 'in {amount}', 'mn.cb.out': 'out {amount}', 'mn.cb.all': 'All',
@@ -59,6 +68,15 @@ export const en = {
 };
 
 export const hi = {
+  'mn.ov.title': 'सारांश', 'mn.ov.help': 'इस अवधि में बने बिल। बिल = मिला + अभी लेना है।',
+  'mn.ov.p.today': 'आज', 'mn.ov.p.week': 'पिछले 7 दिन', 'mn.ov.p.month': 'इस महीने', 'mn.ov.p.last': 'पिछले महीने',
+  'mn.ov.billed': 'बिल बने', 'mn.ov.billedSub': '{n} बिल · {amount} छूट', 'mn.ov.collected': 'मिला', 'mn.ov.collectedSub': 'इन बिलों पर',
+  'mn.ov.due': 'अभी लेना है', 'mn.ov.dueSub': 'बिल देखें', 'mn.ov.keeps': 'सेंटर का हिस्सा', 'mn.ov.keepsSub': '{amount} पार्टनर हिस्से के बाद',
+  'mn.ov.received': 'पैसा मिला', 'mn.ov.receivedSub': 'आया हुआ पूरा पैसा, तरीके के हिसाब से (रिफ़ंड घटाकर)', 'mn.ov.expenses': 'खर्च चुकाए',
+  'mn.ov.days': 'दिन-ब-दिन', 'mn.ov.legendBilled': 'बिल', 'mn.ov.legendReceived': 'मिला', 'mn.ov.tests': 'पैसा किन जाँचों से',
+  'mn.ov.patients': '{n} मरीज़', 'mn.ov.needs': 'आपका ध्यान चाहिए', 'mn.ov.n.approvals': '{n} अनुरोध आपके जवाब का इंतज़ार कर रहे हैं', 'mn.ov.n.old': '{n} बिल 30 दिन से ज़्यादा बकाया ({amount})',
+  'mn.ov.n.days': '{n} दिन नकद बंद नहीं हुआ', 'mn.ov.n.tds': 'पार्टनर भुगतान पर TDS तय नहीं है', 'mn.ov.n.none': 'अभी कुछ नहीं चाहिए।', 'mn.ov.open': 'खोलें',
+  'mn.ov.cancelled': '{n} रद्द बिल नहीं गिने गए।', 'mn.ov.loadFailed': 'सारांश नहीं खुला।',
   'mn.cb.title': 'कैश बुक', 'mn.cb.help': 'हर रुपया जो आया-गया, दिन और तरीके के हिसाब से। दराज़ गिनकर दिन बंद करें।',
   'mn.cb.open': 'खुला — बंद करें', 'mn.cb.matched': 'बंद · मिलान सही', 'mn.cb.short': 'बंद · {amount} कम', 'mn.cb.over': 'बंद · {amount} ज़्यादा', 'mn.cb.nothing': 'कोई लेन-देन नहीं',
   'mn.cb.day': 'पूरा दिन', 'mn.cb.in': 'आए {amount}', 'mn.cb.out': 'गए {amount}', 'mn.cb.all': 'सभी',
@@ -115,6 +133,15 @@ export const hi = {
 };
 
 export const bn = {
+  'mn.ov.title': 'সারাংশ', 'mn.ov.help': 'এই সময়ে তৈরি বিল। বিল = পাওয়া + এখনও নিতে হবে।',
+  'mn.ov.p.today': 'আজ', 'mn.ov.p.week': 'গত ৭ দিন', 'mn.ov.p.month': 'এই মাস', 'mn.ov.p.last': 'গত মাস',
+  'mn.ov.billed': 'বিল হয়েছে', 'mn.ov.billedSub': '{n}টি বিল · {amount} ছাড়', 'mn.ov.collected': 'পাওয়া গেছে', 'mn.ov.collectedSub': 'এই বিলগুলিতে',
+  'mn.ov.due': 'এখনও নিতে হবে', 'mn.ov.dueSub': 'বিল দেখুন', 'mn.ov.keeps': 'সেন্টারের ভাগ', 'mn.ov.keepsSub': '{amount} পার্টনারের ভাগের পরে',
+  'mn.ov.received': 'টাকা পাওয়া', 'mn.ov.receivedSub': 'যত টাকা এসেছে, উপায় অনুযায়ী (ফেরত বাদে)', 'mn.ov.expenses': 'খরচ মেটানো',
+  'mn.ov.days': 'দিন অনুযায়ী', 'mn.ov.legendBilled': 'বিল', 'mn.ov.legendReceived': 'পাওয়া', 'mn.ov.tests': 'কোন পরীক্ষা থেকে টাকা',
+  'mn.ov.patients': '{n} জন রোগী', 'mn.ov.needs': 'আপনার নজর দরকার', 'mn.ov.n.approvals': '{n}টি অনুরোধ আপনার উত্তরের অপেক্ষায়', 'mn.ov.n.old': '{n}টি বিল ৩০ দিনের বেশি বাকি ({amount})',
+  'mn.ov.n.days': '{n} দিন নগদ বন্ধ হয়নি', 'mn.ov.n.tds': 'পার্টনারের পেমেন্টে TDS ঠিক করা হয়নি', 'mn.ov.n.none': 'এখন কিছু দরকার নেই।', 'mn.ov.open': 'খুলুন',
+  'mn.ov.cancelled': '{n}টি বাতিল বিল গোনা হয়নি।', 'mn.ov.loadFailed': 'সারাংশ খোলা গেল না।',
   'mn.cb.title': 'ক্যাশ বই', 'mn.cb.help': 'যত টাকা এল-গেল, দিন আর উপায় অনুযায়ী। ড্রয়ার গুনে দিন বন্ধ করুন।',
   'mn.cb.open': 'খোলা — বন্ধ করুন', 'mn.cb.matched': 'বন্ধ · মিলেছে', 'mn.cb.short': 'বন্ধ · {amount} কম', 'mn.cb.over': 'বন্ধ · {amount} বেশি', 'mn.cb.nothing': 'কোনো লেনদেন নেই',
   'mn.cb.day': 'পুরো দিন', 'mn.cb.in': 'এসেছে {amount}', 'mn.cb.out': 'গেছে {amount}', 'mn.cb.all': 'সব',

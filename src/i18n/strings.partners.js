@@ -3,6 +3,8 @@
 // native speaker check before a wide roll-out.
 
 export const en = {
+  'pt.tReadySubBilled': 'Partners: {n} · {amount} of it on bills patients still owe', 'pt.tNoBill': 'No bill yet', 'pt.tNoBillSub': 'Can be paid once the bill is made',
+  'pt.noBill': 'No bill yet {amount}', 'pt.patientOwes': '{amount} on unpaid bills', 'pt.patientOwesRow': 'Patient owes',
   'pt.title': 'Partners & payouts', 'pt.sub': 'Who is owed what, paying them, and their portal link',
   'pt.add': 'Add partner', 'pt.links': 'Send portal links', 'pt.search': 'Name, mobile or doctor',
   'pt.tReady': 'Ready to pay now', 'pt.tReadySub': 'Partners: {n} · patient has paid in full',
@@ -73,6 +75,8 @@ export const en = {
 };
 
 export const hi = {
+  'pt.tReadySubBilled': 'पार्टनर: {n} · इसमें {amount} उन बिलों पर जिनका पैसा मरीज़ पर बाकी है', 'pt.tNoBill': 'अभी बिल नहीं बना', 'pt.tNoBillSub': 'बिल बनते ही दिया जा सकता है',
+  'pt.noBill': 'बिल नहीं बना {amount}', 'pt.patientOwes': 'बकाया बिलों पर {amount}', 'pt.patientOwesRow': 'मरीज़ पर बाकी',
   'pt.title': 'पार्टनर और भुगतान', 'pt.sub': 'किसे कितना देना है, भुगतान, और उनका पोर्टल लिंक',
   'pt.add': 'पार्टनर जोड़ें', 'pt.links': 'पोर्टल लिंक भेजें', 'pt.search': 'नाम, मोबाइल या डॉक्टर',
   'pt.tReady': 'अभी दे सकते हैं', 'pt.tReadySub': 'पार्टनर: {n} · मरीज़ ने पूरा पैसा दिया',
@@ -143,6 +147,8 @@ export const hi = {
 };
 
 export const bn = {
+  'pt.tReadySubBilled': 'পার্টনার: {n} · এর মধ্যে {amount} এমন বিলে যার টাকা রোগীর বাকি', 'pt.tNoBill': 'এখনও বিল হয়নি', 'pt.tNoBillSub': 'বিল হলেই দেওয়া যাবে',
+  'pt.noBill': 'বিল হয়নি {amount}', 'pt.patientOwes': 'বাকি বিলে {amount}', 'pt.patientOwesRow': 'রোগীর বাকি',
   'pt.title': 'পার্টনার ও পেমেন্ট', 'pt.sub': 'কাকে কত দিতে হবে, পেমেন্ট, আর তাঁদের পোর্টাল লিংক',
   'pt.add': 'পার্টনার যোগ করুন', 'pt.links': 'পোর্টাল লিংক পাঠান', 'pt.search': 'নাম, মোবাইল বা ডাক্তার',
   'pt.tReady': 'এখনই দেওয়া যায়', 'pt.tReadySub': 'পার্টনার: {n} · রোগী পুরো টাকা দিয়েছেন',

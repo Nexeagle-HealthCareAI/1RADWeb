@@ -13,7 +13,7 @@ import { apiError, fieldStyle } from '../../components/saral/formUtil';
 import PartnerSheet from './PartnerSheet';
 import PartnerFormSheet from './PartnerFormSheet';
 import { LinksSheet, UploadSheet } from './BulkSheets';
-import { longDate } from './ptUtil';
+import { longDate, setPayWhenBilled } from './ptUtil';
 
 /**
  * Partners and payouts (Saral). Who is owed what - worked out on the server
@@ -63,7 +63,7 @@ export default function PartnersPage() {
   React.useEffect(() => {
     const my = ++seq.current;
     apiClient.get('/referrers/outstanding', { params: { search: q || undefined, show, page: 1, pageSize: PAGE }, suppressErrorToast: true })
-      .then(r => { if (my === seq.current) { setData(r.data || null); setErr(''); setLoading(false); } })
+      .then(r => { if (my === seq.current) { setPayWhenBilled(r.data?.payWhenBilled); setData(r.data || null); setErr(''); setLoading(false); } })
       .catch(e => { if (my === seq.current) { setErr(apiError(e) || t('pt.loadFailed')); setLoading(false); } });
   }, [q, show, ver]);
 
@@ -112,6 +112,7 @@ export default function PartnersPage() {
   };
 
   const totals = data?.totals || { payableNow: 0, awaitingPatient: 0, deficit: 0, partnersToPay: 0 };
+  const whenBilled = data?.payWhenBilled !== false;
   const items = data?.items || [];
 
   const header = (
@@ -153,7 +154,8 @@ export default function PartnersPage() {
         <div style={{ fontSize: 15, color: C.muted }}>{[p.specialty, p.contact, p.lastPaidAt ? t('pt.lastPaid', { date: longDate(p.lastPaidAt) }) : t('pt.neverPaid')].filter(Boolean).join(' · ')}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {p.payableNow > 0 && <Tag bg={C.okSoft} fg={C.ok}>{t('pt.ready', { amount: inr(p.payableNow) })}</Tag>}
-          {p.awaitingPatient > 0 && <Tag bg={C.dueSoft} fg={C.dueInk}>{t('pt.waiting', { amount: inr(p.awaitingPatient) })}</Tag>}
+          {p.awaitingPatient > 0 && <Tag bg={C.dueSoft} fg={C.dueInk}>{t(whenBilled ? 'pt.noBill' : 'pt.waiting', { amount: inr(p.awaitingPatient) })}</Tag>}
+          {p.patientOwes > 0 && <Tag bg="#FFF7ED" fg={C.dueInk}>{t('pt.patientOwes', { amount: inr(p.patientOwes) })}</Tag>}
           {p.deficit > 0 && <Tag bg={C.dangerSoft} fg={C.danger}>{t('pt.owes', { amount: inr(p.deficit) })}</Tag>}
           {p.payableNow <= 0 && p.awaitingPatient <= 0 && p.deficit <= 0 && <Tag bg="#F3F4F6" fg="#374151">{t('pt.settled')}</Tag>}
         </div>
@@ -172,8 +174,10 @@ export default function PartnersPage() {
         {!isOnline && <div role="status" style={{ background: C.dueSoft, color: C.dueInk, borderRadius: 14, padding: '10px 14px', fontSize: 16, fontWeight: 700 }}>{t('fd.offline')}</div>}
 
         <div style={{ display: 'grid', gridTemplateColumns: vp.phone ? '1fr' : 'repeat(3, 1fr)', gap: 10 }}>
-          {tile(t('pt.tReady'), inr(totals.payableNow), t('pt.tReadySub', { n: totals.partnersToPay }), 'ok', () => setShow('payable'))}
-          {tile(t('pt.tWaiting'), inr(totals.awaitingPatient), t('pt.tWaitingSub'), 'due', () => setShow('awaiting'))}
+          {tile(t('pt.tReady'), inr(totals.payableNow), whenBilled
+            ? t('pt.tReadySubBilled', { n: totals.partnersToPay, amount: inr(totals.patientOwes || 0) })
+            : t('pt.tReadySub', { n: totals.partnersToPay }), 'ok', () => setShow('payable'))}
+          {tile(t(whenBilled ? 'pt.tNoBill' : 'pt.tWaiting'), inr(totals.awaitingPatient), t(whenBilled ? 'pt.tNoBillSub' : 'pt.tWaitingSub'), 'due', () => setShow('awaiting'))}
           {tile(t('pt.tOwed'), inr(totals.deficit), t('pt.tOwedSub'), 'danger', () => setShow('deficit'))}
         </div>
 
@@ -184,7 +188,7 @@ export default function PartnersPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-          {SHOWS.map(s => <Chip key={s} on={show === s} onClick={() => setShow(s)}>{t(`pt.show.${s}`)}</Chip>)}
+          {SHOWS.map(s => <Chip key={s} on={show === s} onClick={() => setShow(s)}>{t(s === 'awaiting' && whenBilled ? 'pt.tNoBill' : `pt.show.${s}`)}</Chip>)}
         </div>
 
         {err && <div role="alert" style={{ background: C.dangerSoft, color: C.danger, borderRadius: 14, padding: '12px 14px', fontSize: 16, fontWeight: 700, display: 'flex', gap: 10, alignItems: 'center' }}>

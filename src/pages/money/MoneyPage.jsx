@@ -9,6 +9,7 @@ import { C, FONT } from '../../components/saral/tokens';
 import { useToast, useViewport } from '../../components/saral/hooks';
 import BillsArea from './BillsArea';
 import CashBookArea from './CashBookArea';
+import OverviewArea from './OverviewArea';
 import { moneyRole } from './mnUtil';
 
 const BillingPage = React.lazy(() => import('../BillingPage'));
@@ -21,7 +22,7 @@ const PartnersPage = React.lazy(() => import('../partners/PartnersPage'));
  * the existing screens inside this menu until they are rebuilt in turn.
  */
 const AREAS = [
-  { id: 'overview', icon: '◎', roles: ['owner', 'acc'], old: 'ANALYTICS' },
+  { id: 'overview', icon: '◎', roles: ['owner', 'acc'] },
   { id: 'counter', icon: '₹', roles: ['owner', 'desk'] },
   { id: 'bills', icon: '▤', roles: ['owner', 'desk', 'acc'] },
   { id: 'book', icon: '⇅', roles: ['owner', 'acc'] },
@@ -80,10 +81,11 @@ export default function MoneyPage() {
         centre={activeCenter} printCtx={printCtx} toast={toast} vp={vp} />;
     }
     if (cur.id === 'book') return <CashBookArea role={role} toast={toast} vp={vp} />;
+    if (cur.id === 'overview') return <OverviewArea vp={vp} />;
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? 0 : '14px 22px' }}>
-        <div style={{ margin: vp.phone ? '10px 12px' : '0 0 12px', fontSize: 14, color: C.muted, background: 'white',
-          border: `1px dashed ${C.lineStrong}`, borderRadius: 12, padding: '8px 12px' }}>{t('mn.oldScreen')}</div>
+        {!cur.partners && <div style={{ margin: vp.phone ? '10px 12px' : '0 0 12px', fontSize: 14, color: C.muted, background: 'white',
+          border: `1px dashed ${C.lineStrong}`, borderRadius: 12, padding: '8px 12px' }}>{t('mn.oldScreen')}</div>}
         <React.Suspense fallback={<div style={{ padding: 20, color: C.faint }}>…</div>}>
           {cur.partners ? <PartnersPage /> : <BillingPage embedded initialView={cur.old} />}
         </React.Suspense>

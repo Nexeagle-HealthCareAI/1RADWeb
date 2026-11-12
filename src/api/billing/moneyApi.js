@@ -83,3 +83,9 @@ export const closeCashDay = async ({ date, noteCounts, differenceReason, note, f
     { suppressErrorToast: true });
   return res.data;
 };
+
+/** Money ▸ Overview for a period of India dates ('YYYY-MM-DD'). */
+export const fetchOverview = async (from, to) => {
+  const res = await apiClient.get('/finance/overview', { params: { from, to }, suppressErrorToast: true });
+  return res.data;
+};

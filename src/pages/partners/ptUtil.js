@@ -1,17 +1,33 @@
 /** Small helpers for the Partners screens. */
 
+// The centre's rule (Money ▸ Setup, migration 118): a share can be paid once the
+// bill is made (default), or only after the patient has paid in full. The Partners
+// page sets this from the server's answer before any sheet opens.
+let payWhenBilled = true;
+export function setPayWhenBilled(v) { payWhenBilled = v !== false; }
+export function getPayWhenBilled() { return payWhenBilled; }
+
 /**
  * Where one open commission row stands for the partner:
  *  'owed'    - a negative row: money the partner owes back (clawback, over-concession);
- *  'ready'   - can be paid now (patient paid the bill in full, or a manual line with no visit);
- *  'waiting' - the patient has not paid in full yet.
+ *  'ready'   - can be paid now (a bill exists — or is paid in full, under the stricter
+ *              rule — or a manual line with no visit);
+ *  'waiting' - not payable yet (no bill, or the patient hasn't paid under the stricter rule).
  * Same rule as the server's payout gate (PatientPaymentStatus.IsPayable).
  */
 export function rowState(r) {
   const amount = Number(r.amount || 0);
   if (amount < 0) return 'owed';
   if (!r.appointmentId) return 'ready';
-  return String(r.patientPaymentStatus || '').toUpperCase() === 'PAID' ? 'ready' : 'waiting';
+  const st = String(r.patientPaymentStatus || '').toUpperCase();
+  if (payWhenBilled) return ['PAID', 'PARTIAL', 'PENDING'].includes(st) ? 'ready' : 'waiting';
+  return st === 'PAID' ? 'ready' : 'waiting';
+}
+
+/** A payable row on a bill the patient hasn't paid in full yet. */
+export function patientOwes(r) {
+  const st = String(r.patientPaymentStatus || '').toUpperCase();
+  return Number(r.amount || 0) > 0 && !!r.appointmentId && (st === 'PARTIAL' || st === 'PENDING');
 }
 
 export function shortDate(v) {
