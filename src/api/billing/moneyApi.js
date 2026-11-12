@@ -63,3 +63,23 @@ export const askOwner = async ({ bill, centreDiscount, reason, title }) => {
   }, { suppressErrorToast: true });
   return res.data;
 };
+
+/** Money ▸ Cash book: one day's money (lines, totals by mode, its close, the opening float). */
+export const fetchCashDay = async (date) => {
+  const res = await apiClient.get('/finance/daybook', { params: { from: date, to: date }, suppressErrorToast: true });
+  return res.data;
+};
+
+/** The last `days` days up to `to`: closed or not, and what moved. */
+export const fetchDayStrip = async (to, days = 7) => {
+  const res = await apiClient.get('/finance/daybook/days', { params: { to, days }, suppressErrorToast: true });
+  return res.data;
+};
+
+/** Close a day by counting the drawer note by note. */
+export const closeCashDay = async ({ date, noteCounts, differenceReason, note, floatKept, handedTo }) => {
+  const res = await apiClient.post('/finance/daybook/close',
+    { date, countedCash: 0, note: note || null, noteCounts, differenceReason: differenceReason || null, floatKept, handedTo: handedTo || null },
+    { suppressErrorToast: true });
+  return res.data;
+};

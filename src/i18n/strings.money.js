@@ -3,6 +3,19 @@
 // have a native speaker check before a wide roll-out.
 
 export const en = {
+  'mn.cb.title': 'Cash book', 'mn.cb.help': 'Every rupee that moved, by day and by how it was paid. Close the day by counting the drawer.',
+  'mn.cb.open': 'Open — close it', 'mn.cb.matched': 'Closed · matched', 'mn.cb.short': 'Closed · {amount} short', 'mn.cb.over': 'Closed · {amount} over', 'mn.cb.nothing': 'Nothing moved',
+  'mn.cb.day': 'The day', 'mn.cb.in': 'in {amount}', 'mn.cb.out': 'out {amount}', 'mn.cb.all': 'All',
+  'mn.cb.k.BILL_PAYMENT': 'Bill paid', 'mn.cb.k.BILL_REFUND': 'Money given back', 'mn.cb.k.ADVANCE_IN': 'Advance taken', 'mn.cb.k.ADVANCE_REFUND': 'Advance returned',
+  'mn.cb.k.REFERRAL_PAYOUT': 'Partner payout', 'mn.cb.k.EXPENSE': 'Expense',
+  'mn.cb.none': 'No money moved on this day.', 'mn.cb.loadFailed': 'Could not load the cash book.',
+  'mn.cb.close': 'Close {date}', 'mn.cb.opening': 'Opening cash (left yesterday)', 'mn.cb.cashIn': 'Cash in', 'mn.cb.cashOut': 'Cash out', 'mn.cb.expected': 'Should be in the drawer',
+  'mn.cb.count': 'Count the drawer', 'mn.cb.coins': 'Coins (₹)', 'mn.cb.counted': 'Counted', 'mn.cb.diff.short': '{amount} short', 'mn.cb.diff.over': '{amount} over', 'mn.cb.diff.ok': 'Matches',
+  'mn.cb.why': 'Why is it different?', 'mn.cb.r.change': 'Change given wrongly', 'mn.cb.r.expense': 'Expense paid from drawer, not entered', 'mn.cb.r.count': 'Counting mistake', 'mn.cb.r.unknown': "Don't know", 'mn.cb.r.other': 'Other',
+  'mn.cb.keep': 'Keep in the drawer for tomorrow', 'mn.cb.keepNone': 'None', 'mn.cb.hand': 'Hand over {amount}', 'mn.cb.handTo': 'Handed to', 'mn.cb.h.owner': 'Owner', 'mn.cb.h.bank': 'Bank deposit',
+  'mn.cb.doClose': 'Close the day', 'mn.cb.pickReason': 'Pick a reason to close', 'mn.cb.closed': 'Day closed. {amount} handed over.', 'mn.cb.closeFailed': 'Could not close the day.',
+  'mn.cb.closedBy': 'Closed by {name} at {time}', 'mn.cb.locked': 'A closed day is locked. Money taken later is counted on the day it is taken.',
+  'mn.cb.recount': 'Count again', 'mn.cb.future': 'This day has not come yet.', 'mn.cb.kept': 'Kept for tomorrow', 'mn.cb.handed': 'Handed over',
   'mn.title': 'Money',
   'mn.nav.overview': 'Overview', 'mn.nav.counter': 'Today at the counter', 'mn.nav.bills': 'Bills', 'mn.nav.book': 'Cash book',
   'mn.nav.partners': 'Partners', 'mn.nav.exp': 'Expenses', 'mn.nav.reports': 'Reports', 'mn.nav.setup': 'Setup',
@@ -46,6 +59,19 @@ export const en = {
 };
 
 export const hi = {
+  'mn.cb.title': 'कैश बुक', 'mn.cb.help': 'हर रुपया जो आया-गया, दिन और तरीके के हिसाब से। दराज़ गिनकर दिन बंद करें।',
+  'mn.cb.open': 'खुला — बंद करें', 'mn.cb.matched': 'बंद · मिलान सही', 'mn.cb.short': 'बंद · {amount} कम', 'mn.cb.over': 'बंद · {amount} ज़्यादा', 'mn.cb.nothing': 'कोई लेन-देन नहीं',
+  'mn.cb.day': 'पूरा दिन', 'mn.cb.in': 'आए {amount}', 'mn.cb.out': 'गए {amount}', 'mn.cb.all': 'सभी',
+  'mn.cb.k.BILL_PAYMENT': 'बिल का पैसा', 'mn.cb.k.BILL_REFUND': 'पैसा लौटाया', 'mn.cb.k.ADVANCE_IN': 'एडवांस लिया', 'mn.cb.k.ADVANCE_REFUND': 'एडवांस लौटाया',
+  'mn.cb.k.REFERRAL_PAYOUT': 'पार्टनर को भुगतान', 'mn.cb.k.EXPENSE': 'खर्च',
+  'mn.cb.none': 'इस दिन कोई लेन-देन नहीं हुआ।', 'mn.cb.loadFailed': 'कैश बुक नहीं खुली।',
+  'mn.cb.close': '{date} बंद करें', 'mn.cb.opening': 'शुरुआती नकद (कल छोड़ा)', 'mn.cb.cashIn': 'नकद आया', 'mn.cb.cashOut': 'नकद गया', 'mn.cb.expected': 'दराज़ में होना चाहिए',
+  'mn.cb.count': 'दराज़ गिनें', 'mn.cb.coins': 'सिक्के (₹)', 'mn.cb.counted': 'गिना', 'mn.cb.diff.short': '{amount} कम', 'mn.cb.diff.over': '{amount} ज़्यादा', 'mn.cb.diff.ok': 'मिलान सही',
+  'mn.cb.why': 'अंतर क्यों है?', 'mn.cb.r.change': 'छुट्टा गलत दिया', 'mn.cb.r.expense': 'दराज़ से खर्च हुआ, दर्ज नहीं', 'mn.cb.r.count': 'गिनती में गलती', 'mn.cb.r.unknown': 'पता नहीं', 'mn.cb.r.other': 'अन्य',
+  'mn.cb.keep': 'कल के लिए दराज़ में रखें', 'mn.cb.keepNone': 'कुछ नहीं', 'mn.cb.hand': '{amount} सौंपें', 'mn.cb.handTo': 'किसे सौंपा', 'mn.cb.h.owner': 'मालिक', 'mn.cb.h.bank': 'बैंक में जमा',
+  'mn.cb.doClose': 'दिन बंद करें', 'mn.cb.pickReason': 'बंद करने के लिए कारण चुनें', 'mn.cb.closed': 'दिन बंद हुआ। {amount} सौंपे गए।', 'mn.cb.closeFailed': 'दिन बंद नहीं हो सका।',
+  'mn.cb.closedBy': '{name} ने {time} बजे बंद किया', 'mn.cb.locked': 'बंद दिन बदला नहीं जाता। बाद में मिला पैसा उसी दिन गिना जाता है जिस दिन मिला।',
+  'mn.cb.recount': 'फिर से गिनें', 'mn.cb.future': 'यह दिन अभी आया नहीं।', 'mn.cb.kept': 'कल के लिए रखा', 'mn.cb.handed': 'सौंपा',
   'mn.title': 'पैसा',
   'mn.nav.overview': 'सारांश', 'mn.nav.counter': 'आज काउंटर पर', 'mn.nav.bills': 'बिल', 'mn.nav.book': 'कैश बुक',
   'mn.nav.partners': 'पार्टनर', 'mn.nav.exp': 'खर्च', 'mn.nav.reports': 'रिपोर्ट', 'mn.nav.setup': 'सेटअप',
@@ -89,6 +115,19 @@ export const hi = {
 };
 
 export const bn = {
+  'mn.cb.title': 'ক্যাশ বই', 'mn.cb.help': 'যত টাকা এল-গেল, দিন আর উপায় অনুযায়ী। ড্রয়ার গুনে দিন বন্ধ করুন।',
+  'mn.cb.open': 'খোলা — বন্ধ করুন', 'mn.cb.matched': 'বন্ধ · মিলেছে', 'mn.cb.short': 'বন্ধ · {amount} কম', 'mn.cb.over': 'বন্ধ · {amount} বেশি', 'mn.cb.nothing': 'কোনো লেনদেন নেই',
+  'mn.cb.day': 'পুরো দিন', 'mn.cb.in': 'এসেছে {amount}', 'mn.cb.out': 'গেছে {amount}', 'mn.cb.all': 'সব',
+  'mn.cb.k.BILL_PAYMENT': 'বিলের টাকা', 'mn.cb.k.BILL_REFUND': 'টাকা ফেরত', 'mn.cb.k.ADVANCE_IN': 'অ্যাডভান্স নেওয়া', 'mn.cb.k.ADVANCE_REFUND': 'অ্যাডভান্স ফেরত',
+  'mn.cb.k.REFERRAL_PAYOUT': 'পার্টনারকে দেওয়া', 'mn.cb.k.EXPENSE': 'খরচ',
+  'mn.cb.none': 'এই দিনে কোনো লেনদেন হয়নি।', 'mn.cb.loadFailed': 'ক্যাশ বই খোলা গেল না।',
+  'mn.cb.close': '{date} বন্ধ করুন', 'mn.cb.opening': 'শুরুর নগদ (গতকাল রাখা)', 'mn.cb.cashIn': 'নগদ এসেছে', 'mn.cb.cashOut': 'নগদ গেছে', 'mn.cb.expected': 'ড্রয়ারে থাকা উচিত',
+  'mn.cb.count': 'ড্রয়ার গুনুন', 'mn.cb.coins': 'কয়েন (₹)', 'mn.cb.counted': 'গোনা হয়েছে', 'mn.cb.diff.short': '{amount} কম', 'mn.cb.diff.over': '{amount} বেশি', 'mn.cb.diff.ok': 'মিলেছে',
+  'mn.cb.why': 'পার্থক্য কেন?', 'mn.cb.r.change': 'খুচরো ভুল দেওয়া', 'mn.cb.r.expense': 'ড্রয়ার থেকে খরচ, লেখা হয়নি', 'mn.cb.r.count': 'গোনায় ভুল', 'mn.cb.r.unknown': 'জানি না', 'mn.cb.r.other': 'অন্য',
+  'mn.cb.keep': 'কালকের জন্য ড্রয়ারে রাখুন', 'mn.cb.keepNone': 'কিছু না', 'mn.cb.hand': '{amount} জমা দিন', 'mn.cb.handTo': 'কাকে দেওয়া হল', 'mn.cb.h.owner': 'মালিক', 'mn.cb.h.bank': 'ব্যাংকে জমা',
+  'mn.cb.doClose': 'দিন বন্ধ করুন', 'mn.cb.pickReason': 'বন্ধ করতে কারণ বাছুন', 'mn.cb.closed': 'দিন বন্ধ হয়েছে। {amount} জমা দেওয়া হয়েছে।', 'mn.cb.closeFailed': 'দিন বন্ধ করা গেল না।',
+  'mn.cb.closedBy': '{name} {time}-এ বন্ধ করেছেন', 'mn.cb.locked': 'বন্ধ দিন বদলানো যায় না। পরে পাওয়া টাকা যেদিন পাওয়া সেদিনই গোনা হয়।',
+  'mn.cb.recount': 'আবার গুনুন', 'mn.cb.future': 'এই দিন এখনও আসেনি।', 'mn.cb.kept': 'কালকের জন্য রাখা', 'mn.cb.handed': 'জমা দেওয়া',
   'mn.title': 'টাকা',
   'mn.nav.overview': 'সারাংশ', 'mn.nav.counter': 'আজ কাউন্টারে', 'mn.nav.bills': 'বিল', 'mn.nav.book': 'ক্যাশ বই',
   'mn.nav.partners': 'পার্টনার', 'mn.nav.exp': 'খরচ', 'mn.nav.reports': 'রিপোর্ট', 'mn.nav.setup': 'সেটআপ',

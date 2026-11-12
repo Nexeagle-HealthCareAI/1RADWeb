@@ -8,6 +8,7 @@ import { Chip } from '../../components/saral/Saral';
 import { C, FONT } from '../../components/saral/tokens';
 import { useToast, useViewport } from '../../components/saral/hooks';
 import BillsArea from './BillsArea';
+import CashBookArea from './CashBookArea';
 import { moneyRole } from './mnUtil';
 
 const BillingPage = React.lazy(() => import('../BillingPage'));
@@ -23,7 +24,7 @@ const AREAS = [
   { id: 'overview', icon: '◎', roles: ['owner', 'acc'], old: 'ANALYTICS' },
   { id: 'counter', icon: '₹', roles: ['owner', 'desk'] },
   { id: 'bills', icon: '▤', roles: ['owner', 'desk', 'acc'] },
-  { id: 'book', icon: '⇅', roles: ['owner', 'acc'], old: 'DAYBOOK' },
+  { id: 'book', icon: '⇅', roles: ['owner', 'acc'] },
   { id: 'partners', icon: '⚭', roles: ['owner', 'acc'], partners: true },
   { id: 'exp', icon: '⊖', roles: ['owner', 'acc'], old: 'EXPENSES' },
   { id: 'reports', icon: '⤓', roles: ['owner', 'acc'], old: 'CREDIT_NOTES' },
@@ -78,6 +79,7 @@ export default function MoneyPage() {
       return <BillsArea key={cur.id} counter={cur.id === 'counter'} role={role} settings={settings}
         centre={activeCenter} printCtx={printCtx} toast={toast} vp={vp} />;
     }
+    if (cur.id === 'book') return <CashBookArea role={role} toast={toast} vp={vp} />;
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? 0 : '14px 22px' }}>
         <div style={{ margin: vp.phone ? '10px 12px' : '0 0 12px', fontSize: 14, color: C.muted, background: 'white',
