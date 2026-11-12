@@ -4,6 +4,9 @@ import * as XLSX from 'xlsx-js-style';
 import apiClient from '../../api/apiClient';
 import { notifyToast } from '../../utils/toast';
 import { payCommissions, fetchCommissions } from '../../api/billing/payoutApi';
+import PayoutTaxPanel from './PayoutTaxPanel';
+import useAuth from '../../auth/useAuth';
+import { useBillingSettings } from '../../api/billing/billingSettingsApi';
 
 const getIstDateStr = (iso) => {
   if (!iso) return null;
@@ -23,7 +26,7 @@ const isSelfReferrer = (name) => String(name || '').trim().toLowerCase() === 'se
 const eligibilityLabel = (cut) => {
   if (cut?.status === 'PAID') return 'Settled';
   if ((Number(cut?.amount) || 0) <= 0) return 'Deficit';
-  return (cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL') ? 'Eligible' : 'Non-eligible';
+  return cut?.patientPaymentStatus === 'PAID' ? 'Eligible' : 'Non-eligible';
 };
 
 // A cancelled commission is not part of any payout figure. Appointment-lifecycle
@@ -63,7 +66,7 @@ const groupCutsByPartner = (cuts) => {
     } else {
       g.unpaid += amt;
       if (amt > 0) {
-        const patientPaid = cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL';
+        const patientPaid = cut?.patientPaymentStatus === 'PAID';
         if (patientPaid) g.eligible += amt; else g.awaiting += amt;
       }
     }
@@ -200,25 +203,21 @@ const ReferralHub = ({
   // refreshes whenever the page reloads its finance data (e.g. after a payout).
   const referralStats = useMemo(() => {
     const cuts = (presentCuts || []).filter(c => !isCancelledCut(c));
-    // A commission is ELIGIBLE to pay out once the patient has paid anything
-    // (full PAID or part PARTIAL); otherwise it's AWAITING the patient's payment
-    // and not yet payable. Carried deficits (amount ≤ 0) aren't a payable.
-    const received = (c) => c?.patientPaymentStatus === 'PAID' || c?.patientPaymentStatus === 'PARTIAL';
-    let total = 0, paid = 0, unpaid = 0, eligibleToPay = 0, awaitingPatient = 0, eligiblePartial = 0;
+    // A commission is ELIGIBLE to pay out once the patient has paid in full;
+    // otherwise (nothing or part paid) it's AWAITING the patient's payment.
+    // Carried deficits (amount ≤ 0) aren't a payable.
+    const received = (c) => c?.patientPaymentStatus === 'PAID';
+    let total = 0, paid = 0, unpaid = 0, eligibleToPay = 0, awaitingPatient = 0;
     cuts.forEach(c => {
       const amt = Number(c?.amount) || 0;
       total += amt;
       if (c.status === 'PAID') { paid += amt; return; }
       unpaid += amt;
       if (amt <= 0) return;
-      if (received(c)) {
-        eligibleToPay += amt;
-        if (c?.patientPaymentStatus === 'PARTIAL') eligiblePartial += amt;
-      } else {
-        awaitingPatient += amt;
-      }
+      if (received(c)) eligibleToPay += amt;
+      else awaitingPatient += amt;
     });
-    return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient, eligiblePartial };
+    return { total, paid, unpaid, count: cuts.length, eligibleToPay, awaitingPatient };
   }, [presentCuts]);
 
   const [settlementFilter, setSettlementFilter] = useState(['ALL']);
@@ -283,6 +282,12 @@ const ReferralHub = ({
     showReferrerDropdown: false,
   });
   const [payeeFormErrors, setPayeeFormErrors] = useState({});
+  // Review R10/R12: payout mode, reference and TDS.
+  // The default TDS type, and whether TDS applies at all, come from Admin → Tax & billing.
+  const { activeCenter: taxCentre } = useAuth() || {};
+  const taxSettings = useBillingSettings(taxCentre?.id);
+  const defaultTdsCategory = taxSettings?.tdsEnabled === false ? 'NONE' : (taxSettings?.defaultTdsCategory || 'COMMISSION');
+  const [payoutTax, setPayoutTax] = useState({ mode: 'CASH', reference: '', tdsCategory: 'COMMISSION', pan: '' });
   const [isPaying, setIsPaying] = useState(false);
 
   // Clear selections on filter adjustments
@@ -350,12 +355,10 @@ const ReferralHub = ({
     });
   };
 
-  // A referrer commission becomes payable as soon as the patient has paid
-  // ANYTHING towards their invoice — full (PAID) or part (PARTIAL). We only keep
-  // the block when no payment has been received yet, so collecting at the
-  // Revenue Hub immediately unblocks the payout here.
-  const isPatientPaymentReceived = (cut) =>
-    cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL';
+  // A referrer commission becomes payable once the patient has paid the bill in
+  // full (the server enforces the same rule). Settling the bill at the Revenue Hub
+  // unblocks the payout here.
+  const isPatientPaymentReceived = (cut) => cut?.patientPaymentStatus === 'PAID';
 
   // Only cuts that are genuinely eligible for bulk mark-as-paid drive "Select All".
   // Criteria must mirror openBulkPaidConfirm exactly so count/total in the popup
@@ -397,6 +400,7 @@ const ReferralHub = ({
       referrerSearchTerm: '',
       showReferrerDropdown: false,
     }));
+    setPayoutTax({ mode: 'CASH', reference: '', tdsCategory: defaultTdsCategory, pan: (partnerRef?.pan || '').toUpperCase() });
     setPayeeFormErrors({});
     const partnerId = activePartnerId;
     setBulkConfirmModal({
@@ -450,12 +454,19 @@ const ReferralHub = ({
         payeeEmail: payeeForm.payeeEmail.trim(),
         payeeAddress: payeeForm.payeeAddress.trim(),
         netDeficits: !!bulkConfirmModal.netDeficits && (bulkConfirmModal.deficit || 0) > 0,
+        tdsCategory: payoutTax.tdsCategory,
+        payeePan: payoutTax.pan || null,
+        mode: payoutTax.mode,
+        reference: payoutTax.reference.trim() || null,
       });
       const paidCount = result?.paid?.length || 0;
       const skipped = (result?.skipped || []).filter(x => !/already paid/i.test(x.reason || ''));
       if (paidCount > 0) {
         const recovered = Number(result.deficitRecovered || 0);
-        notifyToast(recovered > 0
+        const tds = Number(result.tdsDeducted || 0);
+        const number = (result.payouts || []).map(x => x.payoutNumber).filter(Boolean).join(', ');
+        if (tds > 0) notifyToast(`Payout ${number} recorded: ₹${Number(result.totalPaid || 0).toLocaleString()} commission, ₹${tds.toLocaleString()} TDS deducted${recovered > 0 ? `, ₹${recovered.toLocaleString()} deficit recovered` : ''} — hand over ₹${Number(result.netPaid || 0).toLocaleString()}.`, 'success');
+        else notifyToast(recovered > 0
           ? `Payout recorded: ₹${Number(result.totalPaid || 0).toLocaleString()} settled, ₹${recovered.toLocaleString()} deficit recovered — hand over ₹${Number(result.netPaid || 0).toLocaleString()}.`
           : `Recorded payout of ₹${Number(result.totalPaid || 0).toLocaleString()} across ${paidCount} commission${paidCount === 1 ? '' : 's'}.`, 'success');
       }
@@ -475,6 +486,36 @@ const ReferralHub = ({
     handleToggleCommissionStatus(null, '__SKIP__');
     setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' });
     setDrawerSelectedIds(new Set());
+  };
+
+  // Review R10: the partner's payouts for a financial year with gross, TDS and net —
+  // for the centre's TDS return and to give the payee a statement.
+  const currentFy = () => {
+    const ist = new Date(Date.now() + 330 * 60000);
+    const y = ist.getUTCMonth() >= 3 ? ist.getUTCFullYear() : ist.getUTCFullYear() - 1;
+    return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
+  };
+  const handleTdsStatement = async () => {
+    if (!activePartnerId) return;
+    const fy = currentFy();
+    try {
+      const { data } = await apiClient.get(`/referrers/${activePartnerId}/tds-statement`, { params: { fy } });
+      const rows = (data.lines || []).map(l => ({
+        'Payout No': l.payoutNumber || '(before payout records)',
+        'Paid on': new Date(/[zZ]$/.test(l.paidAt) ? l.paidAt : `${l.paidAt}Z`).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
+        'Mode': l.mode, 'Reference': l.reference || '',
+        'Commission (₹)': l.gross, 'Deficit recovered (₹)': l.deficitRecovered,
+        'TDS category': l.tdsCategory, 'TDS rate (%)': l.tdsRate, 'TDS (₹)': l.tdsAmount, 'Net paid (₹)': l.net,
+      }));
+      rows.push({ 'Payout No': 'TOTAL', 'Commission (₹)': data.gross, 'TDS (₹)': data.tdsAmount, 'Net paid (₹)': data.net });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `TDS ${fy}`);
+      const safe = String(data.payeeName || 'partner').replace(/[^A-Za-z0-9]+/g, '_');
+      XLSX.writeFile(wb, `1RAD_TDS_${safe}_${fy}${data.pan ? `_${data.pan}` : ''}.xlsx`);
+    } catch (e) {
+      notifyToast(e?.response?.data?.message || 'Could not download the TDS statement.', 'error');
+    }
   };
 
   const handleBulkExport = () => {
@@ -1077,7 +1118,7 @@ const ReferralHub = ({
              <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#1d4ed8', letterSpacing: '1px', marginBottom: '8px' }}>READY TO PAY</div>
              <div style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 950, color: '#1e3a8a' }}>₹{referralStats.eligibleToPay.toLocaleString()}</div>
              <div style={{ fontSize: '9px', fontWeight: 700, color: '#60a5fa', marginTop: '6px', lineHeight: 1.4 }}>
-               Patient has paid{referralStats.eligiblePartial > 0 ? ` · includes ₹${referralStats.eligiblePartial.toLocaleString()} from part-paid` : ''}
+               Patient has paid in full
              </div>
           </div>
 
@@ -1369,6 +1410,13 @@ const ReferralHub = ({
                 aria-label="Close"
                 style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: '34px', height: '34px', borderRadius: '50%', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
               >×</button>
+            </div>
+
+            <div style={{ padding: '8px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={handleTdsStatement}
+                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', color: '#334155', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}>
+                🧾 TDS STATEMENT · FY {currentFy()}
+              </button>
             </div>
 
             {/* Bulk action bar */}
@@ -1885,6 +1933,15 @@ const ReferralHub = ({
                   </div>
                 </div>
               </div>
+
+              <PayoutTaxPanel
+                commissionIds={bulkConfirmModal.eligibleIds}
+                netDeficits={!!bulkConfirmModal.netDeficits && (bulkConfirmModal.deficit || 0) > 0}
+                payeeName={payeeForm.payeeName}
+                value={payoutTax}
+                onChange={setPayoutTax}
+                tdsEnabled={taxSettings?.tdsEnabled !== false}
+              />
 
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button

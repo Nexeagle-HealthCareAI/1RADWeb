@@ -1,3 +1,4 @@
+import { liveAwareInterval, onLive, LIVE_EVENTS } from '../live/liveUpdates';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
@@ -196,9 +197,13 @@ export default function StudiesPage() {
   });
   useEffect(() => {
     if (!anyProcessing) return;
-    const t = setInterval(() => fetchStudies({ silent: true }), 4000);
-    return () => clearInterval(t);
+    // Live channel up → extraction progress arrives as 'studies' pushes; the 4 s poll
+    // becomes a 30 s safety net.
+    return liveAwareInterval(() => fetchStudies({ silent: true }), 4000, 30_000);
   }, [anyProcessing, fetchStudies]);
+
+  // New uploads / assignments from other screens or the DICOM bridge.
+  useEffect(() => onLive(LIVE_EVENTS.studies, () => fetchStudies({ silent: true })), [fetchStudies]);
 
   // ── Upload ────────────────────────────────────────────────────────────────
   const handleFiles = useCallback(async (fileList) => {

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { chooseEngine } from './speechEngine';
+import { notifyToast } from '../../../utils/toast';
 import { applyCorrections, getGrammarText, warmVoiceData } from '../../../data/voiceCorrections';
 
 /**
@@ -16,14 +18,18 @@ export function isVoiceSupported() {
  * rather than data-driven. They run AFTER the JSON misheard→correct
  * corrections so a 58-pair fix can't accidentally clobber "full stop".
  */
+// "colon" and "period" are NOT commands on their own — they are anatomy and
+// clinical words ("sigmoid colon", "a period of 3 months") and used to turn
+// into ":" / "." mid-sentence. Say "full stop", "insert period" or
+// "insert colon" for the punctuation.
 const VOICE_COMMANDS = [
   [/\bfull stop\b/gi,      '.'],
-  [/\bperiod\b/gi,         '.'],
+  [/\binsert period\b/gi,  '.'],
   [/\bcomma\b/gi,          ','],
   [/\bsemicolon\b/gi,      ';'],
-  [/\bcolon\b/gi,          ':'],
+  [/\binsert colon\b/gi,   ':'],
   [/\bquestion mark\b/gi,  '?'],
-  [/\bexclamation\b/gi,    '!'],
+  [/\bexclamation mark\b/gi, '!'],
   [/\bopen bracket\b/gi,   '('],
   [/\bclose bracket\b/gi,  ')'],
   [/\bnew line\b/gi,       '\n'],
@@ -78,6 +84,9 @@ function postProcess(text) {
   // dictionary hasn't loaded yet), run the tiny hardcoded list too. Idempotent.
   for (const [re, sub] of HARDCODED_FALLBACK) out = out.replace(re, sub);
   for (const [re, sub] of VOICE_COMMANDS) out = out.replace(re, sub);
+  // Spoken punctuation arrives space-padded ("clear . heart") — attach it to
+  // the word before, and open brackets to the word after.
+  out = out.replace(/[ \t]+([.,;:?!)])/g, '$1').replace(/\([ \t]+/g, '(');
   return out;
 }
 
@@ -89,11 +98,15 @@ function postProcess(text) {
  *   - active: boolean
  *   - toggle(): function — start if stopped, stop if started
  *   - stop(): function
+ *   - mode: 'local' (on this computer) | 'cloud' (browser's cloud service,
+ *     only when the centre allows it) | null
  *
  * When a phrase finalises, calls `onResult(text)` with post-processed text.
  */
 export function useVoiceDictation({ onResult, onInterim, onCommand, lang = 'en-US' } = {}) {
   const [active, setActive] = useState(false);
+  const [mode, setMode] = useState(null);
+  const startingRef = useRef(false);
   const recogRef = useRef(null);
   const supported = isVoiceSupported();
 
@@ -116,14 +129,34 @@ export function useVoiceDictation({ onResult, onInterim, onCommand, lang = 'en-U
   const activeRef = useRef(active);
   useEffect(() => { activeRef.current = active; }, [active]);
 
-  const start = useCallback(() => {
-    if (!supported) return;
+  const start = useCallback(async () => {
+    if (!supported || startingRef.current) return;
+    startingRef.current = true;
     // Warm the corrections + grammar files. Fire-and-forget — the engine
     // starts immediately; corrections apply as soon as the JSON arrives.
     warmVoiceData();
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    // On this computer when possible; the cloud only if the centre allows it.
+    let engine;
+    try {
+      engine = await chooseEngine(SR, lang, {
+        onInstalling: () => notifyToast('Getting voice typing ready on this computer (one-time download)…', 'info', { duration: 6000 }),
+      });
+    } finally {
+      startingRef.current = false;
+    }
+    if (engine.mode === 'blocked') {
+      notifyToast({ title: 'Voice typing not available', message: engine.message }, 'warning', { duration: 9000 });
+      setMode(null);
+      return;
+    }
+
     const r = new SR();
     r.lang = lang;
+    // Explicit either way: true keeps the audio on the computer; false is
+    // only reached when the centre has allowed cloud dictation.
+    try { r.processLocally = engine.mode === 'local'; } catch { /* older engines */ }
     r.continuous = true;
     r.interimResults = true; // live — emit partial text as the user speaks
     r.maxAlternatives = 1;
@@ -188,6 +221,7 @@ export function useVoiceDictation({ onResult, onInterim, onCommand, lang = 'en-U
     try {
       r.start();
       recogRef.current = r;
+      setMode(engine.mode);
       setActive(true);
     } catch (err) {
       console.warn('[VoiceDictation] start failed:', err);
@@ -202,5 +236,5 @@ export function useVoiceDictation({ onResult, onInterim, onCommand, lang = 'en-U
   // Cleanup on unmount
   useEffect(() => () => stop(), [stop]);
 
-  return { supported, active, toggle, stop, start };
+  return { supported, active, toggle, stop, start, mode };
 }

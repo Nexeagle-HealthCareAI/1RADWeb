@@ -57,7 +57,7 @@ function resolvePackTest(modalityRaw, serviceRaw) {
  * applied until the radiologist accepts). Moved verbatim from ReportingPage.
  * Editor I/O + notify are injected so the hook is page-agnostic.
  */
-export default function useReportAi({ activeService, activeAppointment, appointmentId, editorRef, applyEditorContent, showNotif }) {
+export default function useReportAi({ activeService, activeAppointment, appointmentId, imagingStudyId = null, editorRef, applyEditorContent, showNotif }) {
   // Inline AI co-pilot — improve / proofread / expand / shorten a selection,
   // or generate an impression from the findings. Returns HTML or throws with a
   // friendly message (the editor surfaces it).
@@ -65,13 +65,13 @@ export default function useReportAi({ activeService, activeAppointment, appointm
     const study = activeService?.serviceName || activeAppointment?.service || '';
     const modality = activeService?.modality || activeAppointment?.modality || '';
     const context = (study || modality) ? `Study/Service: ${study} (${modality}).` : '';
-    // appointmentId lets the server de-identify (name/PTID/phone) before the
-    // text reaches Gemini — PHI never leaves our API.
-    const res = await apiClient.post('/reporting/ai-assist', { action, text, context, appointmentId });
+    // appointmentId / imagingStudyId let the server mask the patient's
+    // identifiers before anything reaches the AI provider.
+    const res = await apiClient.post('/reporting/ai-assist', { action, text, context, appointmentId: appointmentId || null, imagingStudyId });
     const data = res?.data || {};
     if (data.success && data.html) return sanitizeReportHtml(data.html);
     throw new Error(data.error || data.message || 'AI request failed.');
-  }, [activeService, activeAppointment, appointmentId]);
+  }, [activeService, activeAppointment, appointmentId, imagingStudyId]);
 
   // Whole-report AI (restructure / spelling). Runs on the FULL report, then
   // shows a before/after review — nothing is applied until the radiologist
@@ -117,7 +117,8 @@ export default function useReportAi({ activeService, activeAppointment, appointm
         testCode: pack.testCode,
         houseSpelling: 'UK',
         assumeUnmentionedNormal: false,
-        appointmentId,
+        appointmentId: appointmentId || null,
+        imagingStudyId,
       });
       const body = res?.data || {};
       if (!body.success || !body.html) throw new Error(body.error || 'Formatter returned nothing.');
@@ -132,7 +133,7 @@ export default function useReportAi({ activeService, activeAppointment, appointm
       showNotif('info', 'USING QUICK CLEANUP', 'Detailed formatter unavailable — running quick cleanup instead.');
       runWholeReportAi('polish');
     }
-  }, [appointmentId, runWholeReportAi]);
+  }, [appointmentId, imagingStudyId, runWholeReportAi]);
 
   const runRadAiCleanup = useCallback(() => {
     const modality = activeService?.modality || activeAppointment?.modality || '';

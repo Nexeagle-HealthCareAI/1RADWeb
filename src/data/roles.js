@@ -23,9 +23,9 @@ export const ROLE_HOME = {
   admindoctor: '/admin-board',
   admin: '/admin-board',
   receptionist: '/appointment-board',
-  technician: '/technician',
+  technician: '/doctor-board', // Scan room removed (Nov 2026): technicians land on Reporting
   doctor: '/doctor-board',
-  accountant: '/billing',
+  accountant: '/money',
 };
 
 // Sidebar navigation items with strict RBAC.
@@ -39,16 +39,29 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    label: 'Appointments',
+    // The appointment screen, called Front desk. Custom roles saved while the simple
+    // Front desk screen existed (route /front-desk) still open it (accessVia).
+    label: 'Front desk',
     route: '/appointment-board',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
     requiredModule: 'RIS',
+    accessVia: ['/front-desk'],
   },
   {
-    label: 'Billing',
-    route: '/billing',
-    allowedRoles: ['admindoctor', 'admin', 'accountant'],
+    // Money (redesign, Nov 2026): one menu for bills, the counter, cash book,
+    // partners, expenses, reports and setup. Each role sees its own part of it.
+    // Custom roles saved with the old Billing page (/billing) still open it.
+    label: 'Money',
+    route: '/money',
+    allowedRoles: ['admindoctor', 'admin', 'accountant', 'receptionist'],
     requiredModule: 'RIS',
+    accessVia: ['/billing'],
+  },
+  {
+    // Owner board (Nov 2026): every centre the owner runs, on one screen. Owners only.
+    label: 'Owner board',
+    route: '/owner',
+    allowedRoles: ['admindoctor', 'admin'],
   },
   {
     label: 'Admin Approval',
@@ -56,15 +69,18 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    label: 'Imaging',
-    route: '/technician',
-    allowedRoles: ['admindoctor', 'technician'],
-    requiredModule: 'RIS',
-  },
-  {
     label: 'Reporting',
     route: '/doctor-board',
     allowedRoles: ['admindoctor', 'doctor', 'technician'],
+  },
+  {
+    // Partners and payouts in the simple look (UI review, round 3). Anyone who may open
+    // the Referrals page or Billing may open it (accessVia), so custom roles keep working.
+    label: 'Partners & payouts',
+    route: '/partners',
+    allowedRoles: ['admindoctor', 'admin', 'accountant'],
+    requiredModule: 'RIS',
+    accessVia: ['/referrals', '/billing'],
   },
   {
     label: 'Referral Incentives',
@@ -107,12 +123,12 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  admin: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  receptionist: ['/appointment-board', '/operations-board', '/studies'],
-  technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  receptionist: ['/appointment-board', '/operations-board', '/studies', '/money'],
+  technician: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
   doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
-  accountant: ['/billing', '/operations-board'],
+  accountant: ['/billing', '/money', '/partners', '/operations-board'],
 };
 
 export const getCustomRoles = (hospitalId) => {

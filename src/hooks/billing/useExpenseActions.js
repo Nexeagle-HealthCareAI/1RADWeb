@@ -259,36 +259,17 @@ export const useExpenseActions = ({
       return;
     }
 
-    let hospitalPayload;
-    try {
-      const res = await apiClient.get(`/hospitals/${targetHubId}`);
-      hospitalPayload = {
-        hospitalName: res.data.hospitalName || res.data.HospitalName || activeCenter.name || '',
-        hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
-        gstin: res.data.gstin || res.data.GSTIN || '',
-        registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
-        pan: res.data.pan || res.data.PAN || '',
-        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
-        isAutoBillingEnabled: newAutoBill,
-      };
-    } catch {
-      hospitalPayload = {
-        hospitalName: activeCenter.name || '',
-        hospitalAddress: '',
-        gstin: '', registrationNumber: '', pan: '', nabhNumber: '',
-        isAutoBillingEnabled: newAutoBill,
-      };
-    }
-
+    // Review B9: send only the flag. The old full-record PUT blanked GSTIN/PAN/address
+    // whenever the preceding GET failed.
     if (!isOnline) {
-      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...hospitalPayload });
+      await addToOutbox('HOSPITAL_AUTOBILL', { id: targetHubId, enabled: newAutoBill });
       notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       return;
     }
 
     try {
-      await apiClient.put(`/hospitals/${targetHubId}`, hospitalPayload);
+      await apiClient.put(`/hospitals/${targetHubId}/auto-billing`, { enabled: newAutoBill });
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       notifyToast({
         title: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'}`,
@@ -299,7 +280,7 @@ export const useExpenseActions = ({
     } catch (err) {
       console.error('[FINANCE] Auto-billing toggle failed', err);
       if (!err.response) {
-        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...hospitalPayload });
+        await addToOutbox('HOSPITAL_AUTOBILL', { id: targetHubId, enabled: newAutoBill });
         notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
         setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       } else {

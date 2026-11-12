@@ -1,3 +1,4 @@
+import { liveAwareInterval } from '../live/liveUpdates';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useSourceVisits from '../hooks/useSourceVisits';
@@ -140,7 +141,7 @@ export default function ReferralsPage() {
   );
   const buildDoctorLink = async (referrerId) => {
     const { data } = await apiClient.get(`/referrers/${referrerId}/share-link`);
-    return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
+    return `${window.location.origin}/r/${referrerId}#t=${data.token}`; // review R23: token in the fragment, never sent to a server
   };
   // Pull back every portal link ever issued for this doctor (a forwarded message, a
   // lost phone, a doctor who left). Old links stop working immediately; links copied or
@@ -624,7 +625,12 @@ export default function ReferralsPage() {
       degree: isDoctor ? (editingReferrer.degree || '') : '',
       isDoctor,
       supportedByDoctor: isDoctor ? '' : (editingReferrer.supportedByDoctor || ''),
+      pan: (editingReferrer.pan || '').toUpperCase(),
     };
+    if (profile.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(profile.pan)) {
+      notifyToast('PAN should look like ABCDE1234F.', 'error');
+      return;
+    }
 
     try {
       setIsSavingReferrer(true);
@@ -787,9 +793,11 @@ export default function ReferralsPage() {
   // without a manual reload).
   useEffect(() => {
     const tick = () => { if (!document.hidden) fetchReferralIntelligence(null, null, false, { silent: true }); };
-    const id = setInterval(tick, 90_000);
+    // Live channel up → pushed finance changes bump financeRev (refetch above); this
+    // 90 s poll becomes a 5-minute safety net.
+    const stopPoll = liveAwareInterval(tick, 90_000);
     document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+    return () => { stopPoll(); document.removeEventListener('visibilitychange', tick); };
   }, [fetchReferralIntelligence]);
 
   // Doctor Links tab: show when each doctor's link was sent / expires / renews.

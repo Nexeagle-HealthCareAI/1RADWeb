@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAppointments } from '../context/AppointmentContext';
+import { useAppointments, toUiStatus } from '../context/AppointmentContext';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
 import apiClient from '../api/apiClient';
 import { 
@@ -193,7 +193,7 @@ export default function AppointmentsScreen({ navigation }) {
           mobile: patients.find(p => p.id === apt.patientId)?.phone || 'N/A',
           patientAge: 'N/A', // Update if DTO includes age
           patientGender: 'N/A', // Update if DTO includes gender
-          status: (apt.status || 'scheduled').toLowerCase(), // Ensure lowercase for consistency
+          status: toUiStatus(apt.status), // API BOOKED/CONFIRMED/… → screen vocabulary
           modality: apt.modality || 'X-RAY',
           service: apt.service || 'General Service',
           doctor: apt.doctor || 'Unassigned',
@@ -248,7 +248,10 @@ export default function AppointmentsScreen({ navigation }) {
     if (action === 'CANCEL') newStatus = 'cancelled';
 
     try {
-      await updateAppointment(app.id, { status: newStatus });
+      const result = await updateAppointment(app.id, { status: newStatus });
+      if (result && result.success === false) {
+        Alert.alert('Could not update', result.error || 'Failed to update appointment status');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to update appointment status');
     }
@@ -389,7 +392,7 @@ export default function AppointmentsScreen({ navigation }) {
             value={readyCount}
             icon={Shield}
             gradient={['#667eea', '#764ba2']}
-            onPress={() => setFilters({ ...filters, status: 'BOOKED' })}
+            onPress={() => setFilters({ ...filters, status: 'scheduled' })}
             animated={true}
             suffix=" upcoming"
           />
@@ -399,7 +402,7 @@ export default function AppointmentsScreen({ navigation }) {
             value={progressCount}
             icon={Zap}
             gradient={['#f093fb', '#f5576c']}
-            onPress={() => setFilters({ ...filters, status: 'IN_PROGRESS' })}
+            onPress={() => setFilters({ ...filters, status: 'in_progress' })}
             animated={true}
             pulse={progressCount > 0}
             suffix=" active"
@@ -410,7 +413,7 @@ export default function AppointmentsScreen({ navigation }) {
             value={stats.completed}
             icon={CheckCircle}
             gradient={['#2ecc71', '#27ae60']}
-            onPress={() => setFilters({ ...filters, status: 'COMPLETED' })}
+            onPress={() => setFilters({ ...filters, status: 'completed' })}
             animated={true}
             suffix=" done"
           />

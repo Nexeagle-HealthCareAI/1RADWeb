@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 /**
  * ServicePillPopover — anchored editor for status + notes on one
  * AppointmentService line. Re-used by OperationsBoard's per-service
- * status pills + TechnicianPage's per-service cards so the
+ * status pills so the
  * editing surface is identical across the app.
  *
  * Click-outside / Escape dismisses without saving. No portal — uses

@@ -103,6 +103,18 @@ function applySchema(inst) {
   inst.version(9).stores({
     service_charges: 'id, _snapshotAtMs',
   });
+
+  // v10 — reports are cached per STUDY ("<visitId>|<studyId>"), not per
+  // visit. Rows cached the old way can't tell which study they belong to, so
+  // the clean ones are dropped and pulled again from the server; unsynced
+  // drafts stay until the outbox pushes them.
+  inst.version(10).stores({
+    reports: 'appointmentId, isFinalized, _updatedAtMs, _localDirty',
+  }).upgrade(async (tx) => {
+    await tx.table('reports')
+      .filter((r) => r.visitId === undefined && !r._localDirty)
+      .delete();
+  });
 }
 
 // In-process registry. Multiple hospitals can be opened in the same tab

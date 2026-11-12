@@ -783,7 +783,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       const { state } = editor;
       const before = state.doc.textBetween(Math.max(0, state.selection.from - 1), state.selection.from);
       const prefix = (before && !/\s/.test(before)) ? ' ' : '';
-      editor.chain().focus().insertContent(prefix + text).run();
+      // "new line" / "new paragraph" said inside a sentence arrive as \n / \n\n.
+      // Inserted as text they were collapsed away; make them real breaks.
+      const parts = (prefix + text).split(/(\n\n|\n)/);
+      let chain = editor.chain().focus();
+      parts.forEach((part, i) => {
+        if (part === '\n\n') chain = chain.splitBlock();
+        else if (part === '\n') chain = chain.setHardBreak();
+        else {
+          let piece = part;
+          if (i > 0) piece = piece.replace(/^\s+/, '');                 // after a break
+          if (i < parts.length - 1) piece = piece.replace(/\s+$/, '');  // before a break
+          if (piece) chain = chain.insertContent(piece);
+        }
+      });
+      chain.run();
     },
     // Hands-free editor actions spoken as whole-phrase commands. "next field" /
     // "previous field" drive the same template loop as Tab; "scratch that" undoes
@@ -2539,7 +2553,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // Keyword macro expansion — merges internal snippets with the external keywordLibrary prop
   useEffect(() => {
     if (!editor) return;
-    // Normalize trigger: strip leading '/' so "/norm" and "norm" both match.
+    // Library triggers may be stored with or without the '/' ("/norm", "norm");
+    // the TYPED word must always start with '/' (see handleKeyDown).
     const normTrigger = (t = '') => (t.startsWith('/') ? t.slice(1) : t).toLowerCase();
     const mergedLibrary = [
       ...snippets.map(s => ({ trigger: s.trigger, replacementText: s.content })),
@@ -2561,7 +2576,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           const lastWord = words[words.length - 1];
           if (!lastWord) return false;
 
-          const searchTrigger = lastWord.startsWith('/') ? lastWord.slice(1) : lastWord;
+          // Only a word typed WITH the slash expands ("/stable"). Matching bare
+          // words swapped snippet text in for ordinary words — "stable",
+          // "compare", "incidental" — every time the doctor pressed Space.
+          if (!lastWord.startsWith('/') || lastWord.length < 2) return false;
+          const searchTrigger = lastWord.slice(1);
           const match = mergedLibrary.find(k =>
             normTrigger(k.trigger) === searchTrigger.toLowerCase()
           );
@@ -2684,6 +2703,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           voiceSupported={voice.supported}
           voiceActive={voice.active}
           onToggleVoice={voice.toggle}
+          voiceMode={voice.mode}
           showFormattingMarks={showFormattingMarks}
           onToggleFormattingMarks={() => setShowFormattingMarks(v => !v)}
           wordCountGoal={wordCountGoal}

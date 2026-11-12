@@ -31,12 +31,14 @@ export const applyDiscount = async (invoiceId, request) => {
   return res.data;
 };
 
+
 /**
- * Apply a post-payment financial adjustment to a settled invoice.
- * @param {object} command  ApplyExtraDiscountCommand payload
- * @returns {{ success: boolean }}
+ * Return money on a bill (review B6). Writes a refund row; the original payment stays.
+ * @param {string} invoiceId
+ * @param {{ amount: number, mode: 'CASH'|'UPI'|'CARD'|'ADVANCE', reason: string }} body
+ * @returns {{ refunded: number, toWallet: number, paidOut: number, paidAmount: number, status: string }}
  */
-export const applyAdjustment = async (command) => {
-  const res = await apiClient.post('/finance/adjust', command);
+export const refundPayment = async (invoiceId, body) => {
+  const res = await apiClient.post(`/finance/invoices/${invoiceId}/refunds`, body);
   return res.data;
 };

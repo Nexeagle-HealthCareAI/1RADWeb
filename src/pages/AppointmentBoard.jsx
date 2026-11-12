@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
+import { t as tr } from '../i18n';
+import { istTodayYmd, useIstToday } from '../utils/istClock';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import apiClient from '../api/apiClient';
@@ -20,6 +22,7 @@ import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { formatToken } from '../utils/tokenFormat';
+import ChangeHistory from '../components/saral/ChangeHistory';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import useLiveAppointments from '../hooks/useLiveAppointments';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
@@ -35,16 +38,9 @@ import { syncNow } from '../sync/SyncEngine';
 // --- CONSTANTS ---
 
 const MODALITIES = ['ULTRASOUND', 'X-RAY', 'CT', 'MRI', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
-// TODAY is now calculated dynamically within the component if needed, 
-// but we'll keep a base constant for initial state.
-const getTodayString = () => new Date().toLocaleDateString('en-CA');
-const TODAY = getTodayString();
-const getYesterdayString = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toLocaleDateString('en-CA');
-};
-const YESTERDAY = getYesterdayString();
+// Today in India (not the browser's zone). TODAY / YESTERDAY themselves live in
+// the component (useIstToday) so a board left open overnight rolls to the new day.
+const getTodayString = () => istTodayYmd();
 // Pure YYYY-MM-DD arithmetic (no clock), used to window the paid-invoice lookup.
 const shiftIsoDate = (isoDate, days) => {
   const d = new Date(`${isoDate}T00:00:00Z`);
@@ -66,17 +62,17 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '🕒' },
-  scheduled:   { label: 'EXPECTED', color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
-  booked:      { label: 'EXPECTED', color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
-  confirmed:   { label: 'ARRIVED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '✅' },
-  in_progress: { label: 'SCANNING', color: '#d97706', bg: '#fffbe6', glow: 'rgba(217,119,6,0.15)', icon: '⚙️' },
-  completed:   { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
-  scanned:     { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
-  reporting:   { label: 'REPORTING', color: '#7c3aed', bg: '#f5f3ff', glow: 'rgba(124,58,237,0.15)', icon: '📝' },
-  reported:    { label: 'REPORTED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '📄' },
-  delivered:   { label: 'DELIVERED', color: '#0369a1', bg: '#e0f2fe', glow: 'rgba(3,105,161,0.15)', icon: '📬' },
-  cancelled:   { label: 'CANCELLED', color: '#dc2626', bg: '#fef2f2', glow: 'rgba(220,38,38,0.15)', icon: '❌' },
+  future:      { get label() { return tr('stage.future'); }, color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '🕒' },
+  scheduled:   { get label() { return tr('stage.notArrived'); }, color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
+  booked:      { get label() { return tr('stage.notArrived'); }, color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
+  confirmed:   { get label() { return tr('stage.arrived'); }, color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '✅' },
+  in_progress: { get label() { return tr('stage.inScan'); }, color: '#d97706', bg: '#fffbe6', glow: 'rgba(217,119,6,0.15)', icon: '⚙️' },
+  completed:   { get label() { return tr('stage.waitingReport'); }, color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
+  scanned:     { get label() { return tr('stage.waitingReport'); }, color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
+  reporting:   { get label() { return tr('stage.waitingReport'); }, color: '#7c3aed', bg: '#f5f3ff', glow: 'rgba(124,58,237,0.15)', icon: '📝' },
+  reported:    { get label() { return tr('stage.reportReady'); }, color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '📄' },
+  delivered:   { get label() { return tr('stage.given'); }, color: '#0369a1', bg: '#e0f2fe', glow: 'rgba(3,105,161,0.15)', icon: '📬' },
+  cancelled:   { get label() { return tr('stage.cancelled'); }, color: '#dc2626', bg: '#fef2f2', glow: 'rgba(220,38,38,0.15)', icon: '❌' },
   unknown:     { label: 'UNKNOWN', color: '#64748b', bg: '#f8fafc', glow: 'rgba(100,116,139,0.1)', icon: '❓' }
 };
 
@@ -118,6 +114,7 @@ export default function AppointmentBoard() {
   // shared OverdueProvider so the row pulse mirrors the bell exactly.
   useTickClock();
   const { isOverdue } = useOverdue();
+  const { today: TODAY, yesterday: YESTERDAY } = useIstToday();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 768;
   const isTablet = windowWidth >= 768 && windowWidth < 1024;
@@ -180,6 +177,16 @@ export default function AppointmentBoard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
   const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL', notArrived: false });
+  // Midnight in India: anything still pointing at the old today / yesterday moves on.
+  const prevTodayRef = useRef(TODAY);
+  useEffect(() => {
+    const prev = prevTodayRef.current;
+    if (prev === TODAY) return;
+    prevTodayRef.current = TODAY;
+    const prevYesterday = shiftIsoDate(prev, -1);
+    setFilters(f => (f.date === prev ? { ...f, date: TODAY } : f));
+    setPastDateRange(r => (r.start === prevYesterday && r.end === prevYesterday ? { start: YESTERDAY, end: YESTERDAY } : r));
+  }, [TODAY, YESTERDAY]);
   const [expandedRow, setExpandedRow] = useState(null);
 
 
@@ -618,6 +625,14 @@ export default function AppointmentBoard() {
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
   const [serviceRegistry, setServiceRegistry] = useState([]);
+  // Test types this centre actually offers (its price list), not every modality
+  // there is — falls back to the full list until the price list has loaded.
+  const offeredModalities = useMemo(() => {
+    const have = new Set((serviceRegistry || []).map(r => String(r.modality || r.Modality || '').trim().toUpperCase()).filter(Boolean));
+    if (have.size === 0) return MODALITIES;
+    return [...MODALITIES.filter(m => have.has(m)), ...[...have].filter(m => !MODALITIES.includes(m))];
+  }, [serviceRegistry]);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showBookingValidation, setShowBookingValidation] = useState(false);
   const drawerBodyRef = useRef(null);
 
@@ -785,7 +800,7 @@ export default function AppointmentBoard() {
       range = { startIso: pastDateRange.start, endIso: pastDateRange.end };
     }
     return { mode: 'past', ...range, status: filters.status };
-  }, [activeTab, filters.date, filters.status, archiveFilterMode, pastDateRange.start, pastDateRange.end]);
+  }, [activeTab, filters.date, filters.status, archiveFilterMode, pastDateRange.start, pastDateRange.end, YESTERDAY]);
 
   const {
     rows: liveRows,
@@ -944,7 +959,7 @@ export default function AppointmentBoard() {
         return true;
       }
     });
-  }, [appointments, activeTab, pastDateRange, archiveFilterMode]);
+  }, [appointments, activeTab, pastDateRange, archiveFilterMode, TODAY, YESTERDAY]);
 
   const filteredAppointments = useMemo(() => {
     return appointmentsForTab.filter(app => {
@@ -1066,7 +1081,14 @@ export default function AppointmentBoard() {
     }
   };
 
-  const itemsPerPage = 5;
+  // Busy days (~200 visits): the compact list shows 50 one-line visits a page on
+  // desktop; the full cards (5 a page) are one click away. Phones keep the cards.
+  const [listView, setListViewState] = useState(() => {
+    try { return localStorage.getItem('ab_list_view') || 'compact'; } catch { return 'compact'; }
+  });
+  const setListView = (v) => { setListViewState(v); setCurrentPage(1); try { localStorage.setItem('ab_list_view', v); } catch { /* per-device convenience only */ } };
+  const compactList = !isMobile && listView === 'compact';
+  const itemsPerPage = compactList ? 50 : isMobile ? 10 : 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
   // PAST used to render the WHOLE filtered list regardless of page (while
   // still computing totalPages/showing page controls as if it were paged) —
@@ -1194,6 +1216,26 @@ export default function AppointmentBoard() {
           message: "Could not reach the server, so the status was not changed. Please check your connection and try again."
         });
       }
+    }
+  };
+
+  // Hand over one study's report (multi-study visits). Uses the per-study
+  // status endpoint; the server rolls the visit up to Delivered once every
+  // live study has been handed over.
+  const handleDeliverService = async (app, line) => {
+    if (!isOnline) {
+      showNotif('error', 'NO CONNECTION', 'You are offline — handing over a report needs a live connection.');
+      return;
+    }
+    try {
+      await apiClient.patch(`/appointments/${app.appointmentId}/services/${line.id}/status`, { status: 'DELIVERED' });
+      patchRow(app.appointmentId, (a) => ({
+        ...a,
+        services: (a.services || []).map(s => (s.id === line.id ? { ...s, status: 'DELIVERED', deliveredAt: new Date().toISOString() } : s)),
+      }));
+      reloadAppointments();
+    } catch (err) {
+      showNotif('error', 'NOT HANDED OVER', err?.response?.data?.message || 'Could not mark this report as handed over. Please try again.');
     }
   };
 
@@ -2005,6 +2047,10 @@ export default function AppointmentBoard() {
         block: editingAppointment.block || '',
         district: editingAppointment.district || '',
         sourceOfInfo: editingAppointment.sourceOfInfo || '',
+        // Review A7: the version of the visit this form was opened on. The server
+        // refuses the edit (409) if someone changed the visit in the meantime,
+        // instead of silently undoing their change.
+        rowVersion: editingAppointment.rowVersion || null,
     };
     try {
       const editResp = await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, editBody);
@@ -2094,6 +2140,11 @@ export default function AppointmentBoard() {
         || error?.response?.data?.message
         || (typeof error?.response?.data === 'string' ? error.response.data : null)
         || error?.message;
+      if (error?.response?.status === 409) {
+        showNotif('error', 'VISIT CHANGED', detail
+          || 'Someone else changed this visit after you opened it. Close and reopen it to see their changes, then make yours again.');
+        return;
+      }
       showNotif('error', 'UPDATE FAILED', detail
         ? `Could not update the appointment: ${detail}`
         : 'Could not update the appointment. Please check your connection and try again.');
@@ -2676,6 +2727,66 @@ export default function AppointmentBoard() {
   // ============================================================
   //  APPOINTMENT TABLE ROW
   // ============================================================
+  // ── Compact list (busy days): one 42px line per visit ────────────────────
+  // Token, time, patient, tests, referred by, stage, paid tick, and the same
+  // next action / view / edit the full card offers. Click the line to view.
+  const renderCompactList = () => {
+    const cols = '62px 76px minmax(150px,1.3fr) minmax(150px,1.4fr) minmax(110px,1fr) 128px 52px 168px';
+    const head = { fontSize: '10px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' };
+    return (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden', minWidth: 900 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, padding: '9px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0, zIndex: 1 }}>
+          <span style={head}>{tr('ab.col.token')}</span><span style={head}>{tr('ab.col.time')}</span><span style={head}>{tr('ab.col.patient')}</span>
+          <span style={head}>{tr('ab.col.tests')}</span><span style={head}>{tr('ab.col.ref')}</span><span style={head}>{tr('ab.col.stage')}</span>
+          <span style={head}>{tr('ab.col.paid')}</span><span style={{ ...head, textAlign: 'right' }}>{tr('ab.col.do')}</span>
+        </div>
+        {paginatedAppointments.map((app, i) => {
+          const meta = STATUS_META[app.status] || STATUS_META.unknown;
+          const next = getNextAction(app.status);
+          const lines = getServiceLines(app);
+          const tests = lines.map(l => l.serviceName).filter(Boolean);
+          const time = app.dateTime ? new Date(app.dateTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true }) : '—';
+          const tok = app.tokenNo ?? app.dailyTokenNumber;
+          const overdue = isOverdue(app.appointmentId);
+          const paid = paidApptIds.has(app.appointmentId);
+          const cancelled = app.status === 'cancelled';
+          const age = [app.patientAge, app.patientGender ? String(app.patientGender).charAt(0).toUpperCase() : ''].filter(Boolean).join('/');
+          return (
+            <div key={app.appointmentId} role="button" tabIndex={0} onClick={() => setViewAppointment(app)}
+              onKeyDown={e => { if (e.key === 'Enter') setViewAppointment(app); }}
+              style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, alignItems: 'center', padding: '0 14px', height: 42, cursor: 'pointer',
+                borderTop: i ? '1px solid #f1f5f9' : 'none', fontSize: 13.5, color: cancelled ? '#94a3b8' : '#0f172a',
+                boxShadow: overdue || app.priority === 'STAT' ? 'inset 3px 0 0 #dc2626' : app.priority === 'URGENT' ? 'inset 3px 0 0 #d97706' : 'none' }}>
+              <span style={{ fontWeight: 900, color: '#0f52ba', fontVariantNumeric: 'tabular-nums' }}>{tok != null ? formatToken(tok) : '—'}</span>
+              <span style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{time}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: cancelled ? 'line-through' : 'none' }}>
+                <b style={{ fontWeight: 800 }}>{app.patientName}</b>{age && <span style={{ color: '#94a3b8' }}> · {age}</span>}
+                {app.priority && app.priority !== 'ROUTINE' && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 900, color: app.priority === 'STAT' ? '#dc2626' : '#d97706' }}>{app.priority}</span>}
+              </span>
+              <span title={tests.join(', ')} style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {tests.length > 2 ? `${tests[0]} +${tests.length - 1}` : tests.join(', ') || '—'}
+              </span>
+              <span style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.referredBy || '—'}</span>
+              <span><span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 800,
+                padding: '3px 9px', borderRadius: 999, background: meta.bg, color: meta.color }}>{meta.label}</span></span>
+              <span title={paid ? tr('ab.paid') : ''} style={{ fontWeight: 900, color: paid ? '#059669' : '#cbd5e1' }}>{paid ? '✓ ₹' : '—'}</span>
+              <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                {next && !cancelled && (
+                  <button type="button" onClick={() => handleAction(app.appointmentId, next.action)}
+                    style={{ height: 30, padding: '0 10px', borderRadius: 8, border: 'none', background: next.color, color: 'white', fontSize: 11.5, fontWeight: 900, cursor: 'pointer' }}>{next.label}</button>
+                )}
+                {!cancelled && (
+                  <button type="button" onClick={() => startEditingAppointment(app)} aria-label={tr('ab.edit')}
+                    style={{ height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', color: '#334155', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>{tr('ab.edit')}</button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderAppointmentRow = (app) => {
     const meta = STATUS_META[app.status] || STATUS_META.unknown;
     const next = getNextAction(app.status);
@@ -2972,16 +3083,21 @@ export default function AppointmentBoard() {
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
                 title="Print Token"
               >🖨️</button>
+              {/* A cancelled visit can't be edited; a delivered one can't be cancelled (the API refuses both). */}
+              {String(app.status || '').toUpperCase() !== 'CANCELLED' && (
               <button
                 onClick={() => startEditingAppointment(app)}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
                 title="Edit"
               >✏️</button>
+              )}
+              {!['CANCELLED', 'DELIVERED', 'REPORTED', 'REPORTING'].includes(String(app.status || '').toUpperCase()) && (
               <button
                 onClick={() => setCancelConfirmModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName })}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
                 title="Cancel"
               >✕</button>
+              )}
               {app.referredBy && String(app.referredBy).trim() && (
                 <button
                   onClick={() => openChangeRef(app)}
@@ -3129,7 +3245,7 @@ export default function AppointmentBoard() {
                     orient without competing with the data. */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 160px',
+                  gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 250px',
                   gap: '8px',
                   alignItems: 'center',
                   padding: '0 4px 4px 6px',
@@ -3140,7 +3256,7 @@ export default function AppointmentBoard() {
                   <span style={{ textAlign: 'center' }}>Modality</span>
                   <span>Service</span>
                   <span>Status</span>
-                  <span style={{ textAlign: 'center' }}>Print Prescription</span>
+                  <span style={{ textAlign: 'center' }}>Print · hand over</span>
                 </div>
                 {lines.map((line, idx) => {
                   const accent   = accentFor(line.modality);
@@ -3155,7 +3271,7 @@ export default function AppointmentBoard() {
                         // Sub-row grid — consistent columns across the
                         // visit's services so the eye can scan straight
                         // down: modality · name · price · status · print.
-                        gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 160px',
+                        gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 250px',
                         gap: '8px',
                         alignItems: 'center',
                         padding: '5px 4px 5px 6px',
@@ -3220,6 +3336,7 @@ export default function AppointmentBoard() {
                           </span>
                         );
                       })()}
+                      <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <button
                         type="button"
                         disabled={!canPrint}
@@ -3256,6 +3373,23 @@ export default function AppointmentBoard() {
                         </svg>
                         Print Prescription
                       </button>
+                      {/* Hand over THIS study's report — a finished CT no longer
+                          waits for the USG on the same visit. The visit itself
+                          becomes Delivered once every study is handed over. */}
+                      {step === 3 && line.id && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeliverService(app, line); }}
+                          title="Mark this study's report as handed to the patient"
+                          style={{
+                            padding: '5px 9px', borderRadius: '7px', border: '1px solid #0369a1',
+                            background: 'white', color: '#0369a1', cursor: 'pointer',
+                            fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px', textTransform: 'uppercase',
+                            whiteSpace: 'nowrap', fontFamily: 'inherit',
+                          }}
+                        >📬 Hand over</button>
+                      )}
+                      </span>
                     </div>
                   );
                 })}
@@ -7701,6 +7835,8 @@ export default function AppointmentBoard() {
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{app.notes}</div>
               </div>
             )}
+            {/* Who changed what on this visit (audit trail, plain words). */}
+            {(app.appointmentId || app.id) && <ChangeHistory kind="visit" id={app.appointmentId || app.id} />}
           </div>
 
           {/* Footer actions */}
@@ -8223,7 +8359,7 @@ export default function AppointmentBoard() {
           <div className="mobile-app-bar">
             <div className="mobile-app-bar-top">
               <div className="mobile-app-title">
-                <span className="title-icon">📅</span> APPOINTMENTS
+                {tr('page.appointments')}
               </div>
               <button 
                 type="button"
@@ -8235,7 +8371,7 @@ export default function AppointmentBoard() {
                   {!isOnline ? '📴' : ((counts?.pending > 0) ? '🔄' : '🟢')}
                 </span>
                 <span>
-                  {!isOnline ? 'Offline' : ((counts?.pending > 0) ? `${counts.pending} Outbox` : (mobileSyncing ? 'Syncing...' : 'Live Sync'))}
+                  {!isOnline ? 'Offline' : ((counts?.pending > 0) ? `${counts.pending} Outbox` : (mobileSyncing ? 'Syncing…' : tr('hdr.online')))}
                 </span>
               </button>
             </div>
@@ -8246,19 +8382,19 @@ export default function AppointmentBoard() {
                   className={`mobile-tab-pill ${activeTab === 'TODAY' ? 'active' : ''}`}
                   onClick={() => setActiveTab('TODAY')}
                 >
-                  Today <span className="tab-badge">{stats.total || 0}</span>
+                  {tr('filter.today')} <span className="tab-badge">{stats.total || 0}</span>
                 </button>
                 <button 
                   className={`mobile-tab-pill ${activeTab === 'PAST' ? 'active' : ''}`}
                   onClick={() => setActiveTab('PAST')}
                 >
-                  Past <span className="tab-badge">{stats.noShow || 0}</span>
+                  {tr('filter.past')}
                 </button>
                 <button 
                   className={`mobile-tab-pill ${activeTab === 'FUTURE' ? 'active' : ''}`}
                   onClick={() => setActiveTab('FUTURE')}
                 >
-                  Future <span className="tab-badge">{stats.expected || 0}</span>
+                  {tr('filter.future')}
                 </button>
               </div>
               {doctorRequestsPendingCount > 0 && (
@@ -8270,7 +8406,7 @@ export default function AppointmentBoard() {
                 className="mobile-fab-btn"
                 onClick={() => { resetBooking(); setIsBookingOpen(true); }}
               >
-                <span>+</span> New
+                <span>+</span> {tr('act.new')}
               </button>
             </div>
           </div>
@@ -8278,46 +8414,36 @@ export default function AppointmentBoard() {
           {/* 2. Horizontal Thumb-Scroll Stats Carousel */}
           <div className="mobile-stats-carousel">
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #0f52ba' }}>
-              <span className="stat-label">TOTAL VOLUME</span>
+              <span className="stat-label">{tr('stage.total')}</span>
               <div className="stat-value">{stats.total || 0}</div>
-              <span className="stat-sub" style={{ color: '#10b981' }}>↑ {activeRate}% Active</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #64748b' }}>
-              <span className="stat-label">{activeTab === 'PAST' ? 'NO SHOW' : 'EXPECTED'}</span>
+              <span className="stat-label">{activeTab === 'PAST' ? tr('stage.noShow') : tr('stage.notArrived')}</span>
               <div className="stat-value" style={{ color: activeTab === 'PAST' ? '#dc2626' : '#475569' }}>
                 {activeTab === 'PAST' ? (stats.noShow || 0) : (stats.expected || 0)}
               </div>
-              <span className="stat-sub">{activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting in Queue'}</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #059669' }}>
-              <span className="stat-label">ARRIVED</span>
+              <span className="stat-label">{tr('stage.arrived')}</span>
               <div className="stat-value" style={{ color: '#059669' }}>{stats.arrived || 0}</div>
-              <span className="stat-sub">Waiting in Clinic</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #d97706' }}>
-              <span className="stat-label">SCANNING</span>
-              <div className="stat-value" style={{ color: '#d97706' }}>
-                {stats.scanning || 0} <span style={{ fontSize: '13px', color: '#cbd5e1' }}>/</span> {stats.scanned || 0}
-              </div>
-              <span className="stat-sub">In Progress / Scanned</span>
+              <span className="stat-label">{tr('stage.inScan')}</span>
+              <div className="stat-value" style={{ color: '#5B21B6' }}>{stats.scanning || 0}</div>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #7c3aed' }}>
-              <span className="stat-label">REPORTING</span>
-              <div className="stat-value" style={{ color: '#7c3aed' }}>
-                {stats.reporting || 0} <span style={{ fontSize: '13px', color: '#cbd5e1' }}>/</span> {stats.finalized || 0}
-              </div>
-              <span className="stat-sub">Drafting / Ready</span>
+              <span className="stat-label">{tr('stage.waitingReport')}</span>
+              <div className="stat-value" style={{ color: '#9A3412' }}>{(stats.scanned || 0) + (stats.reporting || 0)}</div>
+              <span className="stat-sub">{stats.finalized || 0} {tr('stage.reportReady')}</span>
             </div>
             <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #0284c7' }}>
-              <span className="stat-label">DELIVERED</span>
-              <div className="stat-value" style={{ color: '#0284c7' }}>{stats.delivered || 0}</div>
-              <span className="stat-sub">Handed to Patient</span>
+              <span className="stat-label">{tr('stage.given')}</span>
+              <div className="stat-value" style={{ color: '#334155' }}>{stats.delivered || 0}</div>
             </div>
             {activeTab !== 'FUTURE' && (
               <div className="mobile-stat-tile" style={{ borderLeft: '4px solid #e11d48' }}>
-                <span className="stat-label">CANCELLED</span>
-                <div className="stat-value" style={{ color: '#e11d48' }}>{stats.cancelled || 0}</div>
-                <span className="stat-sub">Voided</span>
+                <span className="stat-label">{tr('stage.cancelled')}</span>
+                <div className="stat-value" style={{ color: '#be123c' }}>{stats.cancelled || 0}</div>
               </div>
             )}
           </div>
@@ -8330,7 +8456,7 @@ export default function AppointmentBoard() {
                 <span className="mobile-search-icon">🔍</span>
                 <input
                   type="text"
-                  placeholder="Search patient, mobile, referrer..."
+                  placeholder={tr('act.search')}
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                 />
@@ -8350,7 +8476,7 @@ export default function AppointmentBoard() {
                     title="Toggle Not Arrived Patients"
                   >
                     <span className="toggle-icon">🕒</span>
-                    <span className="toggle-text">Not Arrived</span>
+                    <span className="toggle-text">{tr('filter.notArrived')}</span>
                     <span className="toggle-badge">{stats.expected || 0}</span>
                   </button>
                 );
@@ -8371,9 +8497,23 @@ export default function AppointmentBoard() {
               )}
             </div>
 
+            {/* UI review: on a phone the patients come first — test type and doctor
+                filters open from this button instead of always taking half the screen. */}
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(v => !v)}
+              aria-expanded={showMobileFilters}
+              style={{ alignSelf: 'flex-start', height: '44px', padding: '0 16px', borderRadius: '999px', border: '1.5px solid #CBD5E1', background: (filters.modality !== 'ALL' || filters.doctor !== 'ALL') ? '#EEF2FF' : 'white', color: '#1E293B', fontSize: '15px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+              {showMobileFilters ? tr('filter.hide') : tr('filter.show')}
+              {(filters.modality !== 'ALL' || filters.doctor !== 'ALL') && <span style={{ width: 8, height: 8, borderRadius: 999, background: '#3730A3' }} />}
+            </button>
+
+            {showMobileFilters && (<>
             {/* Middle Row: Modality Quick-Tap Pills */}
             <div className="mobile-modality-bar">
-              <span className="modality-bar-label">MODALITY:</span>
+              <span className="modality-bar-label">{tr('filter.testType')}</span>
               <div className="modality-pills-scroll">
                 <button
                   type="button"
@@ -8382,7 +8522,7 @@ export default function AppointmentBoard() {
                 >
                   All
                 </button>
-                {MODALITIES.map(m => (
+                {offeredModalities.map(m => (
                   <button
                     key={m}
                     type="button"
@@ -8418,6 +8558,8 @@ export default function AppointmentBoard() {
                 ))}
               </div>
             </div>
+
+            </>)}
 
             {/* Archive Filter Row (Only for PAST tab) */}
             {activeTab === 'PAST' && (
@@ -8477,7 +8619,7 @@ export default function AppointmentBoard() {
           <div className="appt-page-top">
         <div className="appt-page-header">
           <div className="appt-page-title-block">
-            <h1 className="appt-page-title">Appointment Board</h1>
+            <h1 className="appt-page-title">{tr('page.appointments')}</h1>
           </div>
 
           <div className="appt-page-actions">
@@ -8534,11 +8676,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Appointments</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.total')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', fontFamily: 'monospace' }}>{stats.total}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#10b981', fontWeight: 800 }}>
-            ↑ {activeRate}% Active
-          </div>
         </div>
 
         {/* Card 2: Expected */}
@@ -8553,11 +8692,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? 'No Show' : 'Expected Today'}</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? tr('stage.noShow') : tr('stage.notArrived')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: activeTab === 'PAST' ? '#dc2626' : '#475569', fontFamily: 'monospace' }}>{activeTab === 'PAST' ? stats.noShow : stats.expected}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>
-            {activeTab === 'PAST' ? 'Did Not Attend' : 'Waiting to Check-in'}
-          </div>
         </div>
 
         {/* Card 3: Arrived */}
@@ -8572,11 +8708,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>Arrived In Hall</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.arrived')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#059669', fontFamily: 'monospace' }}>{stats.arrived}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#059669', fontWeight: 800 }}>
-            Waiting in Clinic
-          </div>
         </div>
 
         {/* Card 4: Clinical */}
@@ -8591,12 +8724,9 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', letterSpacing: '1px', textTransform: 'uppercase' }}>Scanning / Scanned</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.inScan')}</span>
           <div className="intel-value" style={{ fontSize: '22px', fontWeight: 950, margin: '10px 0', color: '#d97706', fontFamily: 'monospace' }}>
-            {stats.scanning} <span style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: 800 }}>/</span> {stats.scanned}
-          </div>
-          <div className="intel-trend" style={{ fontSize: '9px', color: '#b45309', fontWeight: 800 }}>
-            In Progress / Complete
+            {stats.scanning || 0}
           </div>
         </div>
 
@@ -8612,12 +8742,12 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#6d28d9', letterSpacing: '1px', textTransform: 'uppercase' }}>Reporting / Reported</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#6d28d9', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.waitingReport')}</span>
           <div className="intel-value" style={{ fontSize: '22px', fontWeight: 950, margin: '10px 0', color: '#7c3aed', fontFamily: 'monospace' }}>
-            {stats.reporting} <span style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: 800 }}>/</span> {stats.finalized}
+            {(stats.scanned || 0) + (stats.reporting || 0)}
           </div>
-          <div className="intel-trend" style={{ fontSize: '9px', color: '#6d28d9', fontWeight: 800 }}>
-            Drafting / Finalized
+          <div className="intel-trend" style={{ fontSize: '13px', color: '#166534', fontWeight: 700 }}>
+            {stats.finalized || 0} {tr('stage.reportReady')}
           </div>
         </div>
 
@@ -8633,11 +8763,8 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>Delivered Reports</span>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.given')}</span>
           <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#0284c7', fontFamily: 'monospace' }}>{stats.delivered}</div>
-          <div className="intel-trend" style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>
-            Handed to Patient
-          </div>
         </div>
 
         {/* Card 7: Cancelled — Today & Past only */}
@@ -8653,11 +8780,8 @@ export default function AppointmentBoard() {
             justifyContent: 'space-between',
             minHeight: '100px'
           }}>
-            <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>Cancelled</span>
+            <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>{tr('stage.cancelled')}</span>
             <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#e11d48', fontFamily: 'monospace' }}>{stats.cancelled}</div>
-            <div className="intel-trend" style={{ fontSize: '10px', color: '#be123c', fontWeight: 800 }}>
-              Cancelled Appointments
-            </div>
           </div>
         )}
       </div>
@@ -8717,8 +8841,8 @@ export default function AppointmentBoard() {
             value={filters.modality}
             onChange={e => setFilters({...filters, modality: e.target.value})}
           >
-            <option value="ALL">All Modalities</option>
-            {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+            <option value="ALL">All test types</option>
+            {offeredModalities.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
           <select
@@ -8785,6 +8909,15 @@ export default function AppointmentBoard() {
             {filteredAppointments.length} Record{filteredAppointments.length !== 1 ? 's' : ''} Found
             {totalPages > 1 && <span style={{ marginLeft: '10px', color: '#0f52ba' }}>— Page {currentPage} of {totalPages}</span>}
           </span>
+          {!isMobile && (
+            <div role="group" aria-label={tr('ab.view')} style={{ display: 'flex', gap: 6 }}>
+              {[['compact', tr('ab.compact')], ['cards', tr('ab.cards')]].map(([v, label]) => (
+                <button key={v} type="button" onClick={() => setListView(v)} aria-pressed={listView === v}
+                  style={{ height: 34, padding: '0 14px', borderRadius: 999, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    border: listView === v ? 'none' : '1.5px solid #CBD5E1', background: listView === v ? '#111827' : 'white', color: listView === v ? 'white' : '#334155' }}>{label}</button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Appointments List - Responsive Display */}
@@ -8800,6 +8933,8 @@ export default function AppointmentBoard() {
                 {searchQuery ? 'Try adjusting your search criteria' : 'No appointments scheduled'}
               </div>
             </div>
+          ) : compactList ? (
+            renderCompactList()
           ) : isMobile ? (
             /* Mobile/Tablet: Card Layout */
             <div className="appointments-cards">

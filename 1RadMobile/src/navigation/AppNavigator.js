@@ -22,7 +22,6 @@ import CreateAppointmentScreen from '../screens/CreateAppointmentScreen';
 import EditAppointmentScreen from '../screens/EditAppointmentScreen';
 import AdminBoardScreen from '../screens/AdminBoardScreen';
 import FinanceScreen from '../screens/FinanceScreen';
-import ScanningBayScreen from '../screens/ScanningBayScreen';
 import DoctorScreen from '../screens/DoctorScreen';
 import BiometricLockScreen from '../screens/BiometricLockScreen';
 
@@ -103,7 +102,6 @@ function MainStack() {
       <Stack.Screen name="AdminBoard" component={AdminBoardScreen} />
       <Stack.Screen name="Appointments" component={AppointmentStack} />
       <Stack.Screen name="Finance" component={FinanceScreen} />
-      <Stack.Screen name="ScanningBay" component={ScanningBayScreen} />
       <Stack.Screen name="Doctor" component={DoctorScreen} />
     </Stack.Navigator>
   );

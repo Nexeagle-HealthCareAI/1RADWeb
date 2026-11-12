@@ -160,7 +160,7 @@
 }
 
 .intel-card .intel-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -306,7 +306,7 @@
   background: #f8fafc;
   padding: 16px 24px;
   text-align: left;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -337,7 +337,7 @@
   gap: 6px;
   padding: 6px 14px;
   border-radius: 10px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -407,7 +407,7 @@
 
 .pagination-btn.pagination-nav {
   padding: 0 14px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.3px;
   color: #64748b;
@@ -430,7 +430,7 @@
 }
 
 .pagination-info {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: #94a3b8;
   letter-spacing: 0.3px;
@@ -476,7 +476,7 @@
 
   .appt-new-mission-btn {
     padding: 12px 20px;
-    font-size: 11px;
+    font-size: 13px;
     flex: 1;
   }
 
@@ -888,7 +888,7 @@
     gap: 6px;
     padding: 5px 12px;
     border-radius: 999px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 900;
     border: none;
     cursor: pointer;
@@ -944,7 +944,7 @@
     border: none;
     background: transparent;
     color: #64748b;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 950;
     cursor: pointer;
     transition: all 0.2s;
@@ -961,7 +961,7 @@
   }
 
   .tab-badge {
-    font-size: 9px;
+    font-size: 12px;
     background: #e2e8f0;
     color: #475569;
     padding: 1px 6px;
@@ -1022,7 +1022,7 @@
   }
 
   .stat-label {
-    font-size: 8.5px;
+    font-size: 12px;
     font-weight: 950;
     color: #64748b;
     letter-spacing: 0.8px;
@@ -1037,7 +1037,7 @@
   }
 
   .stat-sub {
-    font-size: 9.5px;
+    font-size: 12px;
     font-weight: 800;
     color: #64748b;
   }
@@ -1115,7 +1115,7 @@
     border: 2px solid #e2e8f0;
     background: #f8fafc;
     color: #475569;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 950;
     cursor: pointer;
     white-space: nowrap;
@@ -1140,7 +1140,7 @@
     background: rgba(0, 0, 0, 0.1);
     padding: 2px 6px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .mobile-not-arrived-toggle.active-amber .toggle-badge {
@@ -1158,7 +1158,7 @@
   }
 
   .modality-bar-label {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 950;
     color: #64748b;
     letter-spacing: 0.5px;
@@ -1184,7 +1184,7 @@
     background: #f1f5f9;
     color: #475569;
     border: 1px solid transparent;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 900;
     cursor: pointer;
     white-space: nowrap;
@@ -1211,7 +1211,7 @@
     background: #fee2e2;
     color: #dc2626;
     border: 1px solid #fca5a5;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 950;
     cursor: pointer;
     white-space: nowrap;
@@ -1228,7 +1228,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 11px;
+    font-size: 13px;
     color: #64748b;
     font-weight: 700;
     padding-top: 4px;
@@ -1240,7 +1240,7 @@
     border-radius: 10px;
     border: 1px solid #cbd5e1;
     padding: 0 8px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     background: #f8fafc;
   }

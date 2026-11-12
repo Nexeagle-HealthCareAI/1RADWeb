@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { t as tr } from '../../i18n';
 import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
 import { celebrate } from '../../utils/celebrate';
 import { fetchCommissions } from '../../api/billing/payoutApi';
@@ -322,6 +323,9 @@ const RevenueHub = ({
   };
 
   const handleExportToExcel = () => {
+    // Was never defined, so "Download Excel" threw on every click. Ticked rows
+    // export just those; nothing ticked exports everything shown.
+    const isExportingSelected = selectedIds.size > 0;
     let headers = [];
     let rows = [];
     const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
@@ -528,7 +532,7 @@ const RevenueHub = ({
         alignItems: isMobile ? 'stretch' : 'center' 
       }}>
          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>{tr('filter.dates')}</span>
             <div className="filter-tabs" style={{ 
               display: 'flex', 
               background: 'white', 
@@ -546,6 +550,7 @@ const RevenueHub = ({
                {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                  <button
                   key={t}
+                  type="button"
                   onClick={() => setTimeFilter(t)}
                   style={{ 
                     padding: '8px 14px', borderRadius: '999px', border: 'none', fontSize: '10px', fontWeight: 800,
@@ -555,7 +560,7 @@ const RevenueHub = ({
                     flex: isMobile ? '1 0 auto' : 'none',
                     whiteSpace: 'nowrap'
                   }}
-                 >{t}</button>
+                 >{{ TODAY: tr('filter.today'), PAST: tr('filter.past'), ALL: tr('filter.all'), CUSTOM: tr('filter.custom') }[t]}</button>
                ))}
             </div>
             {timeFilter === 'CUSTOM' && (
@@ -606,7 +611,7 @@ const RevenueHub = ({
          {timeFilter !== 'FUTURE' && (
            <>
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS:</span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>{tr('filter.status')}</span>
                 <div className="filter-tabs" style={{ 
                   display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
                 }}>
@@ -622,7 +627,7 @@ const RevenueHub = ({
                         flex: isMobile ? '1 0 auto' : 'none',
                         whiteSpace: 'nowrap'
                       }}
-                     >{s}</button>
+                     >{{ ALL: tr('filter.all'), PAID: tr('bill.paid'), PENDING: tr('bill.toCollect') }[s] || s}</button>
                    ))}
                 </div>
              </div>
@@ -630,14 +635,14 @@ const RevenueHub = ({
              <button
                onClick={() => setApprovalFilter(approvalFilter === 'AWAITING' ? 'ALL' : 'AWAITING')}
                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', border: '1px solid', borderColor: approvalFilter === 'AWAITING' ? '#7c3aed' : '#e2e8f0', background: approvalFilter === 'AWAITING' ? '#7c3aed' : 'white', color: approvalFilter === 'AWAITING' ? 'white' : '#64748b', fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-               ⏳ AWAITING APPROVAL
+               {tr('bill.waitingApproval')}
              </button>
              {!isMobile && <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>}
            </>
          )}
 
          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MODALITY:</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>{tr('filter.testType')}</span>
             <div className="filter-tabs" style={{ 
               display: 'flex', background: 'white', padding: '4px', borderRadius: '999px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: '2px'
             }}>
@@ -653,7 +658,7 @@ const RevenueHub = ({
                     flex: isMobile ? '1 0 auto' : 'none',
                     whiteSpace: 'nowrap'
                   }}
-                 >{m}</button>
+                 >{m === 'ALL' ? tr('filter.all') : m}</button>
                ))}
             </div>
          </div>
@@ -725,11 +730,12 @@ const RevenueHub = ({
       </div>
 
       {timeFilter !== 'FUTURE' && (
-        <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, margin: '-10px 0 15px' }}>
-          GROSS (LIST PRICE) is the pre-discount price for services billed — it should match Service Performance's GROSS. PATIENT BILL is what's actually invoiced after discounts (the same figure the transaction table below calls PATIENT BILL); CLINIC INCOME is Patient Bill minus referral incentive — it should track Service Performance's NET YIELD.
-        </p>
+        <details style={{ margin: '-10px 0 15px', fontSize: '14px', color: '#475569' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#3730A3', minHeight: '32px', display: 'flex', alignItems: 'center' }}>{tr('money.help')}</summary>
+          <p style={{ margin: '6px 0 0', lineHeight: 1.6 }}>{tr('money.helpText')}</p>
+        </details>
       )}
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(7, 1fr)', gap: '15px', marginBottom: '40px' }}>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: isMobile ? '10px' : '15px', marginBottom: isMobile ? '24px' : '40px' }}>
         {timeFilter === 'FUTURE' ? (
           <>
             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', gridColumn: isMobile ? '1' : 'span 2' }}>
@@ -749,31 +755,31 @@ const RevenueHub = ({
         ) : (
           <>
             <div className="kpi-card" style={{ background: '#ecfdf5', padding: '20px', borderRadius: '24px', border: '1px solid #05966922', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Pre-discount list price for every service billed in this range — the same figure as Service Performance's GROSS card.">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#059669', letterSpacing: '1px', marginBottom: '12px' }}>GROSS (LIST PRICE)</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#059669', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.listPrice')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#065f46' }}>₹{revenueKpis.grossListPrice.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="What's actually invoiced after discounts — Gross minus Discounts Given.">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PATIENT BILL</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.billed')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{revenueKpis.patientBill.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Patient Bill still owed — Patient Bill minus Total Collected, floored per invoice so an overpaid invoice never shows as negative (the excess is held as patient credit instead).">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>PENDING AMOUNT</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.toCollect')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#f39c12' }}>₹{revenueKpis.pendingAmount.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Cash actually received against invoices in this range.">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '12px' }}>TOTAL COLLECTED</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.collected')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{revenueKpis.totalCollected.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#f0fdf4', padding: '20px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }} title="Patient Bill minus Incentive Accrued — the centre's take-home after the referral cut. Matches Service Performance's NET YIELD.">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>CLINIC INCOME</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.centreKeeps')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#14532d' }}>₹{revenueKpis.clinicIncome.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }} title="Total concession given — Gross minus Patient Bill.">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>DISCOUNTS GIVEN</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.discounts')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#ef4444' }}>₹{revenueKpis.discountsGiven.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }} title="Referral commission owed to referrers on invoices in this range, whether or not it's been paid out yet. Not the same as cash actually disbursed — see the Referral Hub for PAID vs UNPAID.">
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>INCENTIVE ACCRUED</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '12px' }}>{tr('money.partnerShare')}</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#881337' }}>₹{revenueKpis.incentiveAccrued.toLocaleString()}</div>
             </div>
           </>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef, lazy, Suspense } from 'react';
+import { t as tr } from '../i18n';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
@@ -27,29 +28,35 @@ const MODALITY_ICONS = {
   'MAMMOGRAPHY': '🎀'
 };
 
-const TODAY = new Date().toLocaleDateString('en-CA');
+// Today as YYYY-MM-DD for a given clock reading.
+const dayOf = (ms) => new Date(ms).toLocaleDateString('en-CA');
+// Scanned but not yet signed — the doctor's backlog, whatever day it's from.
+const WAITING = ['scanned', 'reporting'];
 
 // Only these exact system roles get their own queue pre-selected by default.
 // Custom roles, Admin, Technician, Receptionist, Accountant → all default to 'ALL'.
 const DOCTOR_ROLES = ['admindoctor', 'doctor'];
 
-/**
- * Returns the default selectedDoctor value for the current user:
- *  - 'admindoctor' or 'doctor' system role  → their own userId (see own queue first)
- *  - Admin, Technician, Receptionist, etc.  → 'ALL' (see all doctors)
- *  - Custom role users                      → 'ALL' (custom role names are never in
- *                                              DOCTOR_ROLES, so they always fall through)
- *  - No user / not loaded yet               → 'ALL'
- */
-function getDefaultDoctorFilter(user) {
-  if (!user) return 'ALL';
-  const userRoles = (user.roles || []).map(r => String(r).toLowerCase());
-  const isDoctor = userRoles.some(r => DOCTOR_ROLES.includes(r));
-  return isDoctor ? user.id : 'ALL';
+
+// Which study a preview should show on a visit with several: the first one
+// that is signed, else the first study. (Previews used to always show the
+// first study, whatever its state.)
+function previewServiceId(c) {
+  const lines = (c?.services || []).filter(l => l && l.id && !l.deletedAt);
+  const signed = lines.find(l => ['REPORTED', 'DELIVERED'].includes(String(l.status || '').toUpperCase()));
+  return (signed || lines[0])?.id || null;
 }
 
 export default function DoctorBoard() {
   const { activeCenter, currentUser } = useContext(AuthContext);
+  // The board's clock: refreshed every minute, so "today" rolls over at
+  // midnight and "oldest waiting" keeps counting without a reload.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const TODAY = dayOf(now);
   const { isOnline } = useOffline();
   const navigate = useNavigate();
   // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
@@ -62,6 +69,7 @@ export default function DoctorBoard() {
   
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
+  const [previewSvcId, setPreviewServiceId] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
 
   const [search, setSearch] = useState('');
@@ -72,7 +80,7 @@ export default function DoctorBoard() {
   const [doctors, setDoctors] = useState([]);
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
-  const [archiveDateRange, setArchiveDateRange] = useState({ start: TODAY, end: TODAY });
+  const [archiveDateRange, setArchiveDateRange] = useState(() => ({ start: dayOf(Date.now()), end: dayOf(Date.now()) }));
   const itemsPerPage = 5;
   const [sortConfig, setSortConfig] = useState({ key: 'dateTime', direction: 'asc' });
 
@@ -117,7 +125,8 @@ export default function DoctorBoard() {
       id: a.displayId,
       priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
       isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
-    })), [liveRows]);
+      isWaiting: WAITING.includes(String(a.status || '').toLowerCase()),
+    })), [liveRows, TODAY]);
 
   // Manual refresh / post-action nudge — pull what changed right now.
   const fetchCases = useCallback(async () => {
@@ -217,20 +226,26 @@ export default function DoctorBoard() {
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
       // Normalize UUIDs to lowercase before comparing to handle API casing differences
       const normalizedSelected = selectedDoctor?.toLowerCase();
+      // A doctor's own queue also shows studies nobody has been assigned to,
+      // so unassigned scans can't sit unseen.
+      const unassigned = !c.doctorId && !c.doctor;
       const matchesDoctor =
         selectedDoctor === 'ALL' ||
+        unassigned ||
         (c.doctorId && c.doctorId.toLowerCase() === normalizedSelected) ||
         c.doctor === doctors.find(d => d.id?.toLowerCase() === normalizedSelected)?.name;
 
       if (view === 'QUEUE') {
-        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed', 'delivered'].includes(status);
+        // Today's visits PLUS any earlier day's scan still waiting for its
+        // report — the backlog used to drop off at midnight.
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && (c.isToday || c.isWaiting) && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed', 'delivered'].includes(status);
       } else {
         const studyDate = c.dateTime ? c.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
-        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (status === 'reported' || !c.isToday);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (status === 'reported' || (!c.isToday && !c.isWaiting));
       }
     });
-  }, [cases, search, filters, view, TODAY, archiveFilterMode, archiveDateRange, selectedDoctor, doctors]);
+  }, [cases, search, filters, view, archiveFilterMode, archiveDateRange, selectedDoctor, doctors]);
 
   const sortedCases = useMemo(() => {
     const sortableItems = [...filteredCases];
@@ -274,16 +289,24 @@ export default function DoctorBoard() {
     setArchivePage(1);
   }, [search, filters, view, archiveFilterMode, archiveDateRange]);
 
+  // Oldest scan still waiting for its report (hours), any day.
+  const oldestWaitingHours = (() => {
+    const times = cases.filter(c => c.isWaiting)
+      .map(c => new Date(c.scannedAt || c.scanStartedAt || c.arrivedAt || c.dateTime || 0).getTime())
+      .filter(t => t > 0);
+    if (!times.length) return null;
+    return Math.max(0, Math.floor((now - Math.min(...times)) / 3600000));
+  })();
+
   const stats = {
-    pendingReports: cases.filter(c => c.isToday && ['scanned', 'reporting'].includes(c.status?.toLowerCase())).length,
-    drafts: cases.filter(c => c.isToday && c.status?.toLowerCase() === 'reporting').length,
+    pendingReports: cases.filter(c => c.isWaiting).length,
+    drafts: cases.filter(c => c.status?.toLowerCase() === 'reporting').length,
     finalizedToday: cases.filter(c => ['reported', 'completed'].includes(c.status?.toLowerCase()) && c.isToday).length,
     delivered: cases.filter(c => c.isToday && c.status?.toLowerCase() === 'delivered').length,
     upcoming: cases.filter(c => c.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(c.status?.toLowerCase())).length,
     archiveTotal: cases.filter(c => !c.isToday || c.status?.toLowerCase() === 'reported').length,
     archiveFinalized: cases.filter(c => c.status?.toLowerCase() === 'reported').length,
     archiveDrafts: cases.filter(c => !c.isToday && c.status?.toLowerCase() === 'reporting').length,
-    reportingAccuracy: 98
   };
 
   // --- HANDLERS ---
@@ -303,6 +326,14 @@ export default function DoctorBoard() {
                 || lines.find(l => l.id)
                 || null;
     const apptId = c.appointmentId || c.id;
+    // Remember the waiting queue in the order on screen, so signing a report
+    // can go straight to the next patient instead of back to this list.
+    try {
+      const queue = sortedCases
+        .filter(x => x.isWaiting || (x.appointmentId || x.id) === apptId)
+        .map(x => ({ id: x.appointmentId || x.id, name: x.patientName || '', status: String(x.status || '').toLowerCase() }));
+      sessionStorage.setItem('1rad_report_queue', JSON.stringify(queue));
+    } catch { /* storage unavailable — signing just returns to the list */ }
     const url = target?.id ? `/reporting/${apptId}?serviceId=${encodeURIComponent(target.id)}` : `/reporting/${apptId}`;
     navigate(url);
   };
@@ -313,7 +344,9 @@ export default function DoctorBoard() {
       setPreviewAppointment(c);
       
       // Attempt to fetch existing report for this appointment
-      const reportRes = await apiClient.get(`/Reporting/report/${c.appointmentId || c.id}`).catch(() => null);
+      const svcId = previewServiceId(c);
+      setPreviewServiceId(svcId);
+      const reportRes = await apiClient.get(`/Reporting/report/${c.appointmentId || c.id}`, { params: svcId ? { serviceId: svcId } : undefined }).catch(() => null);
       const body = reportRes?.data;
       const r = (body?.success && body?.data) ? body.data : body;
 
@@ -324,7 +357,7 @@ export default function DoctorBoard() {
           data: r.structuredData,
           impression: r.impression || '',
           advice: r.advice || '',
-          isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported'
+          isFinalized: !!r.isFinalized || /final|addend/i.test(String(r.status || ''))
         });
       } else {
         setPreviewReport({
@@ -351,9 +384,9 @@ export default function DoctorBoard() {
       <div className="board-header" style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Reporting Worklist</h1>
+              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>{tr('page.reports')}</h1>
            </div>
-           <p style={{ fontSize: '9.5px', color: '#6b7280' }}>Review and write radiology reports for today's studies</p>
+           <p style={{ fontSize: '9.5px', color: '#6b7280' }}>{tr('page.reportsSub')}</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -370,13 +403,13 @@ export default function DoctorBoard() {
               fontWeight: 600, background: view === 'QUEUE' ? 'white' : 'transparent',
               color: view === 'QUEUE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: view === 'QUEUE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-            }}>Today's Queue</button>
+            }}>{tr('filter.today')}</button>
             <button onClick={() => setView('HISTORY')} style={{
               padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '10.5px',
               fontWeight: 600, background: view === 'HISTORY' ? 'white' : 'transparent',
               color: view === 'HISTORY' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: view === 'HISTORY' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-            }}>Archive</button>
+            }}>{tr('filter.past')}</button>
         </div>
       </div>
 
@@ -384,11 +417,11 @@ export default function DoctorBoard() {
         {view === 'QUEUE' ? (
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'nowrap' }}>
             {[
-              { label: 'Needs Report',    value: stats.pendingReports, sub: 'Awaiting',           c: '#dc2626', g1: '#fef2f2', g2: '#fee2e2', bd: '#fecaca' },
-              { label: 'In Progress',     value: stats.drafts,         sub: 'Drafts',             c: '#d97706', g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a' },
-              { label: 'Finalized Today', value: stats.finalizedToday, sub: 'Reports',            c: '#16a34a', g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0' },
-              { label: 'Incoming',        value: stats.upcoming,       sub: 'Studies',            c: '#1d4ed8', g1: '#eff6ff', g2: '#dbeafe', bd: '#bfdbfe' },
-              { label: 'Delivered',       value: stats.delivered,      sub: 'Handed to patient',  c: '#15803d', g1: '#ecfdf5', g2: '#d1fae5', bd: '#a7f3d0' },
+              { label: tr('stage.waitingReport'), value: stats.pendingReports, sub: '',           c: '#dc2626', g1: '#fef2f2', g2: '#fee2e2', bd: '#fecaca' },
+              { label: tr('stage.drafting'), value: stats.drafts,         sub: '',             c: '#d97706', g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a' },
+              { label: tr('stage.signedToday'), value: stats.finalizedToday, sub: '',            c: '#16a34a', g1: '#f0fdf4', g2: '#dcfce7', bd: '#bbf7d0' },
+              { label: tr('stage.waitingScan'), value: stats.upcoming,       sub: '',            c: '#1d4ed8', g1: '#eff6ff', g2: '#dbeafe', bd: '#bfdbfe' },
+              { label: tr('stage.given'), value: stats.delivered,      sub: '',  c: '#15803d', g1: '#ecfdf5', g2: '#d1fae5', bd: '#a7f3d0' },
             ].map((k) => (
               <div key={k.label} className="summary-card" style={{ flex: '1 1 0', minWidth: 0, background: `linear-gradient(135deg, ${k.g1} 0%, ${k.g2} 100%)`, border: `1px solid ${k.bd}`, padding: '14px 16px', borderRadius: '18px', boxShadow: '0 8px 24px -10px rgba(15,23,42,0.18)' }}>
                 <div style={{ fontSize: '9px', fontWeight: 900, color: k.c, letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</div>
@@ -426,10 +459,10 @@ export default function DoctorBoard() {
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Accuracy</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Oldest waiting</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#1d4ed8' }}>{stats.reportingAccuracy}%</span>
-                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#1d4ed8' }}>Rate</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: oldestWaitingHours >= 24 ? '#dc2626' : '#1d4ed8' }}>{oldestWaitingHours == null ? '—' : oldestWaitingHours < 1 ? '<1' : oldestWaitingHours}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#1d4ed8' }}>{oldestWaitingHours == null ? 'Nothing waiting' : 'hours'}</span>
               </div>
             </div>
           </div>
@@ -543,7 +576,7 @@ export default function DoctorBoard() {
               {paginatedCases.map(c => {
                 const status = c.status?.toLowerCase();
                 const isReady = ['scanned', 'reporting'].includes(status);
-                const isActive = ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed', 'delivered'].includes(status) && c.isToday;
+                const isActive = ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed', 'delivered'].includes(status) && (c.isToday || c.isWaiting);
                 const isScanning = ['confirmed', 'in_progress'].includes(status);
                 const isExpected = ['scheduled', 'booked'].includes(status) && c.isToday;
                 
@@ -568,10 +601,15 @@ export default function DoctorBoard() {
                   }}>
                     <td style={{ padding: '20px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                          <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '12.5px', border: '1px solid #e2e8f0' }}>{c.patientName.charAt(0)}</div>
+                          <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '12.5px', border: '1px solid #e2e8f0' }}>{(c.patientName || '?').charAt(0)}</div>
                           <div>
-                             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '11px' }}>{c.patientName.toUpperCase()}</div>
-                             <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {formatPatientAge(c.patientAge, '45Y')}</div>
+                             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '11px' }}>{(c.patientName || 'Unnamed patient').toUpperCase()}</div>
+                             <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700 }}>{[c.id, c.patientGender, formatPatientAge(c.patientAge, '')].filter(Boolean).join(' | ')}</div>
+                             {c.isWaiting && !c.isToday && c.dateTime && (
+                               <div style={{ display: 'inline-block', marginTop: '4px', fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px', color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '6px', padding: '1px 6px' }}>
+                                 WAITING SINCE {new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }).toUpperCase()}
+                               </div>
+                             )}
                              {/* TAT pills: on-premises (live) + scan→delivery (final). */}
                              {onPremisesElapsed && (
                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -713,7 +751,7 @@ export default function DoctorBoard() {
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '10.5px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
-                        <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 400, marginTop: '4px' }}>{c.dateTime ? `${new Date(c.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : '09:00 AM'}</div>
+                        <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 400, marginTop: '4px' }}>{c.dateTime ? `${new Date(c.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : '—'}</div>
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -819,6 +857,7 @@ export default function DoctorBoard() {
           doctorId={previewAppointment?.doctorId}
           appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
           patientData={previewAppointment}
+          appointmentServiceId={previewSvcId}
           reportContent={previewReport}
         />
       </Suspense>

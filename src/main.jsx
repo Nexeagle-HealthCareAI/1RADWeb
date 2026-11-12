@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import './styles/global.css';
+import './styles/saral.css';
 
 // Secure-context shim: crypto.randomUUID (and SubtleCrypto, SharedArrayBuffer)
 // are only available in a "secure context" — HTTPS or localhost. Served over plain

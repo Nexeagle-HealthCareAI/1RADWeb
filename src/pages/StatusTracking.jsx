@@ -13,7 +13,10 @@ export default function StatusTracking() {
   // Without a token we can still render an "invalid link" state below.
   const token = searchParams.get('token');
   const [study, setStudy] = useState(null);
-  const [report, setReport] = useState(null);
+  // Every signed report on the visit (one per study); the patient picks which.
+  const [reports, setReports] = useState([]);
+  const [reportIdx, setReportIdx] = useState(0);
+  const report = reports[Math.min(reportIdx, Math.max(0, reports.length - 1))] || null;
   // Prescription protocol (letterhead, fonts) — fetched best-effort. Public
   // endpoint may not exist yet; failures are silent.
   const [protocol, setProtocol] = useState(null);
@@ -40,13 +43,16 @@ export default function StatusTracking() {
         setAuthError(false);
         setStudy(payload.appointment);
 
-        const r = payload.report;
-        if (r && (r.isFinalized || r.finalizedAt)) {
-          // The DTO names match the legacy report fetch shape so the rest
-          // of the page (the findingsHtml memo, IMPRESSION/ADVICE blocks)
-          // continues to work unchanged.
-          setReport(r);
-        }
+        // Newer servers send every signed study report; older ones just one.
+        const list = (Array.isArray(payload.reports) && payload.reports.length ? payload.reports : (payload.report ? [payload.report] : []))
+          .filter(r => r && (r.isFinalized || r.finalizedAt));
+        setReports(list);
+
+        // Nothing more will change once every study's report is signed (or the
+        // visit is handed over) — stop asking the server every 30 s.
+        const st = String(payload.appointment.status || '').toLowerCase();
+        const liveStudies = (payload.appointment.services || []).length || 1;
+        if (['delivered', 'completed'].includes(st) || (list.length > 0 && list.length >= liveStudies)) stopPolling();
 
         // Branding is bundled into the same tracking response now (the
         // doctor's prescription protocol — letterhead URL + typography +
@@ -62,16 +68,18 @@ export default function StatusTracking() {
         // 401 means the token was missing/expired/tampered. Surface a
         // distinct state so the patient can ask the centre for a fresh QR
         // instead of staring at a half-rendered page.
-        if (err?.response?.status === 401) setAuthError(true);
+        if (err?.response?.status === 401 || err?.response?.status === 404) { setAuthError(true); stopPolling(); }
         else console.error('Tracking failed', err);
       } finally {
         if (active) setLoading(false);
       }
     };
+    let interval = null;
+    function stopPolling() { if (interval) { clearInterval(interval); interval = null; } }
     fetchAll();
-    const interval = setInterval(fetchAll, 30000);
-    return () => { active = false; clearInterval(interval); };
-  }, [id]);
+    interval = setInterval(fetchAll, 30000);
+    return () => { active = false; stopPolling(); };
+  }, [id, token]);
 
   // Resolve letterhead URL through the Azure proxy when needed (same logic
   // as ReportPreviewModal + SavedReportViewer so we don't fork the routing).
@@ -183,7 +191,9 @@ export default function StatusTracking() {
     { key: 'reported', label: 'FINALIZED', icon: '✅' }
   ];
 
-  const currentStatus = study?.status?.toLowerCase() || 'booked';
+  const rawStatus = study?.status?.toLowerCase() || 'booked';
+  // Handed over / completed visits are past the last step, not "unknown".
+  const currentStatus = ['delivered', 'completed'].includes(rawStatus) ? 'reported' : rawStatus;
   const currentIndex = steps.findIndex(s => s.key === currentStatus);
 
   // (printReport replaced by handleSaveOrPrint above.)
@@ -222,12 +232,11 @@ export default function StatusTracking() {
     const ptid      = study?.patientIdentifier || study?.ptid || study?.id || '—';
     const age       = study?.patientAge || study?.age || '—';
     const sex       = study?.patientGender || study?.gender || '—';
-    const studyName = study?.service || study?.modality || '—';
+    const studyName = report?.serviceName || study?.service || study?.modality || '—';
     const modality  = study?.modality || '—';
     const refBy     = study?.referredBy || 'Self';
-    const repDate   = report?.finalizedAt
-      ? new Date(report.finalizedAt).toLocaleDateString()
-      : new Date().toLocaleDateString();
+    const signedOn  = report?.signedAt || report?.finalizedAt;
+    const repDate   = signedOn ? new Date(signedOn).toLocaleDateString() : '—';
 
     return (
       <div className="track-report-root" style={{
@@ -245,6 +254,17 @@ export default function StatusTracking() {
             <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase' }}>
               1RAD FLOW · Final Report
             </div>
+            {reports.length > 1 && (
+              <div role="tablist" aria-label="Reports on this visit" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', width: '100%', order: 3 }}>
+                {reports.map((r, i) => (
+                  <button key={r.appointmentServiceId || i} role="tab" aria-selected={i === reportIdx} onClick={() => setReportIdx(i)}
+                    style={{ padding: '8px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 800, cursor: 'pointer',
+                      border: i === reportIdx ? 'none' : '1px solid #cbd5e1', background: i === reportIdx ? '#0f52ba' : 'white', color: i === reportIdx ? 'white' : '#334155' }}>
+                    {r.serviceName || `Report ${i + 1}`}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 onClick={handleSaveOrPrint}
@@ -365,6 +385,25 @@ export default function StatusTracking() {
                 <div style={{ fontSize: '11pt', lineHeight: 1.6, color: '#374151', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
                   {report.advice}
                 </div>
+              </div>
+            )}
+            {/* Who signed it, and any later corrections (addenda). */}
+            {(report.signerName || report.signedAt) && (
+              <div style={{ marginTop: '22px', paddingTop: '12px', borderTop: '1px solid #e2e8f0', textAlign: 'right' }}>
+                {report.signerName && <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{report.signerName}</div>}
+                {report.signerCredentials && <div style={{ fontSize: '11px', color: '#475569' }}>{report.signerCredentials}</div>}
+                {report.signedAt && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Electronically signed · {new Date(report.signedAt).toLocaleString()}</div>}
+              </div>
+            )}
+            {(report.addenda || []).length > 0 && (
+              <div style={{ marginTop: '16px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#92400e', letterSpacing: '1px', marginBottom: '6px' }}>ADDENDUM</div>
+                {report.addenda.map((a, i) => (
+                  <div key={i} style={{ fontSize: '13px', color: '#1f2937', marginBottom: '8px' }}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{a.text}</div>
+                    <div style={{ fontSize: '10px', color: '#78716c', marginTop: '2px' }}>{a.authorName}{a.authorCredentials ? `, ${a.authorCredentials}` : ''} · {new Date(a.signedAt).toLocaleString()}</div>
+                  </div>
+                ))}
               </div>
             )}
             </div>

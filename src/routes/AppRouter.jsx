@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import ProtectedRoute from './ProtectedRoute';
 import { ROLE_HOME, getRolePermissions } from '../data/roles';
@@ -19,14 +19,24 @@ const SharedStudyPage = lazy(() => import('../pages/SharedStudyPage'));
 const ForgotPassword = lazy(() => import('../pages/ForgotPassword'));
 const AccessDenied = lazy(() => import('../pages/AccessDenied'));
 const AppointmentBoard = lazy(() => import('../pages/AppointmentBoard'));
-const TechnicianPage = lazy(() => import('../pages/TechnicianPage'));
+const PartnersPage = lazy(() => import('../pages/partners/PartnersPage'));
 const DoctorBoard = lazy(() => import('../pages/DoctorBoard'));
 const AdminBoard = lazy(() => import('../pages/AdminBoard'));
 const ReferralsPage = lazy(() => import('../pages/ReferralsPage'));
 const StaffPage = lazy(() => import('../pages/StaffPage'));
 const StaffDashboardPage = lazy(() => import('../pages/StaffDashboardPage'));
 const BillingPage = lazy(() => import('../pages/BillingPage'));
+const MoneyPage = lazy(() => import('../pages/money/MoneyPage'));
+const OwnerBoardPage = lazy(() => import('../pages/owner/OwnerBoardPage'));
 const ReportingPage = lazy(() => import('../pages/ReportingPage'));
+
+// One fresh reporting page per visit/study: moving to the next patient must
+// never carry the previous patient's images, text or sign-off state across.
+function KeyedReportingPage() {
+  const { id } = useParams();
+  const [search] = useSearchParams();
+  return <ReportingPage key={id || search.get('id') || search.get('studyId') || 'reporting'} />;
+}
 const DicomViewerPage = lazy(() => import('../pages/DicomViewerPage'));
 const StudiesPage = lazy(() => import('../pages/StudiesPage'));
 const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage'));
@@ -34,6 +44,8 @@ const PatientTimelinePage = lazy(() => import('../pages/PatientTimelinePage'));
 const ActiveSessionsPage = lazy(() => import('../pages/ActiveSessionsPage'));
 const SecuritySettingsPage = lazy(() => import('../pages/SecuritySettingsPage'));
 const SyncStatusPage = lazy(() => import('../pages/SyncStatusPage'));
+const AuditLogPage = lazy(() => import('../pages/AuditLogPage'));
+const IntegrationsPage = lazy(() => import('../pages/IntegrationsPage'));
 const SettingsHomePage = lazy(() => import('../pages/SettingsHomePage'));
 const DicomBridgePage = lazy(() => import('../pages/DicomBridgePage'));
 const ConfigurationPage = lazy(() => import('../pages/ConfigurationPage'));
@@ -105,7 +117,7 @@ export default function AppRouter() {
     <Routes>
       {/* Public / Semi-Public */}
       <Route path="/track/:id" element={<StatusTracking />} />
-      {/* Public doctor referral portal — anonymous, signed token in ?t= (#3) */}
+      {/* Public doctor referral portal — anonymous, signed token in #t= (older links ?t=), sent as X-Referral-Token (#3, review R23) */}
       <Route path="/r/:id" element={<DoctorReferralPortal />} />
       {/* Public secure study share — anonymous, signed 24h token in the path. */}
       <Route path="/share/:token" element={<SharedStudyPage />} />
@@ -132,7 +144,7 @@ export default function AppRouter() {
         element={
           <ProtectedRoute
             allowedRoles={['admindoctor', 'admin', 'doctor', 'technician', 'receptionist', 'accountant']}
-            moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}
+            moduleRoutes={['/doctor-board', '/appointment-board', '/admin-board']}
             requiredModule="PACS">
             <DicomViewerPage />
           </ProtectedRoute>
@@ -190,11 +202,37 @@ export default function AppRouter() {
         {/* Settings → Sync & offline queue. Surfaces sync state, the
             outbox queue, and the telemetry tail. Useful for diagnosing
             flaky-network issues. */}
+        {/* Settings → Activity log (admins; the API enforces the role). */}
+        <Route
+          path="/settings/audit"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <AuditLogPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Settings → Integrations: API keys for DICOMweb / worklist / FHIR (admins). */}
+        <Route
+          path="/settings/integrations"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <IntegrationsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/settings/sync"
           element={
             <ProtectedRoute authOnly={true}>
               <SyncStatusPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/partners"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'accountant']} moduleRoutes={['/partners', '/referrals', '/billing']} requiredModule="RIS">
+              <PartnersPage />
             </ProtectedRoute>
           }
         />
@@ -223,18 +261,16 @@ export default function AppRouter() {
           }
         />
         <Route
-          path="/appointment-board"
-          element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} requiredModule="RIS">
-              <AppointmentBoard />
-            </ProtectedRoute>
-          }
+          path="/front-desk"
+          // The simple Front desk screen was retired; the appointment screen is now
+          // called Front desk. Old links and bookmarks land there.
+          element={<Navigate to="/appointment-board" replace />}
         />
         <Route
-          path="/technician"
+          path="/appointment-board"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'technician']} requiredModule="RIS">
-              <TechnicianPage />
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} moduleRoutes={['/appointment-board', '/front-desk']} requiredModule="RIS">
+              <AppointmentBoard />
             </ProtectedRoute>
           }
         />
@@ -243,6 +279,24 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
               <DoctorBoard />
+            </ProtectedRoute>
+          }
+        />
+        {/* Money (redesign, Nov 2026). Front desk, accountant and owner each see their part. */}
+        <Route
+          path="/money/:area?"
+          element={
+            <ProtectedRoute moduleRoutes={['/money', '/billing']} requiredModule="RIS">
+              <MoneyPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Owner board (Nov 2026): every centre the owner runs. Owners (admins) only. */}
+        <Route
+          path="/owner/:tab?"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']} moduleRoutes={['/owner']}>
+              <OwnerBoardPage />
             </ProtectedRoute>
           }
         />
@@ -257,8 +311,8 @@ export default function AppRouter() {
         <Route
           path="/reporting/:id"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
-              <ReportingPage />
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board']}>
+              <KeyedReportingPage />
             </ProtectedRoute>
           }
         />
@@ -266,8 +320,8 @@ export default function AppRouter() {
         <Route
           path="/reporting"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/studies']} requiredModule="PACS">
-              <ReportingPage />
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/studies']} requiredModule="PACS">
+              <KeyedReportingPage />
             </ProtectedRoute>
           }
         />
@@ -323,7 +377,7 @@ export default function AppRouter() {
         <Route
           path="/patient-timeline/:appointmentId"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/appointment-board', '/admin-board']}>
               <PatientTimelinePage />
             </ProtectedRoute>
           }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { t as tr } from '../i18n';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
@@ -20,7 +21,7 @@ import { useArchiveData } from '../hooks/billing/useArchiveData';
 import { printA4Invoice, printReceiptSlip, printThermalSlip, ghostPrint } from '../utils/billing/printHandlers';
 import { exportToExcel } from '../utils/billing/exportHandler';
 
-import { fetchFinancialMatrix, syncLegacyInvoices } from '../api/billing/reportingApi';
+import { fetchFinancialMatrix } from '../api/billing/reportingApi';
 import { fetchRegistry as fetchRegistryApi } from '../api/billing/registryApi';
 import { fetchInvoices as fetchInvoicesApi, fetchPendingBillables as fetchPendingBillablesApi } from '../api/billing/invoiceApi';
 import { fetchExpenses as fetchExpensesApi } from '../api/billing/expenseApi';
@@ -36,6 +37,9 @@ import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
+import DayBookHub from '../components/Billing/DayBookHub';
+import CreditNotesHub from '../components/Billing/CreditNotesHub';
+import { useBillingSettings } from '../api/billing/billingSettingsApi';
 import FinanceManager from '../components/FinanceManager';
 import Pagination from '../components/Pagination';
 import PaymentSuccessModal from '../components/Billing/PaymentSuccessModal';
@@ -58,7 +62,12 @@ const getIstDateStr = (iso) => {
   return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
 };
 
-export default function BillingPage() {
+// `embedded`: shown inside Money (redesign) for the areas not rebuilt yet — no own
+// title or tab row, and `initialView` picks the tab.
+// `showTabs` (Money ▸ All billing tools): embedded, but with the full tab row, so every
+// older tool stays one click away. `openInvoice` opens that bill in the bill drawer;
+// `startNewBill` opens the new-bill drawer.
+export default function BillingPage({ embedded = false, initialView = null, showTabs = false, openInvoice = null, startNewBill = false } = {}) {
   const { activeCenter } = useAuth();
   const { isOnline, addToOutbox, performSync, pendingCount } = useOffline();
   
@@ -67,7 +76,8 @@ export default function BillingPage() {
   // --- STATE ---
   const [paymentSuccess, setPaymentSuccess] = useState(null); // { amount, method, patientName, invoiceId }
 
-  const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
+  const [billingViewMode, setBillingViewMode] = useState(initialView || 'INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
+  useEffect(() => { if (initialView) setBillingViewMode(initialView); }, [initialView]);
   // Patient advances (overpayment credits). Surfaced inline on each invoice
   // (status badge + the view drawer's refund button) instead of a separate tab.
   const [outstandingCredits, setOutstandingCredits] = useState([]);
@@ -241,7 +251,6 @@ export default function BillingPage() {
 
   // --- SYNC & FETCH ---
   const [matrix, setMatrix] = useState({ daily: [], weekly: [], monthly: [], yearly: [], modalityBreakdown: [] });
-  const [isSyncing, setIsSyncing] = useState(false);
 
 
   // Responsive layout detection
@@ -604,7 +613,33 @@ export default function BillingPage() {
   });
   
   // ── Print handlers (extracted pure utils) ───────────────────────────────────
-  const printCtx = { activeCenter, ownerDetails, notify };
+  // Review B10: the centre's tax identity (GSTIN, PAN, address, public contact) for
+  // printed bills and receipts, from Admin → Centre details.
+  const [taxProfile, setTaxProfile] = useState(null);
+  useEffect(() => {
+    const id = activeCenter?.id;
+    if (!id) return undefined;
+    let alive = true;
+    apiClient.get(`/hospitals/${id}`).then(res => {
+      if (!alive) return;
+      const d = res?.data || {};
+      setTaxProfile({
+        gstin: (d.gstin || d.GSTIN || '').toUpperCase(),
+        pan: (d.pan || d.PAN || '').toUpperCase(),
+        hospitalAddress: d.hospitalAddress || '',
+        registrationNumber: d.registrationNumber || '',
+        nabhNumber: d.nabhNumber || d.NABHNumber || '',
+        publicContact: d.publicContact || '',
+        publicEmail: d.publicEmail || '',
+      });
+    }).catch(() => { /* print falls back to the centre name and address only */ });
+    return () => { alive = false; };
+  }, [activeCenter?.id]);
+  const taxSettings = useBillingSettings(activeCenter?.id);
+  const printTaxProfile = React.useMemo(
+    () => (taxProfile ? { ...taxProfile, gstEnabled: taxSettings?.gstEnabled !== false } : taxProfile),
+    [taxProfile, taxSettings?.gstEnabled]);
+  const printCtx = { activeCenter, ownerDetails, notify, taxProfile: printTaxProfile };
   const handlePrintThermal = async (invInput = null) => {
     await printThermalSlip(invInput || selectedInvoice, printCtx);
   };
@@ -650,30 +685,10 @@ export default function BillingPage() {
     newInvoiceData, setNewInvoiceData,
   });
 
-  const handleSyncLegacyData = async () => {
-    const legacy = JSON.parse(localStorage.getItem('1rad_invoices') || '[]');
-    if (legacy.length === 0) return notify({ type: 'info', message: 'No legacy data detected in browser.' });
-    setIsSyncing(true);
-    try {
-      const payload = legacy.map(inv => ({
-        invoiceId:   inv.invoiceId,
-        patientName: inv.patientName,
-        totalAmount: inv.totalAmount,
-        status:      inv.status,
-        createdAt:   inv.createdAt,
-        items: inv.items.map(it => ({ description: it.description, amount: it.amount, quantity: it.quantity }))
-      }));
-      await syncLegacyInvoices({ invoices: payload });
-      localStorage.removeItem('1rad_invoices');
-      refreshAllFinancialData();
-      notify({ type: 'success', message: 'Sync complete: local records merged.' });
-    } catch (err) {
-      console.error('[FINANCE] Sync failed', err);
-      notify({ type: 'error', message: 'Sync failed. Please try again.' });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  // Money ▸ Bills hands over a bill ("More on this bill") or asks for a new bill.
+  useEffect(() => { if (openInvoice) handleOpenInvoice(openInvoice); }, [openInvoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (startNewBill) setIsNewInvoiceDrawerOpen(true); }, [startNewBill]);
+
   const {
     filteredInvoices,
     futureAppointments,
@@ -746,25 +761,27 @@ export default function BillingPage() {
 
   // Android billing tab definitions (used in both bottom nav and content switcher)
   const BILLING_TABS = [
-    { id: 'INVOICES',      label: 'Revenue',     icon: '💰' },
-    { id: 'REFERRAL_CUTS', label: 'Incentives',  icon: '🤝' },
-    { id: 'EXPENSES',      label: 'Expenses',    icon: '📋' },
-    { id: 'SERVICES',      label: 'Services',    icon: '📊' },
-    { id: 'FINANCE',       label: 'Pricing',     icon: '⚙️' },
-    { id: 'ANALYTICS',     label: 'Analytics',   icon: '📈' },
+    { id: 'INVOICES',      label: tr('tab.bills') },
+    { id: 'REFERRAL_CUTS', label: tr('tab.partners') },
+    { id: 'EXPENSES',      label: tr('tab.expenses') },
+    { id: 'DAYBOOK',       label: tr('tab.daybook') },
+    { id: 'CREDIT_NOTES',  label: tr('tab.creditNotes') },
+    { id: 'SERVICES',      label: tr('tab.services') },
+    { id: 'FINANCE',       label: tr('tab.pricing') },
+    { id: 'ANALYTICS',     label: tr('tab.analytics') },
   ];
 
   return (
-    <div className="billing-page" style={{ padding: isMobile ? '0' : '40px', background: '#f8fafc', minHeight: '100vh' }}>
+    <div className="billing-page" style={{ padding: isMobile || embedded ? '0' : '40px', background: '#f8fafc', minHeight: embedded ? 0 : '100vh' }}>
 
       {/* ── ANDROID TOP APP BAR (mobile only, sticky) ───────────────────── */}
-      {isMobile && (
+      {isMobile && !embedded && (
         <div className="billing-android-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💳</div>
           </div>
           <div className="billing-android-topbar-title">
-            <h1>Finance</h1>
+            <h1>{tr('page.finance')}</h1>
             <span className="billing-android-topbar-subtitle">
               {activeCenter?.name || 'Current Facility'}
             </span>
@@ -774,33 +791,55 @@ export default function BillingPage() {
               <span style={{ fontSize: 6 }}>●</span>
               {isOnline ? 'LIVE' : 'OFFLINE'}
             </span>
-            {localStorage.getItem('1rad_invoices') && (
-              <button
-                className="billing-android-topbar-btn"
-                onClick={handleSyncLegacyData}
-                disabled={isSyncing}
-                title="Sync local data"
-              >
-                {isSyncing ? '⟳' : '☁'}
-              </button>
-            )}
           </div>
         </div>
       )}
 
+      {/* UI review: billing used to add a second bottom bar under the app's own.
+          On phones its sections are now a scrolling row of tabs under the title. */}
+      {isMobile && !embedded && (
+        <nav aria-label="Billing sections" style={{ position: 'sticky', top: 56, zIndex: 400, display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', scrollbarWidth: 'none' }}>
+          {BILLING_TABS.map(tab => {
+            const on = billingViewMode === tab.id;
+            return (
+              <button key={tab.id} type="button" onClick={() => setBillingViewMode(tab.id)} aria-current={on ? 'page' : undefined}
+                style={{ flexShrink: 0, height: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap',
+                  border: on ? 'none' : '1.5px solid #CBD5E1', background: on ? '#111827' : 'white', color: on ? 'white' : '#334155' }}>
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
+
       {/* ── DESKTOP HEADER (non-mobile only) ───────────────────────────── */}
-      {!isMobile && (
+      {embedded && showTabs && (
+        <nav aria-label="Billing tools" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: isMobile ? '10px 12px' : '0 0 12px', scrollbarWidth: 'none' }}>
+          {BILLING_TABS.map(tab => {
+            const on = billingViewMode === tab.id;
+            return (
+              <button key={tab.id} type="button" onClick={() => setBillingViewMode(tab.id)} aria-current={on ? 'page' : undefined}
+                style={{ flexShrink: 0, height: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: on ? 'none' : '1.5px solid #CBD5E1', background: on ? '#111827' : 'white', color: on ? 'white' : '#334155' }}>{tab.label}</button>
+            );
+          })}
+        </nav>
+      )}
+      {!isMobile && embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}><div id="billing-header-actions-portal"></div></div>
+      )}
+      {!isMobile && !embedded && (
         <>
           <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
             <div>
-              <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Finance</h1>
+              <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>{tr('page.finance')}</h1>
               <div className="billing-tabs" style={{ display: 'flex', marginTop: '20px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 <style>{`.billing-tabs::-webkit-scrollbar { display: none; }`}</style>
                 {BILLING_TABS.map(tab => {
                   const active = billingViewMode === tab.id;
                   return (
                     <button key={tab.id} onClick={() => setBillingViewMode(tab.id)}
-                      style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent', fontSize: '13px', fontWeight: active ? 800 : 600, cursor: 'pointer', color: active ? '#0f52ba' : '#64748b', transition: 'color 0.2s, border-color 0.2s', whiteSpace: 'nowrap', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                      style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: active ? '3px solid #0f52ba' : '3px solid transparent', fontSize: '15px', fontWeight: active ? 700 : 600, cursor: 'pointer', color: active ? '#0f52ba' : '#475569', transition: 'color 0.2s, border-color 0.2s', whiteSpace: 'nowrap', flexShrink: 0 }}
                     >{tab.label}</button>
                   );
                 })}
@@ -812,11 +851,6 @@ export default function BillingPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div id="billing-header-actions-portal"></div>
-                {localStorage.getItem('1rad_invoices') && (
-                  <button onClick={handleSyncLegacyData} disabled={isSyncing}
-                    style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#1d4ed8', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-                  >{isSyncing ? 'Syncing...' : 'Sync Local'}</button>
-                )}
               </div>
             </div>
           </div>
@@ -988,6 +1022,14 @@ export default function BillingPage() {
         />
       )}
 
+      {billingViewMode === 'DAYBOOK' && (
+        <DayBookHub isMobile={isMobile} isOnline={isOnline} />
+      )}
+
+      {billingViewMode === 'CREDIT_NOTES' && (
+        <CreditNotesHub isMobile={isMobile} isOnline={isOnline} activeCenter={activeCenter} taxProfile={printTaxProfile} taxSettings={taxSettings} />
+      )}
+
       {billingViewMode === 'ANALYTICS' && matrix && (
         <AnalyticsHub 
           isMobile={isMobile}
@@ -1149,30 +1191,6 @@ export default function BillingPage() {
             </button>
           )}
 
-          {/* Fixed Bottom Navigation Bar */}
-          <nav className="billing-android-bottomnav" aria-label="Billing navigation">
-            {BILLING_TABS.slice(0, 4).map(tab => (
-              <button
-                key={tab.id}
-                className={`billing-android-nav-item${billingViewMode === tab.id ? ' active' : ''}`}
-                onClick={() => setBillingViewMode(tab.id)}
-                aria-label={tab.label}
-                aria-current={billingViewMode === tab.id ? 'page' : undefined}
-              >
-                <span className="billing-android-nav-icon">{tab.icon}</span>
-                <span className="billing-android-nav-label">{tab.label}</span>
-              </button>
-            ))}
-            {/* More Menu Trigger */}
-            <button
-              className={`billing-android-nav-item${['FINANCE', 'ANALYTICS'].includes(billingViewMode) ? ' active' : ''}`}
-              onClick={() => setIsMoreMenuOpen(true)}
-              aria-label="More options"
-            >
-              <span className="billing-android-nav-icon">⋯</span>
-              <span className="billing-android-nav-label">More</span>
-            </button>
-          </nav>
         </>
       )}
 

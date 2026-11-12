@@ -128,8 +128,10 @@ export default function RegisterPage() {
       .then(r => setPlans(r?.data?.data || []))
       .catch(() => setPlans([]));
   }, []);
-  // The plan matching a package's edition at the selected cycle.
-  const planFor = (edition) => plans.find(p => p.edition === edition && p.name === formData.cycle);
+  // Cheapest ("from") subscription plan for a package's edition at the selected cycle.
+  const planFor = (edition) => plans
+    .filter(p => p.edition === edition && p.name === formData.cycle && !p.isCustom && p.billingMode !== 'PerStudy')
+    .sort((a, b) => a.price - b.price)[0];
 
   const [step,          setStep]         = useState(1);
   const [isOtpSent,     setIsOtpSent]    = useState(false);

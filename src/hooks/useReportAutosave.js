@@ -88,11 +88,65 @@ export default function useReportAutosave({
   // present (unchanged behaviour), else the study (PACS-only).
   const ownerKey = appointmentId || (imagingStudyId ? `study_${imagingStudyId}` : null);
 
+  // ── Content owner ──────────────────────────────────────────────────────────
+  // Which study (service line) the text in the editor belongs to. Saves go to
+  // THAT study — never "whichever tab is active" — and nothing is saved while
+  // a study is still loading (undefined). Without this, switching CT → USG on
+  // one visit could write the CT findings into the USG report: the timers
+  // armed before the switch fired with the new tab's service id, and the new
+  // tab could keep the old tab's text when it had no template match.
+  //   undefined = loading (don't save) · null = visit-level (legacy / PACS) · id
+  const contentServiceRef = useRef(undefined);
+  const contentReady = () => contentServiceRef.current !== undefined;
+  const contentService = () => contentServiceRef.current || null;
+
+  // ── "Clean" snapshot ───────────────────────────────────────────────────────
+  // Loading a report (or a template) into the editor is not an edit, but the
+  // editor reports it as one — so merely OPENING a case used to save it within
+  // seconds (creating empty draft rows, burning a request per open). After a
+  // study loads we take a snapshot of what's on screen; nothing is marked
+  // changed (or saved) until the content differs from it.
+  const latestRef = useRef({});
+  useEffect(() => { latestRef.current = { impression, advice, selectedTemplateId }; });
+  const cleanSnapshotRef = useRef(null);       // null = not taken yet (still loading)
+  const snapshotTimerRef = useRef(null);
+  const snapshotNow = () => JSON.stringify({
+    f: editorRef.current?.editor?.getHTML?.() ?? '',
+    i: latestRef.current.impression || '',
+    a: latestRef.current.advice || '',
+    t: latestRef.current.selectedTemplateId ? String(latestRef.current.selectedTemplateId) : '',
+  });
+  // True when there is something to save (the content moved off the snapshot).
+  const isChanged = () => {
+    if (cleanSnapshotRef.current === null) return false;           // load echo
+    return cleanSnapshotRef.current === '__dirty__' || snapshotNow() !== cleanSnapshotRef.current;
+  };
+
+  const markContentLoading = useCallback(() => {
+    contentServiceRef.current = undefined;
+    cleanSnapshotRef.current = null;
+    if (snapshotTimerRef.current) { clearTimeout(snapshotTimerRef.current); snapshotTimerRef.current = null; }
+  }, []);
+  // restoredUnsaved: the load put a recovered local draft (not the server copy)
+  // on screen — that IS unsaved work, so it must sync.
+  const markContentLoaded = useCallback((serviceId, restoredUnsaved = false) => {
+    contentServiceRef.current = serviceId || null;
+    if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+    if (restoredUnsaved) { cleanSnapshotRef.current = '__dirty__'; return; }
+    // After the editor's 300 ms change debounce + React's state flush.
+    snapshotTimerRef.current = setTimeout(() => {
+      snapshotTimerRef.current = null;
+      if (contentServiceRef.current !== undefined) cleanSnapshotRef.current = snapshotNow();
+    }, 900);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── 1. LOCAL AUTOSAVE: Immediate persistence to nativeStorage/localStorage ──
   useEffect(() => {
     if (!ownerKey || isFinalized) return;
 
     const timer = setTimeout(async () => {
+      if (!contentReady() || !isChanged()) return;
       // Read the FRESH editor HTML, not the (debounced) editorText state, so
       // attribute changes like right-align that haven't crossed the 300 ms
       // onUpdate debounce yet still get persisted.
@@ -110,7 +164,7 @@ export default function useReportAutosave({
       };
 
       try {
-        await nativeStorage.set(reportDraftKey(ownerKey, activeServiceId), draft);
+        await nativeStorage.set(reportDraftKey(ownerKey, contentService()), draft);
         // Functional update so we act on the LATEST status, not the stale value
         // captured when this debounced effect ran (saveStatus isn't a dep here).
         setSaveStatus(prev => (prev === 'IDLE' || prev === 'SUCCESS') ? 'DIRTY' : prev);
@@ -136,6 +190,7 @@ export default function useReportAutosave({
     if (!ownerKey || isFinalized) return;
 
     const autosaveTimer = setTimeout(async () => {
+      if (!contentReady() || !isChanged()) return;
       // Pull fresh editor HTML so attribute-only changes (right-align,
       // text-color, etc.) made within the 300 ms onUpdate debounce window
       // still make it into the persisted draft.
@@ -149,7 +204,7 @@ export default function useReportAutosave({
         serverBaseline: serverBaselineRef.current,
       };
       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
-      await nativeStorage.set(reportDraftKey(ownerKey, activeServiceId), draft);
+      await nativeStorage.set(reportDraftKey(ownerKey, contentService()), draft);
       // Mirror the draft into the offline cache (Phase B1 Slice 3). The
       // nativeStorage write above still drives the existing crash-recovery
       // prompt; this write keeps the IndexedDB cache row aligned with the
@@ -164,7 +219,7 @@ export default function useReportAutosave({
             impression,
             advice,
             templateId: selectedTemplateId,
-          });
+          }, contentService());
         } catch (cacheErr) {
           console.warn('[REPORTING] Local cache draft write failed', cacheErr);
         }
@@ -218,6 +273,7 @@ export default function useReportAutosave({
         console.info('[AUTOSAVE] Save already in flight — skipping this tick.');
         return;
       }
+      if (!contentReady()) return; // a study is loading — its text isn't in the editor yet
       console.info(`[AUTOSAVE] Triggering background cloud sync...`);
       let releaseLock;
       const nextLock = new Promise(r => { releaseLock = r; });
@@ -240,7 +296,7 @@ export default function useReportAutosave({
           // upsert by (AppointmentId, AppointmentServiceId) so the
           // CT and USG reports for the same visit land in separate
           // rows with separate RowVersions. Null = legacy behaviour.
-          appointmentServiceId: activeServiceId || null,
+          appointmentServiceId: contentService(),
           templateId: selectedTemplateId,
           findings: freshFindings,
           impression: impression || '',
@@ -251,10 +307,13 @@ export default function useReportAutosave({
           // when this is present; falls back to last-write-wins when null.
           rowVersion: rowVersionRef.current,
         };
+        const sentSnapshot = snapshotNow();
         const res = await apiClient.post('/reporting/save', payload);
         if (res.data?.success) {
           setLastSavedAt(new Date());
           setSaveStatus('SUCCESS');
+          // What the server now holds is the new "clean" point.
+          if (contentReady()) cleanSnapshotRef.current = sentSnapshot;
           autosaveFailuresRef.current = 0;
           dirtySinceRef.current = null;   // start a fresh dirty window next cycle
           // Save completed - cancel the deferred "Saving…" label and
@@ -333,16 +392,17 @@ export default function useReportAutosave({
   // content, not a stale closure captured at mount.
   const flushRef = useRef(() => {});
   flushRef.current = () => {
-    if (!ownerKey || isFinalized || cloudAutosaveDisabledReason) return;
+    if (!ownerKey || isFinalized || cloudAutosaveDisabledReason || !contentReady()) return;
     const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
-    // Nothing changed since the server's last known content → nothing to flush.
-    const dirty = saveStatus === 'DIRTY' || saveStatus === 'SAVING'
-      || (serverBaselineRef.current != null && freshFindings !== serverBaselineRef.current);
+    // Nothing changed since it was loaded / last saved → nothing to flush.
+    // (Comparing with the server copy saved an auto-applied template as a
+    // draft every time a new case was merely opened and closed.)
+    const dirty = saveStatus === 'SAVING' || isChanged();
     if (!dirty) return;
 
     // 1) Persist the local draft immediately (crash-recovery + offline re-open).
     try {
-      nativeStorage.set(reportDraftKey(ownerKey, activeServiceId), {
+      nativeStorage.set(reportDraftKey(ownerKey, contentService()), {
         findings: freshFindings, impression, advice, selectedTemplateId,
         timestamp: Date.now(), serverBaseline: serverBaselineRef.current,
       });
@@ -356,7 +416,7 @@ export default function useReportAutosave({
       apiClient.post('/reporting/save', {
         appointmentId,
         imagingStudyId: imagingStudyId || null,
-        appointmentServiceId: activeServiceId || null,
+        appointmentServiceId: contentService(),
         templateId: selectedTemplateId,
         findings: freshFindings,
         impression: impression || '',
@@ -385,11 +445,21 @@ export default function useReportAutosave({
   }, []);
 
   // ── Manual Save / Finalize (shares the /reporting/save endpoint + OCC). ────
-  const saveNow = useCallback(async (finalizing = false) => {
+  const saveNow = useCallback(async (signRequested = false) => {
+    // Signing is NEVER a save. A plain save with isFinalized:true was ignored
+    // by the server (it always stores a Draft) while this screen announced
+    // "REPORT FINALIZED" — doctors believed unsigned drafts were signed. Any
+    // caller still asking to "save as final" now opens the real sign-off
+    // (password → /reporting/report/finalize) instead.
+    if (signRequested === true) {
+      window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
+      return;
+    }
     if (!ownerKey) {
       notify('error', 'CONTEXT MISSING', 'Cannot save the report — study/appointment context is missing. Please reload the page.');
       return;
     }
+    if (!contentReady()) return; // the study is still loading
 
     // Atomically join the save queue so multiple rapid calls (like Word syncs)
     // process one at a time, reading the freshly-advanced OCC token each time.
@@ -410,13 +480,13 @@ export default function useReportAutosave({
       appointmentId: appointmentId,
       // PACS-only: study-keyed upsert when there's no appointment.
       imagingStudyId: imagingStudyId || null,
-      // Multi-service rollout — scope to the active service line.
-      appointmentServiceId: activeServiceId || null,
+      // Multi-service rollout — the study whose text is in the editor.
+      appointmentServiceId: contentService(),
       templateId: selectedTemplateId,
       findings: currentFindings,
       impression: impression || '',
       advice: advice || '',
-      isFinalized: finalizing,
+      isFinalized: false, // the server ignores it; signing is /report/finalize
       reportingMode: 'Narrative',
       // B2 Track 3 — OCC token from the last load / save.
       rowVersion: rowVersionRef.current,
@@ -424,17 +494,16 @@ export default function useReportAutosave({
 
     if (!isOnline) {
       await addToOutbox('REPORT', payload);
-      notify('warning', finalizing ? 'QUEUED FOR SYNC' : 'CACHED LOCALLY', finalizing ? 'You are offline. The finalized report has been queued and will sync automatically when reconnected.' : 'You are offline. Draft has been saved locally and will sync when reconnected.');
-      if (finalizing) {
-        onFinalized();
-      }
+      notify('warning', 'CACHED LOCALLY', 'You are offline. Draft has been saved locally and will sync when reconnected.');
       return;
     }
 
     setIsSaving(true);
     try {
+      const sentSnapshot = snapshotNow();
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
+        if (contentReady()) cleanSnapshotRef.current = sentSnapshot;
         // The server now holds exactly what we just sent — advance the
         // baseline so any subsequent draft compares lineage against this
         // saved content (and a reload right after save won't falsely prompt).
@@ -448,12 +517,8 @@ export default function useReportAutosave({
         // the corner even when the manual save modal isn't visible.
         setSaveStatus('SUCCESS');
         setLastSavedAt(new Date());
-        notify('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
-        if (finalizing) {
-          // Clear local draft on success
-          await nativeStorage.delete(reportDraftKey(ownerKey, activeServiceId));
-          onFinalized();
-        }
+        // No pop-up: the status line already says "Saved <time>". A blocking
+        // "Understood" dialog on every save cost a click per report.
       }
     } catch (err) {
       console.error('[REPORTING] Save failed', err);
@@ -469,7 +534,7 @@ export default function useReportAutosave({
           impression:  impression || '',
           advice:      advice || '',
           templateId:  selectedTemplateId,
-          isFinalized: finalizing,
+          isFinalized: false,
         };
         // Apply server state to the editor.
         applyContent({
@@ -487,13 +552,10 @@ export default function useReportAutosave({
           previous: previousContent,
         });
         setSaveStatus('CONFLICT');
-        logEvent('conflict.shown', { appointmentId, finalizing });
+        logEvent('conflict.shown', { appointmentId });
       } else if (!err.response) {
         await addToOutbox('REPORT', payload);
         notify('warning', 'SAVED TO OUTBOX', 'Network error encountered. Report has been saved to the offline outbox and will sync automatically.');
-        if (finalizing) {
-          onFinalized();
-        }
       } else {
         notify('error', 'SAVE FAILED', `Could not save the report: ${err.response?.data?.error || err.message}`);
       }
@@ -523,7 +585,7 @@ export default function useReportAutosave({
       const res = await apiClient.post('/reporting/save', {
         appointmentId,
         imagingStudyId: imagingStudyId || null,
-        appointmentServiceId: activeServiceId || null,
+        appointmentServiceId: contentService(),
         templateId: prev.templateId,
         findings: prev.findings,
         impression: prev.impression,
@@ -569,17 +631,21 @@ export default function useReportAutosave({
       notify('error', 'CONTEXT MISSING', 'Cannot sign — study/appointment context is missing. Please reload.');
       return { ok: false };
     }
+    if (!contentReady()) return { ok: false };
     let currentFindings = editorText;
     if (editorRef.current?.editor) currentFindings = editorRef.current.editor.getHTML();
 
     const owner = {
       appointmentId,
       imagingStudyId: imagingStudyId || null,
-      appointmentServiceId: activeServiceId || null,
+      appointmentServiceId: contentService(),
     };
 
     if (!isOnline) {
-      const draftPayload = {
+      // Signing needs a live password check on the server — never queue a
+      // password in the browser's outbox, and never show "signed" while it
+      // isn't. Keep the work safe as a draft; the doctor signs once online.
+      await addToOutbox('REPORT', {
         ...owner,
         templateId: selectedTemplateId,
         findings: currentFindings,
@@ -587,25 +653,9 @@ export default function useReportAutosave({
         advice: advice || '',
         reportingMode: 'Narrative',
         rowVersion: rowVersionRef.current,
-      };
-      await addToOutbox('REPORT', draftPayload);
-      
-      const finPayload = {
-        ...owner,
-        targetStatus,
-        password,
-        credentials: credentials || null,
-        // Since we queued the draft first, it will bump the RowVersion on the server.
-        // The SyncEngine will process them sequentially, but sending the old rowVersion 
-        // in REPORT_FINALIZE might cause a conflict. We omit it for offline finalize to let it pass.
-        rowVersion: null,
-      };
-      await addToOutbox('REPORT_FINALIZE', finPayload);
-
-      await nativeStorage.delete(reportDraftKey(ownerKey, activeServiceId));
-      notify('warning', 'QUEUED FOR SYNC', 'You are offline. The report signature has been queued and will be applied when you reconnect.');
-      if (targetStatus === 'Final') onFinalized();
-      return { ok: true };
+      });
+      notify('warning', 'NOT SIGNED — YOU ARE OFFLINE', 'Your report is saved and will sync when you reconnect. Signing needs internet: sign it once you are back online.');
+      return { ok: false, offline: true };
     }
 
     setIsSaving(true);
@@ -642,7 +692,7 @@ export default function useReportAutosave({
         const status = report?.status ?? report?.Status;
         const isFinal = status === 'Final';
         if (isFinal) {
-          await nativeStorage.delete(reportDraftKey(ownerKey, activeServiceId));
+          await nativeStorage.delete(reportDraftKey(ownerKey, contentService()));
           notify('success', 'REPORT FINALIZED', 'Report has been electronically signed and locked.');
         } else {
           notify('success', 'PRELIMINARY SIGNED', 'A preliminary (wet-read) signature was applied. The report stays editable until you finalise it.');
@@ -690,16 +740,16 @@ export default function useReportAutosave({
     const payload = {
       appointmentId,
       imagingStudyId: imagingStudyId || null,
-      appointmentServiceId: activeServiceId || null,
+      appointmentServiceId: contentService(),
       text,
       password,
       credentials: credentials || null,
     };
 
     if (!isOnline) {
-      await addToOutbox('REPORT_ADDENDUM', payload);
-      notify('warning', 'QUEUED FOR SYNC', 'You are offline. The signed addendum has been queued and will be appended when you reconnect.');
-      return { ok: true };
+      // Same rule as signing: no password in the outbox, no false "added".
+      notify('warning', 'NOT ADDED — YOU ARE OFFLINE', 'An addendum needs internet. Please add it once you are back online.');
+      return { ok: false, offline: true };
     }
 
     try {
@@ -721,7 +771,7 @@ export default function useReportAutosave({
       }
       return { ok: false, error: err };
     }
-  }, [ownerKey, isOnline, appointmentId, imagingStudyId, activeServiceId, notify, logEvent]);
+  }, [ownerKey, isOnline, appointmentId, imagingStudyId, notify, logEvent]);
 
   return {
     saveStatus,
@@ -735,5 +785,8 @@ export default function useReportAutosave({
     setBaseline,
     finalizeReport,
     addAddendum,
+    markContentLoading,
+    markContentLoaded,
+    flushNow: () => { try { flushRef.current?.(); } catch { /* best-effort */ } },
   };
 }

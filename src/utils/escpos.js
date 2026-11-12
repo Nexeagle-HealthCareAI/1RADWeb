@@ -22,8 +22,11 @@ export class EscPos {
 
   text(s) {
     const out = [];
-    for (const ch of String(s ?? '')) {
+    // Review B11: a typed name can't carry printer control codes (ESC/GS sequences cut
+    // paper, open the drawer or switch code pages). Drop C0/C1 controls; text only.
+    for (const ch of String(s ?? '').replace(/\u20B9/g, 'Rs.')) {
       const c = ch.charCodeAt(0);
+      if (c < 0x20 || c === 0x7F || (c >= 0x80 && c < 0xA0)) { out.push(0x20); continue; }
       out.push(c < 256 ? c : 0x3F); // non-latin1 → '?'
     }
     this.chunks.push(Uint8Array.from(out));
@@ -96,6 +99,8 @@ export function buildReceiptBytes(data = {}) {
   if (clinic.phone) p.line('Tel: ' + clinic.phone);
   if (clinic.email) p.line(clinic.email);
   if (clinic.rep) p.bold(true).line('REP: ' + clinic.rep).bold(false);
+  if (clinic.gstin) p.bold(true).line('GSTIN: ' + clinic.gstin).bold(false);
+  if (data.title) p.bold(true).line(data.title).bold(false);
   p.drawLine();
 
   p.align('left');
@@ -141,7 +146,10 @@ export function buildReceiptBytes(data = {}) {
       p.leftRight('DISCOUNT', '-' + money(data.discount));
     }
   }
-  p.bold(true).size(1, 1).leftRight('TOTAL', money(data.total)).size(1, 1).bold(false).drawLine();
+  p.bold(true).size(1, 1).leftRight('TOTAL', money(data.total)).size(1, 1).bold(false);
+  for (const t of (data.taxLines || [])) p.line(t);
+  if (data.exemptNote) p.line(data.exemptNote);
+  p.drawLine();
   // Partial payment — show what's been paid and what's still due so the slip
   // is proof the patient paid a part amount (not the whole bill).
   if ((Number(data.paid) || 0) > 0 && (Number(data.balance) || 0) > 0.01) {

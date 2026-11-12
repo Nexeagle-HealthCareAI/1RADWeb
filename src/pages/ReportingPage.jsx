@@ -9,9 +9,12 @@ import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
+import { notifyToast } from '../utils/toast';
 import useAuth from '../auth/useAuth';
 import useReportAutosave, { reportDraftKey } from '../hooks/useReportAutosave';
 import useReportAi from '../hooks/useReportAi';
+import useKeyImages from '../hooks/useKeyImages';
+import { getAiPolicy } from '../components/NarrativeEditor/hooks/speechEngine';
 import usePatientTimeline from '../hooks/usePatientTimeline';
 import { nativeStorage, nativeWord } from '../hooks/useElectron';
 import { openReportInWord } from '../utils/exportWord';
@@ -23,6 +26,7 @@ import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import ReportingDicomPanel from '../components/Reporting/ReportingDicomPanel';
 import ReportingEditorPanel from '../components/Reporting/ReportingEditorPanel';
+import SimplePadTab from '../components/Reporting/SimplePadTab';
 import { NotificationModal, DraftRecoveryModal, WordSyncModal } from '../components/Reporting/ReportingModals';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId } from '../db/repos/reportsRepo';
@@ -35,7 +39,13 @@ const ReportingPage = () => {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const { isOnline, addToOutbox } = useOffline();
-  const { user: currentUser } = useAuth();
+  // The auth context exposes `currentUser` (roles = the ACTIVE centre's roles).
+  // This page used to read `user`, which doesn't exist, so the signer's name
+  // never reached the sign-off dialog.
+  const { currentUser } = useAuth();
+  // Only doctors sign (the server enforces it too). Technicians can type a
+  // draft; a doctor takes it over and signs.
+  const canSign = (currentUser?.roles || []).some(r => r === 'admindoctor' || r === 'doctor');
   // 60s tick so the on-premises clock advances while the radiologist is
   // actively reporting — shows the case "ageing" in real time.
   useTickClock();
@@ -50,6 +60,11 @@ const ReportingPage = () => {
   // links from older builds) keep working unchanged.
   const initialServiceIdFromUrl = searchParams.get('serviceId') || null;
   const [activeServiceId, setActiveServiceId] = useState(initialServiceIdFromUrl);
+  // Key images, saved per study on the server (★ in the viewer / K).
+  const keyNotify = useCallback((type, title, message) => notifyToast({ title, message }, type), []);
+  const { keyImages, keyImageSops, toggleKeyImage: toggleSavedKeyImage } = useKeyImages({
+    appointmentId: studyId ? null : appointmentId, serviceId: activeServiceId, studyId, notify: keyNotify,
+  });
   const [appointmentServices, setAppointmentServices] = useState([]);
   const [editorText, setEditorText] = useState('');
   const [templates, setTemplates] = useState([]);
@@ -97,6 +112,9 @@ const ReportingPage = () => {
     setActiveAssetIndex(0);
   }, [activeServiceId]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  // Latest images for the poller (which shouldn't re-subscribe on every change).
+  const uploadedFilesRef = useRef([]);
+  useEffect(() => { uploadedFilesRef.current = uploadedFiles; }, [uploadedFiles]);
 
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeTool, setActiveTool] = useState('WindowLevel');
@@ -105,7 +123,6 @@ const ReportingPage = () => {
   const [layoutMode, setLayoutMode] = useState('1x1');
   const [viewportProps, setViewportProps] = useState({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
   const [resetTrigger, setResetTrigger] = useState(0);
-  const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -122,8 +139,10 @@ const ReportingPage = () => {
   // Default tab. Opening from the study board's "View" passes ?view=dicom so the
   // window lands on the DICOM viewer; otherwise start on Reporting.
   const [activeMainTab, setActiveMainTab] = useState(
-    isInitialViewDicom ? 'DICOM' : 'REPORTING'
-  ); // 'DICOM', 'REPORTING', 'TIMELINE'
+    // Desktop and tablet land on the Report pad (images | paper | sign); phones
+    // keep the classic tabs. ?view=dicom still opens the viewer directly.
+    isInitialViewDicom ? 'DICOM' : (window.innerWidth >= 768 ? 'PAD' : 'REPORTING')
+  ); // 'PAD', 'DICOM', 'REPORTING', 'TIMELINE'
   // True only while the DICOM tab is visible — defers ZIP download until the user
   // actually needs the viewer, avoiding a 200-500 MB download on every page open.
   const dicomTabActiveRef = useRef(isInitialViewDicom);
@@ -133,15 +152,16 @@ const ReportingPage = () => {
 
   const handleSelectMainTab = (tabId) => {
     setActiveMainTab(tabId);
-    dicomTabActiveRef.current = tabId === 'DICOM';
-    // Trigger DICOM loading on-demand — only when the doctor opens the DICOM tab.
-    if (tabId === 'DICOM' && uploadedFiles[activeAssetIndex]?.needsHydration) {
+    // The Report pad shows the viewer too, so it counts as "DICOM visible".
+    dicomTabActiveRef.current = tabId === 'DICOM' || tabId === 'PAD';
+    // Trigger DICOM loading on-demand — only when a tab that shows images opens.
+    if ((tabId === 'DICOM' || tabId === 'PAD') && uploadedFiles[activeAssetIndex]?.needsHydration) {
       hydrateZipAsset(activeAssetIndex);
     }
     if (!isTablet) {
       if (tabId === 'DICOM') {
         setEditorState('collapsed');
-      } else if (tabId === 'REPORTING') {
+      } else if (tabId === 'PAD' || tabId === 'REPORTING') {
         setEditorState('standard');
         setActiveRightTab('REPORT');
       } else if (tabId === 'TIMELINE') {
@@ -150,6 +170,14 @@ const ReportingPage = () => {
       }
     }
   };
+
+  // On phones the pad falls back to the classic tabs (it is a desktop/tablet
+  // layout); rendering goes through effectiveMainTab below. Entering the pad
+  // counts as "viewer visible" for the polling/hydration bookkeeping.
+  const effectiveMainTab = (activeMainTab === 'PAD' && isMobile) ? 'REPORTING' : activeMainTab;
+  useEffect(() => {
+    if (activeMainTab === 'PAD' && !isMobile) dicomTabActiveRef.current = true;
+  }, [activeMainTab, isMobile]);
 
   // Performance optimization states
   const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
@@ -265,10 +293,44 @@ const ReportingPage = () => {
     setAdvice(adv || '');
     if (templateId) setSelectedTemplateId(String(templateId));
   }, [applyEditorContent]);
+  // After a Final sign-off go straight to the next piece of work: first any
+  // other unsigned study on this visit, then the next waiting patient in the
+  // worklist order the doctor opened from; only then back to the list.
+  // The save hook (created below) supplies markContentLoading; reach it
+  // through a ref so this callback can be defined first.
+  const markLoadingRef = useRef(null);
   const onReportFinalized = useCallback(() => {
     setIsFinalized(true);
+    const nextStudy = (appointmentServices || []).find(l => l.id && l.id !== activeServiceId
+      && !['REPORTED', 'DELIVERED'].includes(String(l.status || '').toUpperCase()));
+    if (nextStudy && appointmentId) {
+      notifyToast({ title: 'Signed ✓', message: `Next on this visit: ${nextStudy.serviceName || 'the next study'}` }, 'success');
+      markLoadingRef.current?.();
+      setAppointmentServices(prev => prev.map(l => (l.id === activeServiceId ? { ...l, status: 'REPORTED' } : l)));
+      setActiveServiceId(nextStudy.id);
+      navigate({ search: `?serviceId=${encodeURIComponent(nextStudy.id)}` }, { replace: true });
+      return;
+    }
+    let next = null;
+    try {
+      const queue = JSON.parse(sessionStorage.getItem('1rad_report_queue') || '[]');
+      const at = queue.findIndex(x => x.id === appointmentId);
+      const rest = queue.filter(x => x.id !== appointmentId);
+      next = (at >= 0 ? queue.slice(at + 1) : rest).find(x => ['scanned', 'reporting'].includes(x.status))
+          || rest.find(x => ['scanned', 'reporting'].includes(x.status)) || null;
+      sessionStorage.setItem('1rad_report_queue', JSON.stringify(rest));
+    } catch { next = null; }
+    if (next) {
+      notifyToast({ title: 'Signed ✓', message: `Next patient: ${next.name || 'next in your list'}` }, 'success');
+      if (next.status === 'scanned') {
+        apiClient.patch(`/appointments/${next.id}/status`, '"reporting"', { headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+      }
+      navigate(`/reporting/${next.id}`);
+      return;
+    }
+    notifyToast({ title: 'Signed ✓', message: 'No more reports waiting in your list.' }, 'success');
     navigate('/doctor-board');
-  }, [navigate]);
+  }, [navigate, appointmentServices, activeServiceId, appointmentId]);
   const {
     saveStatus,
     lastSavedAt,
@@ -280,6 +342,9 @@ const ReportingPage = () => {
     setBaseline: setReportBaseline,
     finalizeReport,
     addAddendum,
+    markContentLoading,
+    markContentLoaded,
+    flushNow,
   } = useReportAutosave({
     appointmentId,
     imagingStudyId: studyId,
@@ -298,6 +363,7 @@ const ReportingPage = () => {
     onFinalized: onReportFinalized,
   });
 
+  useEffect(() => { markLoadingRef.current = markContentLoading; }, [markContentLoading]);
   const handleSaveReportRef = useRef(handleSaveReport);
   useEffect(() => {
     handleSaveReportRef.current = handleSaveReport;
@@ -350,7 +416,7 @@ const ReportingPage = () => {
   const {
     aiReview, setAiReview,
     handleAiAssist, runRadAiCleanup, acceptAiReview,
-  } = useReportAi({ activeService, activeAppointment, appointmentId, editorRef, applyEditorContent, showNotif });
+  } = useReportAi({ activeService, activeAppointment, appointmentId, imagingStudyId: studyId || null, editorRef, applyEditorContent, showNotif });
 
   // Prior-study copy-forward — pull a previous report's findings into the
   // current report with a comparison line. Flattens any .word-page wrappers so
@@ -490,6 +556,8 @@ const ReportingPage = () => {
   const fetchReportingContext = useCallback(async (appId) => {
     const reqId = ++fetchReqRef.current;               // supersede any older in-flight load
     const isStale = () => reqId !== fetchReqRef.current;
+    let handedOff = false;                             // a scoped reload took over
+    markContentLoading();                              // no saves until this study's text is applied
     setLoading(true);
     setError(null);
     console.info(`[1RAD] Initializing Reporting Context for AppID: ${appId}`);
@@ -553,7 +621,13 @@ const ReportingPage = () => {
         // service has already been reported.
         const firstUnreported = lines.find(l => !['REPORTED', 'DELIVERED'].includes((l.status || '').toUpperCase()));
         const target = firstUnreported || lines[0];
-        if (target?.id) setActiveServiceId(target.id);
+        if (target?.id) {
+          // Picking a study re-runs this load scoped to it. Stop here so this
+          // unscoped load can't apply a different study's report on top.
+          setActiveServiceId(target.id);
+          handedOff = true;
+          return;
+        }
       }
       // Surface available patient fields so the editor banner can verify which
       // ones are present (helpful when payload shape varies dev vs prod).
@@ -626,7 +700,7 @@ const ReportingPage = () => {
             : `/Reporting/report/${appId}`
         ).catch(async () => {
           try {
-            const cached = await getReportByAppointmentId(appId);
+            const cached = await getReportByAppointmentId(appId, activeServiceId);
             if (cached) {
               console.info('[REPORTING] Network fetch failed — rendering from offline cache.');
               return { data: { success: true, data: { ...cached, isFinalized: !!cached.isFinalized } } };
@@ -638,6 +712,18 @@ const ReportingPage = () => {
         }),
         apiClient.get(`/Study/${appId}/manifest`).catch(() => ({ data: { success: false } }))
       ]);
+
+      // The user switched study (or left) while these were loading — a newer
+      // load owns the editor now; applying this one would mix two studies.
+      if (isStale()) return;
+
+      // Start this study from a clean slate: nothing from the previously open
+      // study (its impression, advice, template, signature or lock) carries over.
+      setImpression('');
+      setAdvice('');
+      setSelectedTemplateId(null);
+      setIsFinalized(false);
+      applyReportMeta(null);
 
       if (templRes.data?.success) {
         // Normalize PascalCase API response (Id/Name/Content) to camelCase so
@@ -737,6 +823,7 @@ const ReportingPage = () => {
         console.warn('[1RAD][TEMPLATE_DEBUG] log failed', logErr);
       }
 
+      let restoredUnsaved = false;   // a recovered local draft is on screen → must sync
       if (r && (r.findings !== undefined || r.impression !== undefined)) {
         console.info(`[1RAD] Found Existing Report.`);
 
@@ -807,8 +894,10 @@ const ReportingPage = () => {
                 applyEditorContent(localDraft.findings || '');
                 if (localDraft.impression) setImpression(localDraft.impression);
                 if (localDraft.advice) setAdvice(localDraft.advice);
-                if (localDraft.templateId) setSelectedTemplateId(String(localDraft.templateId));
+                const draftTpl = localDraft.templateId || localDraft.selectedTemplateId;
+                if (draftTpl) setSelectedTemplateId(String(draftTpl));
                 restored = true;
+                restoredUnsaved = true;
               }
             }
           }
@@ -854,10 +943,14 @@ const ReportingPage = () => {
             const draftTpl = localDraft.selectedTemplateId || localDraft.templateId;
             if (draftTpl) setSelectedTemplateId(String(draftTpl));
             restoredDraft = true;
+            restoredUnsaved = true;
           }
         } catch (draftErr) {
           console.warn('[1RAD] New-case local draft check failed', draftErr);
         }
+
+        // A new report has no server version yet: fresh baseline + no OCC token.
+        if (!restoredDraft) setReportBaseline({ findings: '', rowVersion: null });
 
         // No draft → auto-match a template against the ACTIVE service's name (or
         // fall back to the visit's primary service for legacy single-service
@@ -881,10 +974,15 @@ const ReportingPage = () => {
               applyEditorContent(matchContent);
             } else {
               console.info(`[1RAD] No matching template for service "${targetServiceName}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
+              applyEditorContent(''); // never leave the previous study's text in place
             }
+          } else {
+            applyEditorContent('');
           }
         }
       }
+      // This study's text is now in the editor — saves may go to it.
+      markContentLoaded(activeServiceId, restoredUnsaved);
     } catch (err) {
       console.error('[REPORTING] Initialization failure, trying cache', err);
       // Try to load from cache
@@ -899,18 +997,20 @@ const ReportingPage = () => {
         applyEditorContent(draft.findings || '');
         setImpression(draft.impression || '');
         setAdvice(draft.advice || '');
-        setSelectedTemplateId(draft.selectedTemplateId);
+        setSelectedTemplateId(draft.selectedTemplateId || draft.templateId || null);
+        markContentLoaded(activeServiceId, true);
       } else {
         setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
       }
     } finally {
-      setLoading(false);
+      // A superseded / handed-off load doesn't own the spinner.
+      if (!handedOff && !isStale()) setLoading(false);
     }
     // Depending on activeServiceId so a service tab switch refetches the
     // scoped report instead of replaying the captured closure value. The
     // appointment+services state is reset above to the current values so
     // this is safe to re-run.
-  }, [activeServiceId]);
+  }, [activeServiceId, markContentLoading, markContentLoaded]);
 
   // Cloud PACS-only context loader. A study has no appointment / services /
   // timeline — it carries its own demographics and its assets come back on the
@@ -1006,6 +1106,7 @@ const ReportingPage = () => {
         applyReportMeta(r);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
       }
+      let studyRestored = false;
       try {
         // Study mode has no service scope — the draft key matches the autosave
         // hook's ownerKey (`study_<id>`).
@@ -1018,6 +1119,7 @@ const ReportingPage = () => {
           const draftTs = new Date(localDraft.timestamp || 0).getTime();
           const ageMin = Math.max(1, Math.round((Date.now() - draftTs) / 60000));
           if (await askDraftRecovery(ageMin)) {
+            studyRestored = true;
             applyEditorContent(localDraft.findings || '');
             if (localDraft.impression) setImpression(localDraft.impression);
             if (localDraft.advice) setAdvice(localDraft.advice);
@@ -1028,13 +1130,14 @@ const ReportingPage = () => {
       } catch (recoverErr) {
         console.warn('[REPORTING] Study draft crash-recovery check failed', recoverErr);
       }
+      markContentLoaded(null, studyRestored); // PACS-only: one report per study, no service scope
     } catch (err) {
       console.error('[REPORTING] Study context init failure', err);
       setError('SYSTEM_INITIALIZATION_ERROR: Could not prepare the study reporting workspace. ' + (err.message || ''));
     } finally {
       setLoading(false);
     }
-  }, [setReportBaseline, fetchPatientTimeline]);
+  }, [setReportBaseline, fetchPatientTimeline, markContentLoaded]);
 
   useEffect(() => {
     if (studyId) {
@@ -1054,15 +1157,20 @@ const ReportingPage = () => {
     if (!appointmentId || isFinalized || !isOnline) return;
 
     const pollLiveUpdates = async () => {
+      // Nobody is looking — don't spend the doctor's bandwidth (or the server's).
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         // 1. Fetch appointment details to see if status or notes changed
         const appRes = await apiClient.get(`/appointments/${appointmentId}`).catch(() => null);
         if (appRes?.data) {
+          // Same mapping as the initial load: the report always names the
+          // referring DOCTOR (polling used to drop it back to the raw source).
+          const fresh = { ...appRes.data, referredBy: appRes.data.referringDoctorName || appRes.data.referredBy };
           setActiveAppointment(prev => {
-            if (!prev) return appRes.data;
-            if (prev.status !== appRes.data.status || prev.notes !== appRes.data.notes || prev.technicianComments !== appRes.data.technicianComments) {
-              console.log('[LIVE_UPDATE] Appointment updated:', appRes.data.status);
-              return appRes.data;
+            if (!prev) return fresh;
+            if (prev.status !== fresh.status || prev.notes !== fresh.notes || prev.technicianComments !== fresh.technicianComments) {
+              console.log('[LIVE_UPDATE] Appointment updated:', fresh.status);
+              return fresh;
             }
             return prev;
           });
@@ -1071,7 +1179,10 @@ const ReportingPage = () => {
         // 2. Fetch manifest — skip while DICOM is downloading to avoid bandwidth competition.
         // Manifest call also returns Pending/Queued statuses so we pick up freshly
         // uploaded ZIPs the moment the backend extraction worker finishes them.
-        if (!isHydratingRef.current) {
+        // Once the images are loaded there is nothing new to pick up — skip.
+        const seriesLoaded = (uploadedFilesRef.current || []).some(a =>
+          (a.rawFiles?.length > 0) || (a.needsHydration === false && a.seriesUID) || a.type === 'DICOM SERIES' || a.isExtracted);
+        if (!isHydratingRef.current && !seriesLoaded) {
           const manifestRes = await apiClient.get(`/Study/${appointmentId}/manifest`).catch(() => null);
           const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || null;
           if (manifestAssets) {
@@ -1114,7 +1225,9 @@ const ReportingPage = () => {
       }
     };
 
-    const interval = setInterval(pollLiveUpdates, 5000); // Poll every 5 seconds
+    // Every 30 s (was 5 s: ~24 requests a minute per open report). Status and
+    // new uploads still arrive within half a minute.
+    const interval = setInterval(pollLiveUpdates, 30000);
     return () => clearInterval(interval);
   }, [appointmentId, isFinalized, isOnline]);
 
@@ -1134,13 +1247,57 @@ const ReportingPage = () => {
   };
 
   // --- DICOM HANDLERS ---
-  const toggleKeyImage = () => {
-    const key = `${activeAssetIndex}_${currentSlice}`;
-    setKeyImages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  // The viewer passes the exact file (with its DICOM instance UID); the K
+  // shortcut doesn't, so fall back to the slice on screen.
+  const toggleKeyImage = (_imageId, file) => {
+    const asset = visibleUploadedFiles[activeAssetIndex];
+    const f = file || asset?.rawFiles?.[currentSlice - 1];
+    const sop = f?.sopInstanceUID;
+    const owning = (sop && visibleUploadedFiles.find(a => a?.rawFiles?.some(r => r?.sopInstanceUID === sop))) || asset;
+    const idx = owning?.rawFiles?.findIndex(r => r === f || (sop && r?.sopInstanceUID === sop)) ?? -1;
+    toggleSavedKeyImage(f, owning, idx >= 0 ? idx : null);
   };
 
+  // The viewer-shortcut listener is mounted with few deps; read the latest
+  // toggle (it closes over the saved key-image list) through a ref.
+  const toggleKeyImageRef = useRef(toggleKeyImage);
+  useEffect(() => { toggleKeyImageRef.current = toggleKeyImage; });
+
+  // ── Draft from key images (AI) — draft only; the doctor reviews and signs.
+  const [visionEnabled, setVisionEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAiPolicy().then(p => { if (alive) setVisionEnabled(!!(p?.visionDraftEnabled && p?.reportAiEnabled)); });
+    return () => { alive = false; };
+  }, []);
+  const [visionDraft, setVisionDraft] = useState(null); // { busy } | { open, findingsHtml, impression, draftId, imagesUsed, stripsMasked }
+  const runVisionDraft = useCallback(async () => {
+    setVisionDraft({ busy: true });
+    try {
+      const res = await apiClient.post('/reporting/vision-draft', studyId
+        ? { imagingStudyId: studyId }
+        : { appointmentId, appointmentServiceId: activeServiceId || null });
+      const body = res?.data || {};
+      if (!body.success) throw new Error(body.error || body.data?.error || 'No draft returned.');
+      setVisionDraft({ open: true, ...body.data });
+    } catch (e) {
+      setVisionDraft(null);
+      notifyToast({ title: 'No AI draft', message: e?.response?.data?.error || e?.message || 'Could not draft from the images.' }, 'warning', { duration: 7000 });
+    }
+  }, [studyId, appointmentId, activeServiceId]);
+  const applyVisionDraft = useCallback((how, useImpression) => {
+    const d = visionDraft;
+    if (!d?.findingsHtml) return;
+    const current = editorRef.current?.editor?.getHTML?.() ?? '';
+    applyEditorContent(how === 'append' && current.replace(/<[^>]*>/g, '').trim() ? `${current}${d.findingsHtml}` : d.findingsHtml);
+    if (useImpression && d.impression) setImpression(d.impression);
+    if (d.draftId) apiClient.post(`/reporting/ai-drafts/${d.draftId}/applied`).catch(() => {});
+    setVisionDraft(null);
+    notifyToast({ title: 'AI draft added', message: 'Check every line against the images before signing.' }, 'info');
+  }, [visionDraft, applyEditorContent]);
+
   // Persist a freshly-uploaded ZIP / DICOM file to the backend so other devices and
-  // the technician/admin board can see it. Mirrors the flow used in TechnicianPage.
+  // the admin board can see it.
   const persistStudyAsset = async (file) => {
     if (!appointmentId) {
       console.warn('[REPORTING] No appointmentId — skipping backend persistence.');
@@ -1914,8 +2071,11 @@ const ReportingPage = () => {
 
   useEffect(() => {
     const handleDicomShortcuts = (e) => {
-      // Only activate shortcuts when DICOM viewer is active
-      if (!isDicomImage) return;
+      // Viewer keys work whenever the image viewer is on screen with images
+      // (DICOM tab or the Report Pad). This used to need a LOCAL upload
+      // (isDicomImage), so for normal server-loaded studies nothing worked.
+      if (!(isDicomImage || (dicomTabActiveRef.current && uploadedFiles.length > 0))) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl/Cmd combos belong to the report shortcuts
 
       // Ignore shortcuts when typing in input fields OR anywhere inside the
       // NarrativeEditor (covers Ribbon buttons that don't have isContentEditable
@@ -2033,7 +2193,7 @@ const ReportingPage = () => {
           console.log('[SHORTCUT] Toggle Cine (Space)');
           break;
         case 'k':
-          toggleKeyImage();
+          toggleKeyImageRef.current?.(null, null);
           console.log('[SHORTCUT] Toggle Key Image (K)');
           break;
         case 'v':
@@ -2087,26 +2247,34 @@ const ReportingPage = () => {
         }
       }
 
-      // Ctrl+S to save report
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault();
-        handleSaveReport(false);
-        console.log('[SHORTCUT] Save Report (Ctrl+S)');
-      }
-
-      // Ctrl+Shift+S opens the Sign dialog (password re-auth, 21 CFR Part 11).
-      // Signing is no longer a silent "save as final" — it goes through the
-      // editor's FinalizeDialog → /reporting/report/finalize.
-      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
-        e.preventDefault();
-        if (!isFinalized) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
-        console.log('[SHORTCUT] Open Sign dialog (Ctrl+Shift+S)');
-      }
     };
 
     window.addEventListener('keydown', handleDicomShortcuts);
     return () => window.removeEventListener('keydown', handleDicomShortcuts);
   }, [isDicomImage, activeAssetIndex, uploadedFiles.length]);
+
+  // Report shortcuts — everywhere on the page, whatever is focused:
+  //   Ctrl/Cmd+S        save now
+  //   Ctrl/Cmd+Shift+S  open the sign-off (doctors only)
+  // Inside the editor, the editor's own Ctrl+S already saves — skip it there.
+  const reportKeysRef = useRef({});
+  useEffect(() => { reportKeysRef.current = { isFinalized, canSign }; }, [isFinalized, canSign]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== 's') return;
+      const { isFinalized: locked, canSign: mayS } = reportKeysRef.current;
+      if (e.shiftKey) {
+        e.preventDefault();
+        if (!locked && mayS) window.dispatchEvent(new CustomEvent('narrative-editor:open-finalize'));
+        return;
+      }
+      if (e.target?.closest?.('.narrative-editor-container')) return;
+      e.preventDefault();
+      handleSaveReportRef.current?.(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Keyboard shortcuts help modal
   const renderShortcutsHelp = () => {
@@ -2512,6 +2680,52 @@ const ReportingPage = () => {
     />
     );
   };
+
+  // The DICOM viewer panel, shared by the DICOM tab and the Report pad tab so
+  // both mount the identical viewer with identical wiring.
+  const renderDicomPanel = () => (
+    <ReportingDicomPanel
+            isMobile={isMobile}
+            isTablet={isTablet}
+            isSyncEnabled={isSyncEnabled}
+            isHistoricalMode={isHistoricalMode}
+            annotationKey={isHistoricalMode ? null : studyId ? `study:${studyId}` : appointmentId ? `appointment:${appointmentId}` : null}
+            activeAppointment={activeAppointment}
+            appointmentId={appointmentId}
+            activeServiceId={activeServiceId}
+            activeServiceMod={activeServiceMod}
+            activeAssetIndex={activeAssetIndex}
+            setActiveAssetIndex={setActiveAssetIndex}
+            activeMetadata={activeMetadata}
+            setActiveMetadata={setActiveMetadata}
+            activeTool={activeTool}
+            setActiveTool={setActiveTool}
+            cineEnabled={cineEnabled}
+            setCineEnabled={setCineEnabled}
+            currentSlice={currentSlice}
+            setCurrentSlice={setCurrentSlice}
+            layoutMode={layoutMode}
+            setLayoutMode={setLayoutMode}
+            resetTrigger={resetTrigger}
+            setResetTrigger={setResetTrigger}
+            setShowShortcutsHelp={setShowShortcutsHelp}
+            keyImages={keyImageSops}
+            toggleKeyImage={toggleKeyImage}
+            loadingProgress={loadingProgress}
+            processingStatus={processingStatus}
+            historicalStudyContext={historicalStudyContext}
+            uploadedFiles={uploadedFiles}
+            visibleUploadedFiles={visibleUploadedFiles}
+            viewportProps={viewportProps}
+            handleFileChange={handleFileChange}
+            handleRestoreCurrentStudy={handleRestoreCurrentStudy}
+            hydrateZipAsset={hydrateZipAsset}
+            navigate={navigate}
+            showNotif={showNotif}
+            loading={loading}
+            onMeasurement={onMeasurement}
+          />
+  );
 
   return (
     <>
@@ -3431,6 +3645,10 @@ const ReportingPage = () => {
                       disabled={!line.id || isActive}
                       onClick={() => {
                         if (!line.id || line.id === activeServiceId) return;
+                        // Save what's typed for THIS study before leaving it,
+                        // then block saves until the next study has loaded.
+                        flushNow();
+                        markContentLoading();
                         setActiveServiceId(line.id);
                         setServiceOverflowOpen(false);
                         const next = new URLSearchParams(searchParams);
@@ -3612,6 +3830,7 @@ const ReportingPage = () => {
             padding: '5px', borderRadius: '16px', border: '1px solid rgba(15, 82, 186, 0.1)'
           }}>
             {[
+              { id: 'PAD',       label: 'Report Pad',             icon: '⚡' },
               { id: 'DICOM',     label: 'DICOM Viewer',           icon: '🔍' },
               { id: 'REPORTING', label: 'Reporting',              icon: '📝' },
               // 'AI Voice Reporting (Beta)' tab hidden for now — the
@@ -3683,56 +3902,56 @@ const ReportingPage = () => {
         paddingBottom: isMobile ? '64px' : '0' 
       }}>
 
-        {/* DICOM TAB — MOBILE: simplified TechnicianPage-style layout.
+        {/* DICOM TAB — MOBILE: simplified layout.
             Intentionally does NOT use the .panel-center class — that class has a
             mobile media-query rule forcing height: 65vh + flex-row that fights
             this layout. We give the wrapper its own inline-only styles instead. */}
-        {activeMainTab === 'DICOM' && (
-          <ReportingDicomPanel
-            isMobile={isMobile}
+        {/* REPORT PAD TAB — images | paper | sign (Saral). Desktop and tablet.
+            Mounted only once the visit has loaded: the heavy editor then mounts in
+            a settled tree (same as opening the Reporting tab by hand). */}
+        {effectiveMainTab === 'PAD' && !activeAppointment && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 15, fontWeight: 600 }}>
+            Loading…
+          </div>
+        )}
+        {effectiveMainTab === 'PAD' && activeAppointment && (
+          <SimplePadTab
+            renderDicomPanel={renderDicomPanel}
+            renderNarrativeEditor={renderNarrativeEditor}
+            templates={templates}
+            selectedTemplateId={selectedTemplateId}
+            setSelectedTemplateId={setSelectedTemplateId}
+            applyEditorContent={applyEditorContent}
+            impression={impression}
+            setImpression={setImpression}
+            advice={advice}
+            setAdvice={setAdvice}
+            saveStatus={saveStatus}
+            lastSavedAt={lastSavedAt}
+            savingVisible={savingVisible}
+            handleUndoConflict={handleUndoConflict}
+            isOnline={isOnline}
+            isFinalized={isFinalized}
+            reportStatus={reportStatus}
+            handlePreviewPrint={handlePreviewPrint}
+            handleSaveReport={handleSaveReport}
             isTablet={isTablet}
-            isSyncEnabled={isSyncEnabled}
-            isHistoricalMode={isHistoricalMode}
-            activeAppointment={activeAppointment}
-            appointmentId={appointmentId}
-            activeServiceId={activeServiceId}
-            activeServiceMod={activeServiceMod}
-            activeAssetIndex={activeAssetIndex}
-            setActiveAssetIndex={setActiveAssetIndex}
-            activeMetadata={activeMetadata}
-            setActiveMetadata={setActiveMetadata}
-            activeTool={activeTool}
-            setActiveTool={setActiveTool}
-            cineEnabled={cineEnabled}
-            setCineEnabled={setCineEnabled}
-            currentSlice={currentSlice}
-            setCurrentSlice={setCurrentSlice}
-            layoutMode={layoutMode}
-            setLayoutMode={setLayoutMode}
-            resetTrigger={resetTrigger}
-            setResetTrigger={setResetTrigger}
-            setShowShortcutsHelp={setShowShortcutsHelp}
-            keyImages={keyImages}
-            toggleKeyImage={toggleKeyImage}
-            loadingProgress={loadingProgress}
-            processingStatus={processingStatus}
-            historicalStudyContext={historicalStudyContext}
-            uploadedFiles={uploadedFiles}
-            visibleUploadedFiles={visibleUploadedFiles}
-            viewportProps={viewportProps}
-            handleFileChange={handleFileChange}
-            handleRestoreCurrentStudy={handleRestoreCurrentStudy}
-            hydrateZipAsset={hydrateZipAsset}
-            navigate={navigate}
-            showNotif={showNotif}
-            loading={loading}
-            onMeasurement={onMeasurement}
+            canSign={canSign}
+            keyImageCount={keyImages.length}
+            visionEnabled={visionEnabled}
+            visionDraft={visionDraft}
+            onVisionDraft={runVisionDraft}
+            onApplyVisionDraft={applyVisionDraft}
+            onDiscardVisionDraft={() => setVisionDraft(null)}
           />
         )}
 
+        {effectiveMainTab === 'DICOM' && renderDicomPanel()}
+
             {/* REPORTING TAB */}
-            {activeMainTab === 'REPORTING' && (
+            {effectiveMainTab === 'REPORTING' && (
               <ReportingEditorPanel
+                canSign={canSign}
                 renderNarrativeEditor={renderNarrativeEditor}
                 applyEditorContent={applyEditorContent}
                 templates={templates}
@@ -3762,7 +3981,7 @@ const ReportingPage = () => {
             )}
 
             {/* VOICE REPORTING TAB — split: controls (left) + live editor (right) */}
-            {activeMainTab === 'VOICE' && (
+            {effectiveMainTab === 'VOICE' && (
               <div style={{
                 flex: 1, minHeight: 0,
                 display: 'flex', flexDirection: isMobile ? 'column' : 'row',
@@ -3798,7 +4017,7 @@ const ReportingPage = () => {
             )}
 
             {/* TIMELINE TAB */}
-            {activeMainTab === 'TIMELINE' && (
+            {effectiveMainTab === 'TIMELINE' && (
               <div style={{ flex: 1, overflowY: 'auto', background: '#f1f5f9', padding: '24px 28px' }}>
                 <div style={{ width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
                   <PatientTimeline
@@ -3885,6 +4104,7 @@ const ReportingPage = () => {
           appointmentServiceId={activeServiceId || null}
           doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
           patientData={activeAppointment}
+          signature={{ ...(reportSignature || {}), status: reportStatus }}
           reportContent={{
             mode: 'Narrative',
             // Use getPrintHTML so Path B's auto-flow boundaries are injected

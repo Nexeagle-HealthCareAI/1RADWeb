@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, lazy, Suspense } from
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
+import TaxBillingSettings from '../components/Admin/TaxBillingSettings';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
@@ -11,7 +12,8 @@ import useFinanceRevision from '../hooks/useFinanceRevision';
 import { formatPatientAge } from '../utils/patientAge';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
-import PrescriptionPreview from '../components/PrescriptionPreview';
+import ReportPaperSettings from '../components/reportPaper/ReportPaperSettings';
+import AiPrivacySettings from '../components/aiPrivacy/AiPrivacySettings';
 // Lazy — pulls in mapbox-gl, which doesn't need to be part of the board's
 // own bundle.
 const HospitalLocationPicker = lazy(() => import('../components/HospitalLocationPicker'));
@@ -85,8 +87,8 @@ export default function AdminBoard() {
   // Everything RIS/clinic-ops (Overview analytics, Roles, Hospitals, Finance) is
   // hidden. RIS-only / RIS+PACS see the full tab set.
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
-  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Letterhead'];
-  const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead'] : ALL_TABS;
+  const ALL_TABS = ['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Tax & billing', 'Letterhead', 'AI & privacy'];
+  const visibleTabs = isPacsOnly ? ['Staff', 'Letterhead', 'AI & privacy'] : ALL_TABS;
   // The single role every Cloud PACS-only user is onboarded with — full access
   // to the (already module-trimmed) PACS surface. admindoctor is the superset
   // role, so it satisfies the reporting + admin routes a PACS centre exposes;
@@ -186,98 +188,10 @@ export default function AdminBoard() {
     status: 'Paid'
   });
 
-  // Prescription Architect State
-  const [selectedPrescriptionDoctorId, setSelectedPrescriptionDoctorId] = useState('');
-  const [doctorPrescriptionMap, setDoctorPrescriptionMap] = useState({}); // { docId: settings }
-  
-  const [prescriptionSettings, setPrescriptionSettings] = useState({
-    headerMargin: 50,
-    leftMargin: 20,
-    rightMargin: 20,
-    bottomMargin: 30,
-    fontSize: 14,
-    fontColor: '#1e293b',
-    fontFamily: 'Inter',
-    letterhead: null,
-    overflowBackgroundMode: 'REUSE' // 'REUSE' or 'BLANK'
-  });
-  const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
-  const [isProtocolLoading, setIsProtocolLoading] = useState(false);
-  const [activeProtocolData, setActiveProtocolData] = useState(null);
-  const [previewScale, setPreviewScale] = useState(0.8); // 80% default scale to fit screen
-  const [numPdfPages, setNumPdfPages] = useState(null);
-  const [pdfError, setPdfError] = useState(null);
-
-  const [isTestMode, setIsTestMode] = useState(false);
-
-  // Sync settings when doctor selection changes
-  const fetchDoctorProtocol = useCallback(async (docId) => {
-    if (!docId) {
-      setPrescriptionSettings({
-        headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-        fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-        letterheadFile: null, overflowBackgroundMode: 'REUSE'
-      });
-      setActiveProtocolData(null);
-      return;
-    }
-
-    setIsProtocolLoading(true);
-    try {
-      const res = await apiClient.get(`/Prescription/${docId}`);
-      if (res.data?.success && res.data?.data) {
-        const data = res.data.data;
-        setActiveProtocolData(data);
-        const settings = {
-          headerMargin: Number(data.headerMargin) || 50,
-          leftMargin: Number(data.leftMargin) || 20,
-          rightMargin: Number(data.rightMargin) || 20,
-          bottomMargin: Number(data.bottomMargin) || 30,
-          fontSize: Number(data.fontSize) || 14,
-          fontColor: data.fontColor || '#1e293b',
-          fontFamily: data.fontFamily || 'Inter',
-          letterhead: data.letterheadBlobUrl || null,
-          overflowBackgroundMode: data.overflowBackgroundMode || 'REUSE',
-          letterheadFile: null
-        };
-        setPrescriptionSettings(settings);
-        await nativeStorage.set(`1rad_cache_prescription_${docId}`, { data, settings });
-      } else {
-        setActiveProtocolData(null);
-        setPrescriptionSettings({
-          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-          letterheadFile: null, overflowBackgroundMode: 'REUSE'
-        });
-      }
-    } catch (err) {
-      console.error("[PRESCRIPTION] Fetch failed, trying cache", err);
-      const cached = await nativeStorage.get(`1rad_cache_prescription_${docId}`);
-      if (cached) {
-        setActiveProtocolData(cached.data);
-        setPrescriptionSettings(cached.settings);
-      } else {
-        setActiveProtocolData(null);
-      }
-    } finally {
-      setIsProtocolLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDoctorProtocol(selectedPrescriptionDoctorId);
-  }, [selectedPrescriptionDoctorId, fetchDoctorProtocol]);
-
-  // The prescription/letterhead setting is now SINGLE PER CENTRE (shared by all
-  // doctors), so there's no doctor to pick. Auto-target the centre protocol by
-  // anchoring to the current user's id — the backend ignores the id and always
-  // reads/writes the one hospital-wide row; this just enables the editor + Save.
-  useEffect(() => {
-    if (activeTab === 'Letterhead' && currentUser?.id && !selectedPrescriptionDoctorId) {
-      setSelectedPrescriptionDoctorId(currentUser.id);
-    }
-  }, [activeTab, currentUser?.id, selectedPrescriptionDoctorId]);
-
+  // Report paper (Admin ▸ Report paper) lives in its own component —
+  // components/reportPaper/ReportPaperSettings. isTestMode is still passed
+  // to FinanceManager.
+  const [isTestMode] = useState(false);
 
   const fetchFinancialMatrix = useCallback(async (startDate = null, endDate = null) => {
     try {
@@ -327,6 +241,8 @@ export default function AdminBoard() {
     registrationNumber: '',
     pan: '',
     nabhNumber: '',
+    publicContact: '',
+    publicEmail: '',
     isAutoBillingEnabled: false,
     latitude: null,
     longitude: null,
@@ -489,6 +405,8 @@ export default function AdminBoard() {
         registrationNumber:  r.registrationNumber  || r.RegistrationNumber  || '',
         pan:                 r.pan                 || r.PAN                 || '',
         nabhNumber:          r.nabhNumber          || r.NABHNumber          || '',
+        publicContact:       r.publicContact       || '',
+        publicEmail:         r.publicEmail         || '',
         isAutoBillingEnabled: r.isAutoBillingEnabled || r.IsAutoBillingEnabled || false,
         // Nullable: a centre with no pin set yet has neither field, and 0 is
         // a valid coordinate (equator/prime meridian) so this can't use `||`.
@@ -579,7 +497,7 @@ export default function AdminBoard() {
   
   // Personnel & Prescription
   useEffect(() => {
-    if (activeTab === 'Staff' || activeTab === 'Letterhead') {
+    if (activeTab === 'Staff') {
       fetchPersonnel();
     }
   }, [activeTab, fetchPersonnel]);
@@ -708,6 +626,8 @@ export default function AdminBoard() {
       registrationNumber: hospitalData.registrationNumber,
       pan: hospitalData.pan,
       nabhNumber: hospitalData.nabhNumber,
+      publicContact: hospitalData.publicContact ?? null,
+      publicEmail: hospitalData.publicEmail ?? null,
       latitude: hospitalData.latitude,
       longitude: hospitalData.longitude
     };
@@ -753,32 +673,26 @@ export default function AdminBoard() {
     const targetHubId = activeCenter?.id;
     if (!targetHubId) return;
 
-    const payload = {
-      hospitalName: hospitalData.hospitalName || activeCenter.name,
-      hospitalAddress: hospitalData.hospitalAddress || 'Metadata synchronization active.',
-      gstin: hospitalData.gstin || '',
-      registrationNumber: hospitalData.registrationNumber || '',
-      pan: hospitalData.pan || '',
-      nabhNumber: hospitalData.nabhNumber || '',
-      isAutoBillingEnabled: newAutoBill
-    };
+    // Review B9: only the flag goes to its own endpoint, so a half-loaded form can't
+    // blank the centre's GSTIN/PAN/address.
+    const outboxItem = { id: targetHubId, enabled: newAutoBill };
 
     if (!isOnline) {
-      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+      await addToOutbox('HOSPITAL_AUTOBILL', outboxItem);
       notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       return;
     }
 
     try {
-      await apiClient.put(`/hospitals/${targetHubId}`, payload);
+      await apiClient.put(`/hospitals/${targetHubId}/auto-billing`, { enabled: newAutoBill });
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       setHospitalData(prev => ({ ...prev, isAutoBillingEnabled: newAutoBill }));
       await refreshCenters();
     } catch (err) {
       console.error('[FINANCE] Protocol update failed', err);
       if (!err.response) {
-        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+        await addToOutbox('HOSPITAL_AUTOBILL', outboxItem);
         notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
         setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       } else {
@@ -799,6 +713,8 @@ export default function AdminBoard() {
             registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
             pan: res.data.pan || res.data.PAN || '',
             nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
+            publicContact: res.data.publicContact || '',
+            publicEmail: res.data.publicEmail || '',
             isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
           };
           setHospitalData(data);
@@ -1375,7 +1291,8 @@ export default function AdminBoard() {
                   { label: 'GSTIN', value: hospitalData.gstin },
                   { label: 'Registration Number', value: hospitalData.registrationNumber },
                   { label: 'PAN', value: hospitalData.pan },
-                  { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber }
+                  { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber },
+                  { label: 'Contact for referrers', value: [hospitalData.publicContact, hospitalData.publicEmail].filter(Boolean).join(' · ') }
                 ].map(item => (
                   <div key={item.label} style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
                     <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '3px' }}>{item.label}</div>
@@ -1718,6 +1635,16 @@ export default function AdminBoard() {
                         <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>NABH / NABL Number</label>
                         <input type="text" value={hospitalData.nabhNumber} onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value})} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
                     </div>
+                    {/* Review R9: what the referral portal shows doctors and agents — the
+                        centre's own number, not an admin's personal one. */}
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Phone shown to referrers</label>
+                        <input type="tel" value={hospitalData.publicContact || ''} onChange={e => setHospitalData({...hospitalData, publicContact: e.target.value})} placeholder="Front-desk number" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Email shown to referrers</label>
+                        <input type="email" value={hospitalData.publicEmail || ''} onChange={e => setHospitalData({...hospitalData, publicEmail: e.target.value})} placeholder="desk@centre.in" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
                   </div>
               </div>
 
@@ -1740,323 +1667,6 @@ export default function AdminBoard() {
     </div>
   );
 
-
-  const renderPrescriptionArchitect = () => {
-    const doctors = personnel.filter(p => p.roles.includes('doctor') || p.roles.includes('radiologist') || p.roles.includes('admindoctor'));
-    
-    return (
-      <div className="prescription-architect" style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        gap: '30px', 
-        height: isMobile ? 'auto' : 'calc(100vh - 200px)', 
-        animation: 'fadeIn 0.5s ease' 
-      }}>
-        {/* CONTROL SIDEBAR (Strategic Glass) */}
-        <div style={{ 
-          width: isMobile ? '100%' : '420px', 
-          background: 'rgba(255, 255, 255, 0.8)', 
-          backdropFilter: 'blur(16px)',
-          borderRadius: '30px', 
-          padding: isMobile ? '25px' : '35px', 
-          boxShadow: '0 20px 50px rgba(15, 82, 186, 0.05)', 
-          overflowY: isMobile ? 'visible' : 'auto', 
-          border: '1px solid rgba(15, 82, 186, 0.1)',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          <div style={{ marginBottom: '35px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0f52ba' }}></div>
-              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>CENTRE LETTERHEAD</h3>
-            </div>
-            {/* One report letterhead + page geometry per diagnostic centre, shared
-                by every doctor — there is no per-doctor variation. */}
-            <div style={{ padding: '14px 16px', borderRadius: '16px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e3a8a', fontSize: '12px', fontWeight: 700, lineHeight: 1.6 }}>
-              This letterhead, margins and fonts apply to <strong>every doctor&apos;s reports</strong> at this centre.
-            </div>
-          </div>
-
-          <div style={{ flex: 1, opacity: selectedPrescriptionDoctorId ? 1 : 0.3, pointerEvents: selectedPrescriptionDoctorId ? 'auto' : 'none', transition: 'all 0.4s' }}>
-            <div style={{ marginBottom: '30px' }}>
-              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '15px' }}>GEOMETRIC ARCHITECTURE</h3>
-              
-              <div style={{ display: 'grid', gap: '25px' }}>
-                {[
-                  // All four margins are user-set — header/footer especially, since
-                  // letterhead height varies per clinic on the same A4 sheet. These
-                  // flow verbatim to the narrative editor, the Word export and the
-                  // prescription preview (single source of truth).
-                  { id: 'headerMargin', label: 'HEADER GAP', icon: 'TOP', min: 8, max: 150 },
-                  { id: 'leftMargin', label: 'LEFT GUTTER', icon: 'LEFT', min: 8, max: 100 },
-                  { id: 'rightMargin', label: 'RIGHT GUTTER', icon: 'RIGHT', min: 8, max: 100 },
-                  { id: 'bottomMargin', label: 'FOOTER GAP', icon: 'BOTTOM', min: 8, max: 100 },
-                  { id: 'fontSize', label: 'FONT SIZE', icon: 'TEXT', min: 8, max: 32 }
-                ].map(m => (
-                  <div key={m.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>{m.icon}</span> {m.label}
-                      </label>
-                      <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', background: '#eff6ff', padding: '4px 10px', borderRadius: '6px' }}>{prescriptionSettings[m.id]}mm</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={m.min}
-                      max={m.max}
-                      value={prescriptionSettings[m.id]}
-                      onChange={(e) => setPrescriptionSettings({...prescriptionSettings, [m.id]: parseInt(e.target.value)})}
-                      style={{
-                        width: '100%', cursor: 'pointer', height: '6px', appearance: 'none',
-                        background: '#e2e8f0', borderRadius: '3px', outline: 'none'
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '30px', paddingTop: '30px', borderTop: '1px solid #f1f5f9' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
-                <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>STUDIO SCALE</h3>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>{Math.round(previewScale * 100)}%</span>
-              </div>
-              <input 
-                type="range" min="0.3" max="1.5" step="0.05"
-                value={previewScale} 
-                onChange={(e) => setPreviewScale(parseFloat(e.target.value))}
-                style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', outline: 'none', appearance: 'none' }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '30px', paddingTop: '10px' }}>
-              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '15px' }}>BRAND IDENTITY</h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* Test Mode Toggle */}
-                <div style={{ 
-                  background: isTestMode ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc', 
-                  padding: '20px', 
-                  borderRadius: '18px', 
-                  border: isTestMode ? '2px solid #667eea' : '1px solid #e2e8f0',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s'
-                }} onClick={() => setIsTestMode(!isTestMode)}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 950, color: isTestMode ? 'white' : '#1e293b', letterSpacing: '1px' }}>
-                        TEST MODE
-                      </span>
-                    </div>
-                    <div style={{ 
-                      width: '50px', 
-                      height: '26px', 
-                      background: isTestMode ? 'rgba(255,255,255,0.3)' : '#cbd5e1', 
-                      borderRadius: '13px', 
-                      position: 'relative',
-                      transition: 'all 0.3s'
-                    }}>
-                      <div style={{ 
-                        width: '22px', 
-                        height: '22px', 
-                        background: 'white', 
-                        borderRadius: '50%', 
-                        position: 'absolute', 
-                        top: '2px', 
-                        left: isTestMode ? '26px' : '2px',
-                        transition: 'all 0.3s',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                      }}></div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '9px', color: isTestMode ? 'rgba(255,255,255,0.9)' : '#64748b', lineHeight: '1.4' }}>
-                    {isTestMode ? 'Extended prescription data overlaid on letterhead' : 'Click to preview with comprehensive prescription data'}
-                  </div>
-                </div>
-
-
-                {/* Overflow Page Behavior (New) */}
-                <div style={{ 
-                  background: '#f0f9ff', 
-                  padding: '20px', 
-                  borderRadius: '18px', 
-                  border: '1px solid #bae6fd'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
-                    <div>
-                      <span style={{ fontSize: '11px', fontWeight: 950, color: '#0369a1', letterSpacing: '1px', display: 'block' }}>
-                        OVERFLOW PAGES
-                      </span>
-                      <span style={{ fontSize: '8px', color: '#64748b', fontWeight: 700 }}>Choose what happens after the first sheet fills up.</span>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {[
-                      { value: 'REUSE', label: 'Reuse uploaded layout', desc: 'Every extra page reuses the imported background.' },
-                      { value: 'BLANK', label: 'Use blank page', desc: 'Subsequent pages will be rendered without the letterhead.' }
-                    ].map(option => (
-                      <label key={option.value} style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '12px', 
-                        cursor: 'pointer',
-                        padding: '12px',
-                        borderRadius: '12px',
-                        background: prescriptionSettings.overflowBackgroundMode === option.value ? 'white' : 'transparent',
-                        border: `1px solid ${prescriptionSettings.overflowBackgroundMode === option.value ? '#0369a1' : 'transparent'}`,
-                        transition: 'all 0.2s',
-                        boxShadow: prescriptionSettings.overflowBackgroundMode === option.value ? '0 4px 12px rgba(3, 105, 161, 0.1)' : 'none'
-                      }}>
-                        <input 
-                          type="radio" 
-                          name="overflowBackground" 
-                          value={option.value}
-                          checked={prescriptionSettings.overflowBackgroundMode === option.value}
-                          onChange={(e) => setPrescriptionSettings({...prescriptionSettings, overflowBackgroundMode: e.target.value})}
-                          style={{ margin: 0 }}
-                        />
-                        <div>
-                          <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{option.label}</div>
-                          <div style={{ fontSize: '8px', color: '#64748b', marginTop: '2px' }}>{option.desc}</div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '15px' }}>
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>FONT SYSTEM</label>
-                    <select 
-                      value={prescriptionSettings.fontFamily}
-                      onChange={(e) => setPrescriptionSettings({...prescriptionSettings, fontFamily: e.target.value})}
-                      style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800 }}
-                    >
-                      {['Inter', 'Roboto', 'Arial', 'Georgia', 'Courier New'].map(f => (
-                        <option key={f} value={f}>{f}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>COLOR</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid #e2e8f0', padding: '6px', borderRadius: '12px' }}>
-                      <input 
-                        type="color" 
-                        value={prescriptionSettings.fontColor}
-                        onChange={(e) => setPrescriptionSettings({...prescriptionSettings, fontColor: e.target.value})}
-                        style={{ width: '32px', height: '32px', padding: 0, border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-                      />
-                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', fontFamily: 'monospace' }}>{(prescriptionSettings.fontColor || '#1E293B').toUpperCase()}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>INSTITUTIONAL LETTERHEAD</label>
-                  <div style={{ 
-                    border: '2px dashed #e2e8f0', padding: '20px', borderRadius: '18px', textAlign: 'center',
-                    background: '#f8fafc', transition: 'all 0.2s', cursor: 'pointer'
-                  }} onClick={() => document.getElementById('letterhead-upload').click()}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', marginBottom: '8px' }}>ARCHIVE</div>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>UPLOAD REFERENCE PDF</div>
-                    <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '4px' }}>Supports PDF, JPG, PNG</div>
-                    <input 
-                      id="letterhead-upload"
-                      type="file" 
-                      accept="application/pdf,image/*"
-                      onChange={(e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                          setPrescriptionSettings(prev => {
-                            if (prev.letterhead && prev.letterhead.startsWith('blob:')) {
-                              URL.revokeObjectURL(prev.letterhead);
-                            }
-                            return {
-                              ...prev, 
-                              letterhead: URL.createObjectURL(file), 
-                              letterheadFile: file
-                            };
-                          });
-                        }
-                      }}
-                      style={{ display: 'none' }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              disabled={!selectedPrescriptionDoctorId || isPrescriptionSaving}
-              onClick={async () => {
-                const payload = {
-                  DoctorId: selectedPrescriptionDoctorId,
-                  HeaderMargin: prescriptionSettings.headerMargin,
-                  LeftMargin: prescriptionSettings.leftMargin,
-                  RightMargin: prescriptionSettings.rightMargin,
-                  BottomMargin: prescriptionSettings.bottomMargin,
-                  FontSize: prescriptionSettings.fontSize,
-                  FontColor: prescriptionSettings.fontColor,
-                  FontFamily: prescriptionSettings.fontFamily,
-                  OverflowBackgroundMode: prescriptionSettings.overflowBackgroundMode
-                };
-
-                // Note: File uploads in outbox require serialization or local path handling.
-                // For now, we queue the settings; files will need a live connection.
-                if (!isOnline) {
-                  await addToOutbox('PRESCRIPTION_UPDATE', payload);
-                  notifyToast({ title: 'Queued for sync', message: 'Prescription protocol settings will sync when connection is restored. Letterhead files require an active connection.' }, 'info', { duration: 6000 });
-                  return;
-                }
-
-                setIsPrescriptionSaving(true);
-                const formData = new FormData();
-                Object.entries(payload).forEach(([k, v]) => formData.append(k, v));
-                
-                if (prescriptionSettings.letterheadFile) {
-                   formData.append('LetterheadFile', prescriptionSettings.letterheadFile);
-                }
-
-                try {
-                   const response = await apiClient.post('/Prescription', formData, {
-                      headers: { 'Content-Type': 'multipart/form-data' }
-                   });
-                   const updated = response.data;
-                   setPrescriptionSettings(prev => ({...prev, letterhead: updated.data?.letterheadBlobUrl, letterheadFile: null}));
-                   notifyToast('Settings saved successfully.', 'success');
-                   fetchDoctorProtocol(selectedPrescriptionDoctorId);
-                } catch (err) {
-                   console.error("Sync failed:", err);
-                   if (!err.response) {
-                      await addToOutbox('PRESCRIPTION_UPDATE', payload);
-                      notifyToast({ title: 'Network error', message: 'Settings queued in offline outbox.' }, 'warning');
-                   }
-                } finally {
-                   setIsPrescriptionSaving(false);
-                }
-              }}
-              style={{ 
-                width: '100%', padding: '18px', borderRadius: '20px', 
-                background: selectedPrescriptionDoctorId ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : '#cbd5e1', 
-                color: 'white', border: 'none', fontWeight: 950, letterSpacing: '1px', fontSize: '11px',
-                cursor: 'pointer', boxShadow: selectedPrescriptionDoctorId ? '0 10px 25px rgba(15, 82, 186, 0.3)' : 'none',
-                transition: 'all 0.3s'
-              }}
-            >
-              {isPrescriptionSaving ? 'INITIALIZING SYNC PROTOCOL...' : 'SAVE DOCTOR PROTOCOL'}
-            </button>
-          </div>
-        </div>
-
-        <PrescriptionPreview 
-          prescriptionSettings={prescriptionSettings}
-          activeProtocolData={activeProtocolData}
-          isTestMode={isTestMode}
-          previewScale={previewScale}
-        />
-      </div>
-    );
-  };
 
   const renderAnalytics = () => {
     if (loadingOutlook && !outlookData) {
@@ -3450,7 +3060,7 @@ export default function AdminBoard() {
               whiteSpace: 'nowrap'
             }}
           >
-            {tab}
+            {tab === 'Letterhead' ? 'Report paper' : tab}
           </button>
         ))}
       </div>
@@ -3494,7 +3104,11 @@ export default function AdminBoard() {
           TODAY={TODAY}
         />
       )}
-      {activeTab === 'Letterhead' && renderPrescriptionArchitect()}
+      {activeTab === 'Tax & billing' && (
+        <TaxBillingSettings hospitalId={activeCenter?.id} isOnline={isOnline} isMobile={isMobile} />
+      )}
+      {activeTab === 'Letterhead' && <ReportPaperSettings currentUser={currentUser} />}
+      {activeTab === 'AI & privacy' && <AiPrivacySettings />}
       
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
