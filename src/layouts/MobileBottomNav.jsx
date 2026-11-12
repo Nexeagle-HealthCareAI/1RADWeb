@@ -1,6 +1,6 @@
-import React from 'react';
 import { useLang, t } from '../i18n';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useNavAccess, pickTabs } from './navAccess';
 import '../styles/global.css';
 
 const ICONS = {
@@ -49,74 +49,82 @@ const ICONS = {
       <line x1="18" y1="6" x2="6" y2="18"></line>
       <line x1="6" y1="6" x2="18" y2="18"></line>
     </svg>
-  )
+  ),
+  'home': (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
+    </svg>
+  ),
+  'partners': (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8" />
+      <path d="M18 14.8c2 .7 3.2 2.5 3.5 5.2" />
+    </svg>
+  ),
+  'tracker': (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M9 3v2h6V3" />
+      <path d="m9 13 2 2 4-4" />
+    </svg>
+  ),
 };
 
 export default function MobileBottomNav({ onMenuClick, isMenuOpen, onTabClick }) {
   useLang();
   const location = useLocation();
+  const { can } = useNavAccess();
 
-  const TABS = [
-    { label: t('nav.today'), route: '/appointment-board', icon: '/appointment-board' },
-    { label: t('nav.money'), route: '/money', icon: '/billing' },
-    { label: t('nav.menu'), action: onMenuClick, icon: isMenuOpen ? 'close' : 'menu' },
-    { label: t('nav.scans'), route: '/studies', icon: '/studies' },
-    { label: t('nav.reporting'), route: '/doctor-board', icon: '/doctor-board' },
-  ];
+  // Only pages this user can open (a receptionist never sees Reports, a doctor
+  // never sees Money). Menu sits in the middle; the rest go either side.
+  const tabs = pickTabs(can).map((d) => ({ label: t(d.key), route: d.route, icon: d.icon }));
+  const half = Math.ceil(tabs.length / 2);
+  const onATab = tabs.some((tab) => location.pathname === tab.route || location.pathname.startsWith(tab.route + '/'));
+
+  const renderTab = (tab) => {
+    const isActive = location.pathname === tab.route || location.pathname.startsWith(tab.route + '/');
+    return (
+      <NavLink
+        key={tab.route}
+        to={tab.route}
+        onClick={() => { if (onTabClick) onTabClick(); }}
+        className={`mobile-bottom-nav-item ${isActive ? 'active' : ''}`}
+        aria-current={isActive ? 'page' : undefined}
+      >
+        <div className="mobile-bottom-nav-icon">{ICONS[tab.icon]}</div>
+        <span className="mobile-bottom-nav-label">{tab.label}</span>
+        {isActive && <div className="mobile-bottom-nav-indicator"></div>}
+      </NavLink>
+    );
+  };
 
   return (
     <div className="mobile-bottom-nav">
       <div className="mobile-bottom-nav-bg"></div>
-      
       <div className="mobile-bottom-nav-container">
-        {TABS.map((tab) => {
-          const isActive = tab.route && (location.pathname === tab.route || location.pathname.startsWith(tab.route + '/'));
-          const isMenu = tab.icon === 'menu' || tab.icon === 'close';
-          
-          if (isMenu) {
-            return (
-              <button 
-                key="menu" 
-                onClick={tab.action} 
-                className={`mobile-bottom-nav-menu-btn ${isMenuOpen ? 'menu-open' : ''}`}
-                aria-label={isMenuOpen ? 'Close Menu' : 'Open Menu'}
-                aria-expanded={isMenuOpen}
-              >
-                <div style={{
-                  transform: isMenuOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  {ICONS[tab.icon]}
-                </div>
-              </button>
-            );
-          }
-
-          return (
-            <NavLink
-              key={tab.route}
-              to={tab.route}
-              onClick={() => {
-                if (onTabClick) onTabClick();
-              }}
-              className={`mobile-bottom-nav-item ${isActive ? 'active' : ''}`}
-            >
-              <div className="mobile-bottom-nav-icon">
-                {ICONS[tab.icon]}
-              </div>
-              <span className="mobile-bottom-nav-label">
-                {tab.label}
-              </span>
-              
-              {isActive && (
-                <div className="mobile-bottom-nav-indicator"></div>
-              )}
-            </NavLink>
-          );
-        })}
+        {tabs.slice(0, half).map(renderTab)}
+        <div className="mobile-bottom-nav-item mobile-bottom-nav-menu-slot">
+          <button
+            onClick={onMenuClick}
+            className={`mobile-bottom-nav-menu-btn ${isMenuOpen ? 'menu-open' : ''} ${!onATab && !isMenuOpen ? 'menu-here' : ''}`}
+            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMenuOpen}
+          >
+            <div style={{
+              transform: isMenuOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {ICONS[isMenuOpen ? 'close' : 'menu']}
+            </div>
+          </button>
+          {/* "You are here" when the open page lives in the menu, not on a tab. */}
+          <span className={`mobile-bottom-nav-label mobile-bottom-nav-menu-label ${!onATab ? 'here' : ''}`}>{t('nav.menu')}</span>
+        </div>
+        {tabs.slice(half).map(renderTab)}
       </div>
     </div>
   );

@@ -77,6 +77,7 @@ export default function DoctorBoard() {
   // Always start with 'ALL' — auto-select the logged-in doctor ONLY after the doctors
   // list has loaded, to avoid UUID race condition (empty list = zero matches).
   const [selectedDoctor, setSelectedDoctor] = useState('ALL');
+  const [filtersOpen, setFiltersOpen] = useState(false); // phones: filters folded behind a button
   const [doctors, setDoctors] = useState([]);
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
@@ -415,7 +416,7 @@ export default function DoctorBoard() {
 
       <div className="board-padding">
         {view === 'QUEUE' ? (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'nowrap' }}>
+          <div className="db-kpis" style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'nowrap' }}>
             {[
               { label: tr('stage.waitingReport'), value: stats.pendingReports, sub: '',           c: '#dc2626', g1: '#fef2f2', g2: '#fee2e2', bd: '#fecaca' },
               { label: tr('stage.drafting'), value: stats.drafts,         sub: '',             c: '#d97706', g1: '#fffbeb', g2: '#fef3c7', bd: '#fde68a' },
@@ -468,7 +469,7 @@ export default function DoctorBoard() {
           </div>
         )}
 
-        <div style={{ background: 'white', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', flexWrap: 'wrap' }}>
+        <div className={`db-filterbar${filtersOpen ? ' open' : ''}`} style={{ background: 'white', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: '200px', display: 'flex', gap: '10px', alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
@@ -490,8 +491,18 @@ export default function DoctorBoard() {
             </div>
           </div>
 
+          {(() => {
+            const n = [selectedDoctor, filters.modality, filters.priority, filters.clinicalStatus].filter((v) => v !== 'ALL').length;
+            return (
+              <button type="button" className="db-filter-toggle" onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                Filters{n > 0 ? ` · ${n}` : ''}
+              </button>
+            );
+          })()}
+
           {view === 'HISTORY' && (
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '5px 15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div className="db-filter" style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '5px 15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', background: '#e2e8f0', padding: '2px', borderRadius: '8px' }}>
                 <button onClick={() => setArchiveFilterMode('ALL')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '7.5px', fontWeight: 950, background: archiveFilterMode === 'ALL' ? 'white' : 'transparent', color: archiveFilterMode === 'ALL' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>ALL</button>
                 <button onClick={() => setArchiveFilterMode('RANGE')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '7.5px', fontWeight: 950, background: archiveFilterMode === 'RANGE' ? 'white' : 'transparent', color: archiveFilterMode === 'RANGE' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>RANGE</button>
@@ -507,24 +518,24 @@ export default function DoctorBoard() {
             </div>
           )}
 
-          <select value={selectedDoctor} onChange={e => setSelectedDoctor(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select className="db-filter" value={selectedDoctor} onChange={e => setSelectedDoctor(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Doctors</option>
             {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
 
-          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select className="db-filter" value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Modalities</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select className="db-filter" value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Priorities</option>
             <option value="STAT">STAT</option>
             <option value="URGENT">Urgent</option>
             <option value="ROUTINE">Routine</option>
           </select>
 
-          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select className="db-filter" value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Statuses</option>
             {view === 'QUEUE' ? (
               <>
@@ -541,11 +552,13 @@ export default function DoctorBoard() {
             )}
           </select>
 
-          <button className="gamified-btn" onClick={fetchCases} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600 }}>Refresh</button>
+          <button className="gamified-btn db-filter" onClick={fetchCases} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600 }}>Refresh</button>
         </div>
 
-        <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
+        <div className="db-table-wrap" style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          {/* Phones: each row becomes a card (see DoctorBoard.css), so the
+              report button is never pushed off the right edge. */}
+          <table className="db-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
                 <th onClick={() => handleSort('patientName')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>

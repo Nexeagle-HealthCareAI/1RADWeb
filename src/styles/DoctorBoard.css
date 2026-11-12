@@ -471,3 +471,56 @@
     min-width: 100% !important;
   }
 }
+
+/* ── Phones (Nov 2026): compact counts, folded filters, rows as cards ──────── */
+.db-filter-toggle { display: none; }
+@media (max-width: 767px) {
+  .board-padding > div.db-kpis { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px !important; margin-bottom: 12px !important; }
+  .board-padding > div.db-kpis .summary-card { padding: 8px 9px !important; border-radius: 12px !important; box-shadow: none !important; }
+  .board-padding > div.db-kpis .summary-card > div:first-child { font-size: 8.5px !important; white-space: normal !important; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .board-padding > div.db-kpis .summary-card > div:nth-child(2) { margin-top: 2px !important; }
+  .board-padding > div.db-kpis .summary-card > div:nth-child(2) > span:first-child { font-size: 18px !important; }
+
+  .db-filterbar { padding: 10px !important; gap: 8px !important; margin-bottom: 12px !important; }
+  .db-filterbar > div:first-child { min-width: 0 !important; flex: 1 1 0 !important; }
+  .db-filterbar .db-filter { display: none !important; }
+  .db-filterbar.open .db-filter { display: block !important; flex: 1 1 calc(50% - 4px); min-width: 0; font-size: 13px !important; padding: 10px !important; }
+  .db-filterbar.open div.db-filter { display: flex !important; flex-basis: 100%; flex-wrap: wrap; }
+  .db-filter-toggle {
+    display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: 10px;
+    border: 1px solid #e2e8f0; background: white; color: #1e293b; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+  }
+  .db-filterbar.open .db-filter-toggle { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+
+  .db-table-wrap { overflow: visible !important; border-radius: 14px !important; }
+  .db-table { min-width: 0 !important; display: block; }
+  .db-table thead { display: none; }
+  .db-table tbody { display: block; }
+  .db-table tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 8px;
+    padding: 12px; border-bottom: 1px solid #e2e8f0 !important;
+  }
+  .db-table td { padding: 0 !important; display: block; min-width: 0; }
+  .db-table td[colspan] { grid-column: 1 / -1; padding: 40px 0 !important; }
+  .db-table td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .db-table td:nth-child(1) > div > div:first-child { width: 34px !important; height: 34px !important; border-radius: 10px !important; flex-shrink: 0; }
+  .db-table td:nth-child(1) > div { gap: 10px !important; }
+  .db-table td:nth-child(1) > div > div:nth-child(2) > div:first-child { font-size: 13.5px !important; }
+  .db-table td:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) { font-size: 11px !important; }
+  .db-table td:nth-child(2) { grid-column: 2; grid-row: 1; }
+  .db-table td:nth-child(2) > div { width: 38px !important; height: 38px !important; font-size: 13px !important; }
+  .db-table td:nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
+  .db-table td:nth-child(3) span { font-size: 10px !important; }
+  .db-table td:nth-child(3) span[title] { font-size: 12.5px !important; max-width: 170px !important; }
+  .db-table td:nth-child(4) { grid-column: 1; grid-row: 3; display: flex; gap: 8px; align-items: baseline; }
+  .db-table td:nth-child(4) > div { font-size: 11.5px !important; margin: 0 !important; }
+  .db-table td:nth-child(5) { grid-column: 1 / -1; grid-row: 4; }
+  .db-table td:nth-child(5) span { font-size: 12px !important; max-width: none !important; }
+  .db-table td:nth-child(6) { display: none; }
+  .db-table td:nth-child(7) { grid-column: 2; grid-row: 3; justify-self: end; }
+  .db-table td:nth-child(7) span { font-size: 10px !important; }
+  .db-table td:nth-child(8) { grid-column: 1 / -1; grid-row: 5; text-align: left !important; }
+  .db-table td:nth-child(8) > div:first-child { justify-content: stretch !important; }
+  .db-table td:nth-child(8) .gamified-btn { flex: 1; padding: 12px !important; font-size: 13px !important; }
+  .db-table td:nth-child(8) > div:nth-child(2) { text-align: left !important; white-space: normal !important; font-size: 11px !important; }
+}

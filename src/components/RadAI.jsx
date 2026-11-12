@@ -67,9 +67,17 @@ export function RadAIButton({ compact = false }) {
       {handsFree && (
         <span title="Hands-free listening" style={{ position: 'absolute', top: -2, right: -2, width: 11, height: 11, borderRadius: '50%', background: '#ef4444', border: '2px solid white', animation: 'radaiPulse 1.4s infinite' }} />
       )}
-      <span style={{ width: compact ? 28 : 30, height: compact ? 28 : 30, borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-        <img src={LOGO} alt="" draggable={false} style={{ width: compact ? 21 : 23, height: compact ? 21 : 23, objectFit: 'contain', pointerEvents: 'none' }} />
-      </span>
+      {compact ? (
+        // Phone: a chat bubble, so it isn't mistaken for the app logo beside it.
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z" />
+          <path d="M8.5 12h.01M12 12h.01M15.5 12h.01" strokeWidth="2.8" />
+        </svg>
+      ) : (
+        <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+          <img src={LOGO} alt="" draggable={false} style={{ width: 23, height: 23, objectFit: 'contain', pointerEvents: 'none' }} />
+        </span>
+      )}
       {!compact && (
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 4, pointerEvents: 'none', whiteSpace: 'nowrap' }}>
           <span style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.92)' }}>Ask</span>

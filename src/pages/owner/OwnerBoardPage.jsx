@@ -4,7 +4,7 @@ import useAuth from '../../auth/useAuth';
 import { t, useLang } from '../../i18n';
 import { Chip } from '../../components/saral/Saral';
 import { C, FONT } from '../../components/saral/tokens';
-import { useToast, useViewport } from '../../components/saral/hooks';
+import { useToast, useViewport, useChipRow } from '../../components/saral/hooks';
 import { fetchOwnerApprovals } from '../../api/billing/ownerApi';
 import GlanceArea from './GlanceArea';
 import NeedsArea from './NeedsArea';
@@ -53,6 +53,7 @@ export default function OwnerBoardPage() {
 
   const shared = { vp, toast, openCentre, opening, refresh: () => setVer(v => v + 1), ver };
   const count = asks?.length || 0;
+  const [chipRef, chipRow] = useChipRow(cur);
 
   return (
     <div style={{ minHeight: vp.phone ? '100vh' : 'calc(100vh - 64px)', background: C.ground, fontFamily: FONT, color: C.ink }}>
@@ -61,7 +62,7 @@ export default function OwnerBoardPage() {
           <div style={{ fontSize: vp.phone ? 24 : 30, fontWeight: 800 }}>{t('ow.title')}</div>
           <div style={{ fontSize: 15, color: C.muted }}>{t('ow.help')}</div>
         </div>
-        <nav aria-label={t('ow.title')} style={{ display: 'flex', gap: 8, overflowX: 'auto', minWidth: 0, paddingBottom: 2 }}>
+        <nav aria-label={t('ow.title')} ref={chipRef} onScroll={chipRow.onScroll} style={{ display: 'flex', gap: 8, overflowX: 'auto', minWidth: 0, paddingBottom: 2, ...chipRow.style }}>
           {TABS.map(k => (
             <Chip key={k} on={k === cur} onClick={() => navigate(`/owner/${k}`)} aria-current={k === cur ? 'page' : undefined}>
               {t(`ow.tab.${k}`)}

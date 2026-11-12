@@ -103,3 +103,41 @@ html[lang="hi"] body, html[lang="hi"] button, html[lang="hi"] input, html[lang="
 html[lang="bn"] body, html[lang="bn"] button, html[lang="bn"] input, html[lang="bn"] select {
   font-family: Inter, 'Noto Sans Bengali', system-ui, sans-serif;
 }
+
+/* ── Phone navigation (Nov 2026) ─────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Every tab shows its word on all phones (was only under 640px). */
+  .mobile-bottom-nav-label {
+    position: static !important; opacity: 1 !important; transform: none !important;
+    font-size: 11.5px !important; font-weight: 600 !important; color: #475569 !important;
+    margin-top: 2px; white-space: nowrap; max-width: 76px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mobile-bottom-nav-item.active .mobile-bottom-nav-label { color: #1D4ED8 !important; font-weight: 700 !important; }
+  .mobile-bottom-nav-item.active .mobile-bottom-nav-icon { transform: none !important; }
+  .mobile-bottom-nav-icon { height: 32px !important; }
+  /* Menu: the raised button with its word underneath, like the other tabs. */
+  .mobile-bottom-nav-menu-slot { justify-content: flex-end !important; padding-bottom: 12px; }
+  .mobile-bottom-nav-menu-slot .mobile-bottom-nav-menu-btn {
+    position: absolute; top: -18px; left: 50%; margin-left: -28px; transform: none !important;
+  }
+  .mobile-bottom-nav-menu-slot .mobile-bottom-nav-menu-btn:active { transform: scale(0.94) !important; }
+  .mobile-bottom-nav-menu-btn.menu-here { box-shadow: 0 0 0 3px #bfdbfe, 0 12px 24px -8px rgba(15, 23, 42, 0.6); }
+  .mobile-bottom-nav-menu-label.here { color: #1D4ED8 !important; font-weight: 700 !important; }
+}
+
+/* ── Front desk counts: a tidy grid on phones, nothing cut off at the edge ── */
+@media (max-width: 639px) {
+  .mobile-stats-carousel {
+    display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px !important;
+    overflow: visible !important; padding: 0 0 4px !important;
+  }
+  .mobile-stats-carousel .mobile-stat-tile {
+    flex: none !important; min-width: 0; padding: 7px 8px !important; border-radius: 12px !important; gap: 0 !important;
+  }
+  .mobile-stats-carousel .stat-label {
+    font-size: 10px !important; letter-spacing: 0 !important; line-height: 1.2; font-weight: 700 !important;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .mobile-stats-carousel .stat-value { font-size: 18px !important; margin: 2px 0 0 !important; line-height: 1.1; }
+  .mobile-stats-carousel .stat-sub { font-size: 9.5px !important; line-height: 1.2; }
+}
