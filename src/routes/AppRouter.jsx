@@ -28,6 +28,7 @@ const StaffPage = lazy(() => import('../pages/StaffPage'));
 const StaffDashboardPage = lazy(() => import('../pages/StaffDashboardPage'));
 const BillingPage = lazy(() => import('../pages/BillingPage'));
 const MoneyPage = lazy(() => import('../pages/money/MoneyPage'));
+const OwnerBoardPage = lazy(() => import('../pages/owner/OwnerBoardPage'));
 const ReportingPage = lazy(() => import('../pages/ReportingPage'));
 
 // One fresh reporting page per visit/study: moving to the next patient must
@@ -296,6 +297,15 @@ export default function AppRouter() {
           element={
             <ProtectedRoute moduleRoutes={['/money', '/billing']} requiredModule="RIS">
               <MoneyPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Owner board (Nov 2026): every centre the owner runs. Owners (admins) only. */}
+        <Route
+          path="/owner/:tab?"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']} moduleRoutes={['/owner']}>
+              <OwnerBoardPage />
             </ProtectedRoute>
           }
         />

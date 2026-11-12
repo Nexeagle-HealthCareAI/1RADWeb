@@ -121,5 +121,6 @@ import * as FD from './strings.frontdesk';
 import * as PT from './strings.partners';
 import * as RP from './strings.reporting';
 import * as MN from './strings.money';
+import * as OW from './strings.owner';
 
-export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en, ...MN.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi, ...MN.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn, ...MN.bn } };
+export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en, ...MN.en, ...OW.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi, ...MN.hi, ...OW.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn, ...MN.bn, ...OW.bn } };

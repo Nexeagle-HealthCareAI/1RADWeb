@@ -58,6 +58,12 @@ export const NAV_ITEMS = [
     accessVia: ['/billing'],
   },
   {
+    // Owner board (Nov 2026): every centre the owner runs, on one screen. Owners only.
+    label: 'Owner board',
+    route: '/owner',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
     label: 'Admin Approval',
     route: '/approvals',
     allowedRoles: ['admindoctor', 'admin'],
@@ -123,8 +129,8 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
-  admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admin: ['/configuration', '/approvals', '/admin-board', '/partners', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/money', '/owner', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
   receptionist: ['/appointment-board', '/operations-board', '/studies', '/money'],
   technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
   doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
