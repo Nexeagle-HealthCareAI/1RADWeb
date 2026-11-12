@@ -4,7 +4,7 @@ import { Button, Chip, Icon, Tag } from '../../components/saral/Saral';
 import { C, inr } from '../../components/saral/tokens';
 import { apiError, fieldStyle } from '../../components/saral/formUtil';
 import { fetchBillByNumber, fetchBills } from '../../api/billing/moneyApi';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { printA4Invoice, printReceiptSlip, printThermalSlip } from '../../utils/billing/printHandlers';
 import BillPanel from './BillPanel';
 import CollectSheet from './CollectSheet';
@@ -30,13 +30,16 @@ const range = (d) => {
 };
 
 export default function BillsArea({ counter = false, role, settings, centre, printCtx, toast, vp }) {
-  const [search, setSearch] = React.useState('');
+  const location = useLocation();
+  // Daily check ▸ "Open bill" lands here with ?q=<bill number>.
+  const [search, setSearch] = React.useState(() => new URLSearchParams(location.search).get('q') || '');
   const [q, setQ] = React.useState('');
-  const [state, setState] = React.useState(counter ? '' : 'DUE');
+  const [state, setState] = React.useState(() => (counter || new URLSearchParams(location.search).get('q') ? '' : 'DUE'));
   const [date, setDate] = React.useState(counter ? 'today' : 'month');
   const [rows, setRows] = React.useState([]);
   const [next, setNext] = React.useState(null);
   const [total, setTotal] = React.useState(0);
+  const [sums, setSums] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [sel, setSel] = React.useState(null);
@@ -54,11 +57,12 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
     const [startDate, endDate] = range(q ? 'any' : date);
     if (!cursor) setLoading(true);
     try {
-      const r = await fetchBills({ search: q, status: counter ? '' : state, startDate, endDate, cursor });
+      // A busy day is ~200 bills: big pages, so a whole day is one or two loads.
+      const r = await fetchBills({ search: q, status: counter ? '' : state, startDate, endDate, cursor, pageSize: counter ? 100 : 60 });
       if (my !== seq.current) return;
       setRows(prev => (cursor ? [...prev, ...(r.items || [])] : (r.items || [])));
       setNext(r.nextCursor || null);
-      setTotal(r.totalCount ?? (r.items || []).length);
+      if (!cursor) { setTotal(r.totalCount ?? (r.items || []).length); setSums(r.totals || null); }
       setErr('');
     } catch (e) {
       if (my === seq.current) setErr(apiError(e) || t('mn.loadFailed'));
@@ -68,6 +72,14 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
   }, [q, state, date, counter]);
 
   React.useEffect(() => { load(null); }, [load, ver]);
+
+  // Arrived with ?q=<bill number> and it found exactly that bill: open it.
+  const opened = React.useRef(false);
+  React.useEffect(() => {
+    const want = new URLSearchParams(location.search).get('q');
+    if (opened.current || !want || !q || rows.length !== 1) return;
+    opened.current = true; setSel(rows[0]);
+  }, [rows, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep the open bill in step with the refreshed list.
   React.useEffect(() => {
@@ -99,15 +111,23 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
     await printThermalSlip(fresh, { ...printCtx, notify: (m) => toast.show(String(m?.message || m || '')) });
   };
 
-  // Counter summary from the bills on screen (today's bills).
-  const sum = counter ? rows.reduce((a, r) => ({
-    n: a.n + 1,
-    taken: a.taken + (Number(r.paidAmount) || 0),
-    due: a.due + (String(r.status).toUpperCase() === 'CANCELLED' ? 0 : balanceOf(r)),
-  }), { n: 0, taken: 0, due: 0 }) : null;
+  // Totals for every bill the filters match (from the server, not just the rows loaded).
+  const local = rows.reduce((a, r) => {
+    if (String(r.status).toUpperCase() === 'CANCELLED') return a;
+    const tot = Number(r.totalAmount) || 0; const paid = Math.min(tot, Number(r.paidAmount) || 0);
+    return { bills: a.bills + 1, billed: a.billed + tot, paid: a.paid + paid, due: a.due + (tot - paid), dueBills: a.dueBills + (tot - paid > 0.009 ? 1 : 0) };
+  }, { bills: 0, billed: 0, paid: 0, due: 0, dueBills: 0 });
+  const sum = sums || local;
   const shown = counter ? [...rows].sort((a, b) => (balanceOf(b) > 0) - (balanceOf(a) > 0)) : rows;
 
-  const twoPane = vp.desktop;
+  // Desktop: the table takes the full width until a bill is picked, then the bill
+  // opens beside it. Phone and tablet: tight two-line rows, the bill opens on top.
+  const twoPane = vp.desktop && !!sel;
+  const table = !vp.phone;
+  const wide = vp.desktop && !sel;
+  const cols = wide
+    ? '64px minmax(140px,1.4fr) 130px minmax(120px,1.4fr) minmax(100px,1fr) 88px 88px 96px'
+    : '56px minmax(110px,1.5fr) minmax(80px,1fr) 80px 92px';
   const panel = (
     <BillPanel bill={sel} ver={ver} canTake={canTake} canFix={canFix}
       onTake={() => setCollect(sel)} onFix={(h) => setFix(h)}
@@ -124,33 +144,39 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
             <div style={{ flex: 1, fontSize: vp.phone ? 22 : 26, fontWeight: 800 }}>{counter ? t('mn.nav.counter') : t('mn.nav.bills')}</div>
             {fullTools && <Button kind="outline" icon="plus" onClick={() => navigate('/money/tools', { state: { newBill: Date.now() } })}>{t('mn.bills.new')}</Button>}
           </div>
-          {counter && <div style={{ fontSize: 15, color: C.muted }}>{t('mn.counter.help')}</div>}
-          {counter && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 10 }}>
-              {[['mn.counter.bills', String(sum.n), C.ink], ['mn.counter.taken', inr(sum.taken), C.ok], ['mn.counter.toTake', inr(sum.due), C.due]].map(([k, v, c]) => (
-                <div key={k} style={{ background: 'white', border: `1.5px solid ${C.line}`, borderRadius: 16, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, color: C.faint }}>{t(k).toUpperCase()}</div>
-                  <div style={{ fontSize: vp.phone ? 20 : 26, fontWeight: 800, color: c }}>{v}</div>
+          {counter && !vp.phone && <div style={{ fontSize: 14, color: C.muted, marginTop: -6 }}>{t('mn.counter.help')}</div>}
+          {/* One line of totals for everything the filters match. */}
+          <div role="group" aria-label={t('mn.bills.totals')} style={{ display: 'grid', gridTemplateColumns: vp.phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 8 }}>
+            {[[t('mn.bills.tBills'), String(sum.bills), C.ink, sum.dueBills ? t('mn.bills.tDueN', { n: sum.dueBills }) : null],
+              [t('mn.bills.tBilled'), inr(sum.billed), C.ink, null],
+              [t('mn.bills.tPaid'), inr(sum.paid), C.ok, null],
+              [t('mn.bills.tDue'), inr(sum.due), sum.due > 0.009 ? C.due : C.ink, null]].map(([k, v, c, sub]) => (
+              <div key={k} style={{ background: 'white', border: `1.5px solid ${C.line}`, borderRadius: 14, padding: '6px 12px', minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: C.faint }}>{k.toUpperCase()}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: vp.phone ? 18 : 21, fontWeight: 800, color: c }}>{v}</span>
+                  {sub && <span style={{ fontSize: 12, color: C.dueInk, fontWeight: 700 }}>{sub}</span>}
                 </div>
-              ))}
-            </div>
-          )}
-          <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 12, top: 13, color: C.faint }}><Icon name="search" size={20} /></span>
-            <input aria-label={t('mn.search')} placeholder={t('mn.search')} value={search} onChange={e => setSearch(e.target.value)}
-              style={{ ...fieldStyle, paddingLeft: 40 }} />
+              </div>
+            ))}
           </div>
-          {!counter && (
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-              {STATES.map(([id, k]) => <Chip key={k} on={state === id} onClick={() => setState(id)}>{t(k)}</Chip>)}
-              <span style={{ width: 8, flexShrink: 0 }} />
-              {DATES.map(d => <Chip key={d} on={date === d && !q} onClick={() => { setDate(d); setSearch(''); }}>{t(`mn.d.${d}`)}</Chip>)}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: vp.desktop ? 'nowrap' : 'wrap', minWidth: 0 }}>
+            <div style={{ position: 'relative', flex: vp.desktop ? '0 0 300px' : '1 1 100%' }}>
+              <span style={{ position: 'absolute', left: 12, top: 13, color: C.faint }}><Icon name="search" size={20} /></span>
+              <input aria-label={t('mn.search')} placeholder={t('mn.search')} value={search} onChange={e => setSearch(e.target.value)}
+                style={{ ...fieldStyle, paddingLeft: 40 }} />
             </div>
-          )}
-          {!loading && !err && <div style={{ fontSize: 14, color: C.faint }}>{t('mn.bills.n', { n: total })}</div>}
+            {!counter && (
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, minWidth: 0, flex: 1 }}>
+                {STATES.map(([id, k]) => <Chip key={k} on={state === id} onClick={() => setState(id)}>{t(k)}</Chip>)}
+                <span style={{ width: 6, flexShrink: 0 }} />
+                {DATES.map(d => <Chip key={d} on={date === d && !q} onClick={() => { setDate(d); setSearch(''); }}>{t(`mn.d.${d}`)}</Chip>)}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? '0 12px 90px' : '0 22px 20px', display: 'grid', gridAutoRows: 'max-content', gap: 8, alignContent: 'start' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: vp.phone ? '0 12px 90px' : '0 22px 20px', minWidth: 0 }}>
           {err && (
             <div role="alert" style={{ background: C.dangerSoft, color: C.danger, borderRadius: 14, padding: 14, fontWeight: 700, display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={{ flex: 1 }}>{err}</span><Button kind="quiet" onClick={() => setVer(v => v + 1)}>{t('mn.retry')}</Button>
@@ -158,36 +184,71 @@ export default function BillsArea({ counter = false, role, settings, centre, pri
           )}
           {loading && !rows.length && <div style={{ color: C.faint, padding: 12 }}>…</div>}
           {!loading && !err && !rows.length && <div style={{ color: C.faint, padding: 12, fontSize: 16 }}>{t('mn.none')}</div>}
-          {shown.map(r => {
-            const tag = billTag(r);
-            const left = String(r.status).toUpperCase() === 'CANCELLED' ? 0 : balanceOf(r);
-            const on = sel?.invoiceId === r.invoiceId;
-            const tests = (r.items || []).map(i => i.description).filter(Boolean);
-            return (
-              <button key={r.invoiceId} type="button" onClick={() => setSel(r)} aria-pressed={on}
-                style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 16,
-                  background: on ? C.primarySoft : 'white', border: on ? `2px solid ${C.primary}` : `1.5px solid ${C.line}`,
-                  fontFamily: 'inherit', color: C.ink, cursor: 'pointer' }}>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 17, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.patientName}</span>
-                  <span style={{ display: 'block', fontSize: 14, color: C.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {r.displayId} · {date === 'today' && !q ? istTime(r.createdAt) : istDate(r.createdAt)}{tests.length ? ` · ${tests.length > 2 ? `${tests[0]} +${tests.length - 1}` : tests.join(', ')}` : ''}
-                  </span>
-                </span>
-                <span style={{ textAlign: 'right', display: 'grid', gap: 4, justifyItems: 'end' }}>
-                  <span style={{ fontSize: 17, fontWeight: 800 }}>{inr(r.totalAmount)}</span>
-                  {left > 0.009 ? <span style={{ fontSize: 14, fontWeight: 800, color: C.due }}>{t('mn.due', { amount: inr(left) })}</span>
-                    : <Tag bg={tag.bg} fg={tag.fg} style={{ fontSize: 13, padding: '2px 10px' }}>{tag.word}</Tag>}
-                </span>
-              </button>
-            );
-          })}
-          {next && <Button kind="quiet" onClick={() => load(next)} style={{ justifySelf: 'center' }}>{t('mn.more')}</Button>}
+          {rows.length > 0 && (
+            <div style={{ background: 'white', border: `1.5px solid ${C.line}`, borderRadius: 14, overflow: 'hidden' }}>
+              {table && (
+                <div role="row" style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, padding: '8px 12px', position: 'sticky', top: 0, zIndex: 1,
+                  background: C.ground, borderBottom: `1px solid ${C.line}`, fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: C.faint }}>
+                  <span>{(date === 'today' && !q ? t('mn.col.time') : t('mn.col.date')).toUpperCase()}</span>
+                  <span>{t('mn.col.patient').toUpperCase()}</span>
+                  {wide && <span>{t('mn.col.bill').toUpperCase()}</span>}
+                  <span>{t('mn.col.tests').toUpperCase()}</span>
+                  {wide && <span>{t('mn.col.partner').toUpperCase()}</span>}
+                  <span style={{ textAlign: 'right' }}>{t('mn.col.total').toUpperCase()}</span>
+                  {wide && <span style={{ textAlign: 'right' }}>{t('mn.col.paid').toUpperCase()}</span>}
+                  <span style={{ textAlign: 'right' }}>{t('mn.col.left').toUpperCase()}</span>
+                </div>
+              )}
+              {shown.map((r, i) => {
+                const tag = billTag(r);
+                const cancelled = String(r.status).toUpperCase() === 'CANCELLED';
+                const left = cancelled ? 0 : balanceOf(r);
+                const on = sel?.invoiceId === r.invoiceId;
+                const tests = (r.items || []).map(x => x.description).filter(Boolean);
+                const testText = tests.length > 2 ? `${tests[0]} +${tests.length - 1}` : tests.join(', ');
+                const when = date === 'today' && !q ? istTime(r.createdAt) : istDate(r.createdAt);
+                const state = left > 0.009
+                  ? <span style={{ fontWeight: 800, color: C.due }}>{inr(left)}</span>
+                  : <Tag bg={tag.bg} fg={tag.fg} style={{ fontSize: 12, padding: '1px 8px' }}>{tag.word}</Tag>;
+                const base = { width: '100%', textAlign: 'left', border: 'none', borderTop: i ? '1px solid #F3F4F6' : 'none', fontFamily: 'inherit',
+                  color: cancelled ? C.faint : C.ink, cursor: 'pointer', background: on ? C.primarySoft : 'white',
+                  boxShadow: on ? `inset 3px 0 0 ${C.primary}` : 'none', textDecoration: cancelled ? 'line-through' : 'none' };
+                if (!table) {
+                  return (
+                    <button key={r.invoiceId} type="button" onClick={() => setSel(r)} aria-pressed={on}
+                      style={{ ...base, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '0 10px', padding: '8px 12px', alignItems: 'center' }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.patientName}</span>
+                      <span style={{ fontSize: 15, fontWeight: 800, textAlign: 'right' }}>{inr(r.totalAmount)}</span>
+                      <span style={{ fontSize: 12, color: C.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{when} · {r.displayId}{testText ? ` · ${testText}` : ''}</span>
+                      <span style={{ fontSize: 13, textAlign: 'right' }}>{state}</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button key={r.invoiceId} type="button" onClick={() => setSel(r)} aria-pressed={on}
+                    style={{ ...base, display: 'grid', gridTemplateColumns: cols, gap: 10, padding: '0 12px', height: 40, alignItems: 'center', fontSize: 14 }}>
+                    <span style={{ color: C.faint, fontVariantNumeric: 'tabular-nums' }}>{when}</span>
+                    <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.patientName}{!wide && <span style={{ fontWeight: 500, color: C.faint }}> · {r.displayId}</span>}
+                    </span>
+                    {wide && <span style={{ color: C.muted, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5 }}>{r.displayId}</span>}
+                    <span style={{ color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tests.join(', ')}>{testText}</span>
+                    {wide && <span style={{ color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referrerName || '—'}</span>}
+                    <span style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{inr(r.totalAmount)}</span>
+                    {wide && <span style={{ textAlign: 'right', color: C.ok, fontVariantNumeric: 'tabular-nums' }}>{inr(Math.min(Number(r.paidAmount) || 0, Number(r.totalAmount) || 0))}</span>}
+                    <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{state}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!loading && rows.length > 0 && <div style={{ fontSize: 13, color: C.faint, padding: '8px 2px' }}>{t('mn.bills.shown', { n: rows.length, total })}</div>}
+          {next && <div style={{ textAlign: 'center' }}><Button kind="quiet" onClick={() => load(next)}>{t('mn.more')}</Button></div>}
         </div>
       </div>
 
       {twoPane && (
-        <div style={{ width: 440, flexShrink: 0, borderLeft: `1px solid ${C.line}`, background: 'white', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ width: 400, flexShrink: 0, borderLeft: `1px solid ${C.line}`, background: 'white', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {panel}
         </div>
       )}

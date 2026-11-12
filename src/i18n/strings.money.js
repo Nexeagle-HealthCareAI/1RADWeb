@@ -101,6 +101,9 @@ export const en = {
   'mn.st.autoOnAsk': 'From now on, a bill is made by itself from the price list whenever a visit is completed. Bills already made are not changed.',
   'mn.st.autoOffAsk': 'From now on, bills are not made by themselves. Make them at the counter or with New bill. Bills already made are not changed.',
   'mn.st.autoOnDone': 'Automatic billing is on.', 'mn.st.autoOffDone': 'Automatic billing is off.',
+  'mn.bills.totals': 'Totals', 'mn.bills.tBills': 'Bills', 'mn.bills.tDueN': '{n} not fully paid', 'mn.bills.tBilled': 'Billed', 'mn.bills.tPaid': 'Paid', 'mn.bills.tDue': 'Still to pay',
+  'mn.bills.shown': 'Showing {n} of {total}', 'mn.col.time': 'Time', 'mn.col.date': 'Date', 'mn.col.patient': 'Patient', 'mn.col.bill': 'Bill', 'mn.col.tests': 'Tests',
+  'mn.col.partner': 'Referred by', 'mn.col.total': 'Total', 'mn.col.paid': 'Paid', 'mn.col.left': 'To pay',
 };
 
 export const hi = {
@@ -202,6 +205,9 @@ export const hi = {
   'mn.st.autoOnAsk': 'अब से हर जाँच पूरी होने पर रेट लिस्ट से बिल अपने-आप बनेगा। पहले बने बिल नहीं बदलेंगे।',
   'mn.st.autoOffAsk': 'अब से बिल अपने-आप नहीं बनेंगे। काउंटर पर या "नया बिल" से बनाएँ। पहले बने बिल नहीं बदलेंगे।',
   'mn.st.autoOnDone': 'अपने-आप बिल चालू है।', 'mn.st.autoOffDone': 'अपने-आप बिल बंद है।',
+  'mn.bills.totals': 'कुल', 'mn.bills.tBills': 'बिल', 'mn.bills.tDueN': '{n} पूरे नहीं मिले', 'mn.bills.tBilled': 'बिल हुआ', 'mn.bills.tPaid': 'मिला', 'mn.bills.tDue': 'बाकी',
+  'mn.bills.shown': '{total} में से {n} दिख रहे', 'mn.col.time': 'समय', 'mn.col.date': 'तारीख', 'mn.col.patient': 'मरीज़', 'mn.col.bill': 'बिल', 'mn.col.tests': 'जाँच',
+  'mn.col.partner': 'किसने भेजा', 'mn.col.total': 'कुल', 'mn.col.paid': 'मिला', 'mn.col.left': 'बाकी',
 };
 
 export const bn = {
@@ -303,4 +309,7 @@ export const bn = {
   'mn.st.autoOnAsk': 'এখন থেকে প্রতিটি পরীক্ষা শেষ হলে রেট লিস্ট থেকে বিল নিজে থেকে তৈরি হবে। আগের বিল বদলাবে না।',
   'mn.st.autoOffAsk': 'এখন থেকে বিল নিজে থেকে তৈরি হবে না। কাউন্টারে বা "নতুন বিল" দিয়ে তৈরি করুন। আগের বিল বদলাবে না।',
   'mn.st.autoOnDone': 'নিজে থেকে বিল চালু।', 'mn.st.autoOffDone': 'নিজে থেকে বিল বন্ধ।',
+  'mn.bills.totals': 'মোট', 'mn.bills.tBills': 'বিল', 'mn.bills.tDueN': '{n}টি পুরো পাওয়া যায়নি', 'mn.bills.tBilled': 'বিল হয়েছে', 'mn.bills.tPaid': 'পাওয়া', 'mn.bills.tDue': 'বাকি',
+  'mn.bills.shown': '{total}টির মধ্যে {n}টি দেখানো হচ্ছে', 'mn.col.time': 'সময়', 'mn.col.date': 'তারিখ', 'mn.col.patient': 'রোগী', 'mn.col.bill': 'বিল', 'mn.col.tests': 'পরীক্ষা',
+  'mn.col.partner': 'কে পাঠিয়েছেন', 'mn.col.total': 'মোট', 'mn.col.paid': 'পাওয়া', 'mn.col.left': 'বাকি',
 };

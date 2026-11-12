@@ -13,6 +13,7 @@ import OverviewArea from './OverviewArea';
 import ExpensesArea from './ExpensesArea';
 import ReportsArea from './ReportsArea';
 import SetupArea from './SetupArea';
+import CheckArea from './CheckArea';
 import { moneyRole } from './mnUtil';
 
 const BillingPage = React.lazy(() => import('../BillingPage'));
@@ -26,6 +27,7 @@ const PartnersPage = React.lazy(() => import('../partners/PartnersPage'));
  */
 const AREAS = [
   { id: 'overview', icon: '◎', roles: ['owner', 'acc'] },
+  { id: 'check', icon: '✓', roles: ['owner', 'acc'] },
   { id: 'counter', icon: '₹', roles: ['owner', 'desk'] },
   { id: 'bills', icon: '▤', roles: ['owner', 'desk', 'acc'] },
   { id: 'book', icon: '⇅', roles: ['owner', 'acc'] },
@@ -88,6 +90,7 @@ export default function MoneyPage() {
     }
     if (cur.id === 'book') return <CashBookArea role={role} toast={toast} vp={vp} />;
     if (cur.id === 'overview') return <OverviewArea vp={vp} />;
+    if (cur.id === 'check') return <CheckArea vp={vp} />;
     if (cur.id === 'exp') return <ExpensesArea toast={toast} vp={vp} />;
     if (cur.id === 'reports') return <ReportsArea toast={toast} vp={vp} printCtx={printCtx} />;
     if (cur.id === 'setup') return <SetupArea centre={activeCenter} toast={toast} vp={vp} />;

@@ -125,3 +125,9 @@ export const downloadMonthPack = async (month) => {
   const res = await apiClient.get('/finance/month-pack', { params: { month }, responseType: 'blob', suppressErrorToast: true });
   return res.data;
 };
+
+/** Money ▸ Daily check: does the day (IST 'YYYY-MM-DD') add up? Visits, bills, money, cash book. */
+export const fetchDailyCheck = async (date) => {
+  const res = await apiClient.get('/finance/daily-check', { params: { date }, suppressErrorToast: true });
+  return res.data;
+};

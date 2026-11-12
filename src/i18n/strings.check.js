@@ -1,0 +1,56 @@
+// Words for Money ▸ Daily check (Nov 2026). Hindi and Bengali drafted in-house:
+// have a native speaker check before a wide roll-out.
+
+export const en = {
+  'mn.nav.check': 'Daily check', 'ck.title': 'Daily check', 'ck.help': 'Does the day add up? Visits, bills, money and the cash drawer, checked against each other.',
+  'ck.pick': 'Pick a day', 'ck.failed': 'Could not run the check.', 'ck.visits': 'Visits', 'ck.bills': 'Bills', 'ck.billed': 'Billed', 'ck.moneyIn': 'Money in',
+  'ck.cash': 'Cash', 'ck.drawer': 'Drawer', 'ck.closed': 'Closed', 'ck.open': 'Not closed', 'ck.cancelledN': '{n} cancelled',
+  'ck.problems': '{n} things to fix', 'ck.allGood': 'Everything adds up for this day.', 'ck.passed': 'Checks that passed',
+  'ck.k.NO_BILL': 'Visits with no bill', 'ck.k.CANCELLED_VISIT': 'Bills on cancelled visits', 'ck.k.PAID_MISMATCH': 'Paid figure does not match payments',
+  'ck.k.TOTAL_MISMATCH': 'Total does not match price − discount', 'ck.k.SHARE_ON_CANCELLED': 'Partner share on cancelled visits', 'ck.k.DUPLICATE': 'Possible duplicates',
+  'ck.k.NOT_CLOSED': 'Cash drawer not closed', 'ck.k.CASH_DIFFERENCE': 'Cash count different',
+  'ck.why.NO_BILL': 'The patient came, but no bill was made. Money may not have been taken.', 'ck.why.CANCELLED_VISIT': 'The visit was cancelled but its bill is still open. Cancel the bill or the money stays "to collect".',
+  'ck.why.PAID_MISMATCH': 'The bill shows a different paid amount from its payment entries. Ask your support team before changing anything.', 'ck.why.TOTAL_MISMATCH': 'The bill total is not its price less discount. Ask your support team.',
+  'ck.why.SHARE_ON_CANCELLED': 'A referring partner still has a share for a visit that did not happen. Cancel the share in Partners.', 'ck.why.DUPLICATE': 'The same patient was billed for the same test twice today. Check it was not entered twice.',
+  'ck.why.NOT_CLOSED': 'Cash came in but the drawer was not counted and closed.', 'ck.why.CASH_DIFFERENCE': 'The counted cash did not match the cash book.',
+  'ck.fix.NO_BILL': 'Make bill', 'ck.fix.CANCELLED_VISIT': 'Open bill', 'ck.fix.PAID_MISMATCH': 'Open bill', 'ck.fix.TOTAL_MISMATCH': 'Open bill',
+  'ck.fix.SHARE_ON_CANCELLED': 'Partners', 'ck.fix.DUPLICATE': 'Open bill', 'ck.fix.NOT_CLOSED': 'Cash book', 'ck.fix.CASH_DIFFERENCE': 'Cash book',
+  'ck.ok.NO_BILL': 'Every visit billed', 'ck.ok.CANCELLED_VISIT': 'No bills on cancelled visits', 'ck.ok.PAID_MISMATCH': 'Payments match', 'ck.ok.TOTAL_MISMATCH': 'Totals match',
+  'ck.ok.SHARE_ON_CANCELLED': 'Partner shares match', 'ck.ok.DUPLICATE': 'No duplicates', 'ck.ok.NOT_CLOSED': 'Drawer closed', 'ck.ok.CASH_DIFFERENCE': 'Cash count matches',
+};
+
+export const hi = {
+  'mn.nav.check': 'रोज़ की जाँच', 'ck.title': 'रोज़ की जाँच', 'ck.help': 'क्या दिन का हिसाब मिलता है? मरीज़, बिल, पैसा और नकद दराज़ आपस में मिलाए गए।',
+  'ck.pick': 'दिन चुनें', 'ck.failed': 'जाँच नहीं हो सकी।', 'ck.visits': 'मरीज़', 'ck.bills': 'बिल', 'ck.billed': 'बिल हुआ', 'ck.moneyIn': 'आया पैसा',
+  'ck.cash': 'नकद', 'ck.drawer': 'दराज़', 'ck.closed': 'बंद', 'ck.open': 'बंद नहीं', 'ck.cancelledN': '{n} रद्द',
+  'ck.problems': '{n} चीज़ें ठीक करनी हैं', 'ck.allGood': 'इस दिन का सारा हिसाब मिलता है।', 'ck.passed': 'जो जाँचें ठीक रहीं',
+  'ck.k.NO_BILL': 'बिना बिल वाले मरीज़', 'ck.k.CANCELLED_VISIT': 'रद्द मरीज़ों के बिल', 'ck.k.PAID_MISMATCH': 'मिला पैसा भुगतान से नहीं मिलता',
+  'ck.k.TOTAL_MISMATCH': 'कुल, रेट − छूट से नहीं मिलता', 'ck.k.SHARE_ON_CANCELLED': 'रद्द मरीज़ों पर पार्टनर हिस्सा', 'ck.k.DUPLICATE': 'शायद दो बार दर्ज',
+  'ck.k.NOT_CLOSED': 'नकद दराज़ बंद नहीं', 'ck.k.CASH_DIFFERENCE': 'नकद गिनती में अंतर',
+  'ck.why.NO_BILL': 'मरीज़ आया, पर बिल नहीं बना। शायद पैसा नहीं लिया गया।', 'ck.why.CANCELLED_VISIT': 'मरीज़ रद्द हुआ पर बिल अभी खुला है। बिल रद्द करें, वरना पैसा "बाकी" दिखेगा।',
+  'ck.why.PAID_MISMATCH': 'बिल में मिला पैसा भुगतान की एंट्री से अलग है। कुछ बदलने से पहले सपोर्ट टीम से पूछें।', 'ck.why.TOTAL_MISMATCH': 'बिल का कुल, रेट में से छूट घटाकर नहीं आता। सपोर्ट टीम से पूछें।',
+  'ck.why.SHARE_ON_CANCELLED': 'जो मरीज़ आया ही नहीं, उस पर पार्टनर का हिस्सा बाकी है। पार्टनर में हिस्सा रद्द करें।', 'ck.why.DUPLICATE': 'एक ही मरीज़ का एक ही टेस्ट आज दो बार बिल हुआ। देखें कि दो बार दर्ज तो नहीं हुआ।',
+  'ck.why.NOT_CLOSED': 'नकद आया पर दराज़ गिनकर बंद नहीं हुई।', 'ck.why.CASH_DIFFERENCE': 'गिना हुआ नकद कैश बुक से नहीं मिला।',
+  'ck.fix.NO_BILL': 'बिल बनाएँ', 'ck.fix.CANCELLED_VISIT': 'बिल खोलें', 'ck.fix.PAID_MISMATCH': 'बिल खोलें', 'ck.fix.TOTAL_MISMATCH': 'बिल खोलें',
+  'ck.fix.SHARE_ON_CANCELLED': 'पार्टनर', 'ck.fix.DUPLICATE': 'बिल खोलें', 'ck.fix.NOT_CLOSED': 'कैश बुक', 'ck.fix.CASH_DIFFERENCE': 'कैश बुक',
+  'ck.ok.NO_BILL': 'हर मरीज़ का बिल बना', 'ck.ok.CANCELLED_VISIT': 'रद्द मरीज़ों पर बिल नहीं', 'ck.ok.PAID_MISMATCH': 'भुगतान मिलते हैं', 'ck.ok.TOTAL_MISMATCH': 'कुल मिलते हैं',
+  'ck.ok.SHARE_ON_CANCELLED': 'पार्टनर हिस्से ठीक', 'ck.ok.DUPLICATE': 'दोहराव नहीं', 'ck.ok.NOT_CLOSED': 'दराज़ बंद', 'ck.ok.CASH_DIFFERENCE': 'नकद गिनती मिली',
+};
+
+export const bn = {
+  'mn.nav.check': 'রোজের যাচাই', 'ck.title': 'রোজের যাচাই', 'ck.help': 'দিনের হিসাব কি মিলছে? রোগী, বিল, টাকা আর নগদ ড্রয়ার একে অপরের সঙ্গে মেলানো হয়েছে।',
+  'ck.pick': 'দিন বাছুন', 'ck.failed': 'যাচাই করা গেল না।', 'ck.visits': 'রোগী', 'ck.bills': 'বিল', 'ck.billed': 'বিল হয়েছে', 'ck.moneyIn': 'টাকা এসেছে',
+  'ck.cash': 'নগদ', 'ck.drawer': 'ড্রয়ার', 'ck.closed': 'বন্ধ', 'ck.open': 'বন্ধ হয়নি', 'ck.cancelledN': '{n}টি বাতিল',
+  'ck.problems': '{n}টি জিনিস ঠিক করতে হবে', 'ck.allGood': 'এই দিনের সব হিসাব মিলছে।', 'ck.passed': 'যে যাচাই ঠিক আছে',
+  'ck.k.NO_BILL': 'বিল ছাড়া রোগী', 'ck.k.CANCELLED_VISIT': 'বাতিল রোগীর বিল', 'ck.k.PAID_MISMATCH': 'পাওয়া টাকা পেমেন্টের সঙ্গে মিলছে না',
+  'ck.k.TOTAL_MISMATCH': 'মোট, রেট − ছাড়ের সঙ্গে মিলছে না', 'ck.k.SHARE_ON_CANCELLED': 'বাতিল রোগীতে পার্টনারের ভাগ', 'ck.k.DUPLICATE': 'হয়তো দু’বার লেখা',
+  'ck.k.NOT_CLOSED': 'নগদ ড্রয়ার বন্ধ হয়নি', 'ck.k.CASH_DIFFERENCE': 'নগদ গোনায় পার্থক্য',
+  'ck.why.NO_BILL': 'রোগী এসেছিলেন, কিন্তু বিল হয়নি। টাকা হয়তো নেওয়া হয়নি।', 'ck.why.CANCELLED_VISIT': 'রোগী বাতিল, কিন্তু বিল এখনও খোলা। বিল বাতিল করুন, না হলে টাকা "বাকি" থাকবে।',
+  'ck.why.PAID_MISMATCH': 'বিলের পাওয়া টাকা পেমেন্টের এন্ট্রি থেকে আলাদা। কিছু বদলানোর আগে সাপোর্ট টিমকে জিজ্ঞেস করুন।', 'ck.why.TOTAL_MISMATCH': 'বিলের মোট, রেট থেকে ছাড় বাদ দিয়ে আসছে না। সাপোর্ট টিমকে জিজ্ঞেস করুন।',
+  'ck.why.SHARE_ON_CANCELLED': 'যে রোগী আসেননি, তাঁর জন্য পার্টনারের ভাগ বাকি। পার্টনারে ভাগ বাতিল করুন।', 'ck.why.DUPLICATE': 'একই রোগীর একই পরীক্ষা আজ দু’বার বিল হয়েছে। দেখুন দু’বার লেখা হয়নি তো।',
+  'ck.why.NOT_CLOSED': 'নগদ এসেছে কিন্তু ড্রয়ার গুনে বন্ধ করা হয়নি।', 'ck.why.CASH_DIFFERENCE': 'গোনা নগদ ক্যাশ বুকের সঙ্গে মেলেনি।',
+  'ck.fix.NO_BILL': 'বিল করুন', 'ck.fix.CANCELLED_VISIT': 'বিল খুলুন', 'ck.fix.PAID_MISMATCH': 'বিল খুলুন', 'ck.fix.TOTAL_MISMATCH': 'বিল খুলুন',
+  'ck.fix.SHARE_ON_CANCELLED': 'পার্টনার', 'ck.fix.DUPLICATE': 'বিল খুলুন', 'ck.fix.NOT_CLOSED': 'ক্যাশ বুক', 'ck.fix.CASH_DIFFERENCE': 'ক্যাশ বুক',
+  'ck.ok.NO_BILL': 'প্রতিটি রোগীর বিল হয়েছে', 'ck.ok.CANCELLED_VISIT': 'বাতিল রোগীতে বিল নেই', 'ck.ok.PAID_MISMATCH': 'পেমেন্ট মিলছে', 'ck.ok.TOTAL_MISMATCH': 'মোট মিলছে',
+  'ck.ok.SHARE_ON_CANCELLED': 'পার্টনারের ভাগ ঠিক', 'ck.ok.DUPLICATE': 'দু’বার লেখা নেই', 'ck.ok.NOT_CLOSED': 'ড্রয়ার বন্ধ', 'ck.ok.CASH_DIFFERENCE': 'নগদ গোনা মিলছে',
+};

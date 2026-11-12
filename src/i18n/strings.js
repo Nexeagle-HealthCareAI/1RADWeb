@@ -123,5 +123,6 @@ import * as RP from './strings.reporting';
 import * as MN from './strings.money';
 import * as OW from './strings.owner';
 import * as GL from './strings.glance';
+import * as CK from './strings.check';
 
-export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en, ...MN.en, ...OW.en, ...GL.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi, ...MN.hi, ...OW.hi, ...GL.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn, ...MN.bn, ...OW.bn, ...GL.bn } };
+export const STRINGS = { en: { ...en, ...FD.en, ...PT.en, ...RP.en, ...MN.en, ...OW.en, ...GL.en, ...CK.en }, hi: { ...hi, ...FD.hi, ...PT.hi, ...RP.hi, ...MN.hi, ...OW.hi, ...GL.hi, ...CK.hi }, bn: { ...bn, ...FD.bn, ...PT.bn, ...RP.bn, ...MN.bn, ...OW.bn, ...GL.bn, ...CK.bn } };
