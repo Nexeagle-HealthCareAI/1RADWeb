@@ -7,6 +7,7 @@ import useOffline from '../hooks/useOffline';
 import useSyncStatus from '../sync/useSyncStatus';
 import useQuotaStatus from '../sync/useQuotaStatus';
 import OverdueBell from '../components/OverdueAppointments/OverdueBell';
+import { RadAIButton } from '../components/RadAI';
 import { BASE_URL } from '../api/apiClient';
 import '../styles/global.css';
 
@@ -482,6 +483,9 @@ export default function TopNav({ currentTime }) {
               <span className="nav-desktop-download-label">{t('hdr.desktopApp')}</span>
             </button>
           )}
+
+          {/* RadAI help — opens the chat drawer on the right. */}
+          <RadAIButton />
 
           <LanguageSwitcher />
 

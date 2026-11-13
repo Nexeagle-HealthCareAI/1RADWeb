@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { navLabel, useLang, t } from '../i18n';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavAccess, pickTabs } from './navAccess';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
 import { syncEngine } from '../offline/SyncEngine';
@@ -56,6 +57,8 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
   const { currentUser, logout, activeCenter, hasModule, modules } = useAuth();
   const { isOnline, isSyncing, pendingCount } = useOffline();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { can } = useNavAccess();
 
   useEffect(() => {
     if (isOpen) {
@@ -81,8 +84,9 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
 
   const isPacsOnly = Array.isArray(modules) && modules.includes('PACS') && !modules.includes('RIS');
 
-  // Do not exclude /dicom-bridge since it is not on the permanent bottom nav bar
-  const BOTTOM_NAV_ROUTES = new Set(['/appointment-board', '/billing', '/money', '/studies', '/doctor-board']);
+  // Leave out exactly the pages that are on this user's bottom bar (it is
+  // role-aware), so nothing is hidden and nothing appears twice.
+  const BOTTOM_NAV_ROUTES = new Set(pickTabs(can).map((d) => d.route));
 
   const navItems = NAV_ITEMS.filter(item =>
     (allowedRoutes.includes(item.route) || (item.accessVia || []).some(r => allowedRoutes.includes(r))) &&
@@ -129,9 +133,13 @@ export default function MobileMenuSheet({ isOpen, onClose }) {
               <button
                 key={item.route}
                 onClick={() => handleNavigate(item.route)}
+                aria-current={(location.pathname === item.route || location.pathname.startsWith(item.route + '/')) ? 'page' : undefined}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  background: '#f8fafc', border: '1px solid #f1f5f9', borderRadius: '18px',
+                  ...((location.pathname === item.route || location.pathname.startsWith(item.route + '/'))
+                    ? { background: '#eff6ff', border: '1.5px solid #93c5fd' }
+                    : { background: '#f8fafc', border: '1px solid #f1f5f9' }),
+                  borderRadius: '18px',
                   padding: '14px 6px', cursor: 'pointer', outline: 'none', WebkitTapHighlightColor: 'transparent',
                   transition: 'all 0.15s ease', boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
                 }}

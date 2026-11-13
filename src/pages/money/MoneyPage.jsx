@@ -6,7 +6,7 @@ import { useBillingSettings } from '../../api/billing/billingSettingsApi';
 import { t, useLang } from '../../i18n';
 import { Chip } from '../../components/saral/Saral';
 import { C, FONT } from '../../components/saral/tokens';
-import { useToast, useViewport } from '../../components/saral/hooks';
+import { useToast, useViewport, useChipRow } from '../../components/saral/hooks';
 import BillsArea from './BillsArea';
 import CashBookArea from './CashBookArea';
 import OverviewArea from './OverviewArea';
@@ -53,6 +53,7 @@ export default function MoneyPage() {
 
   const mine = AREAS.filter(a => a.roles.includes(role));
   const cur = mine.find(a => a.id === area) || mine.find(a => a.id === LANDING[role]) || mine[0];
+  const [chipRef, chipRow] = useChipRow(cur?.id);
   React.useEffect(() => {
     if (cur && area !== cur.id) navigate(`/money/${cur.id}`, { replace: true });
   }, [area, cur, navigate]);
@@ -123,7 +124,7 @@ export default function MoneyPage() {
     <div style={{ display: 'flex', flexDirection: vp.phone ? 'column' : 'row', height: vp.phone ? 'auto' : 'calc(100vh - 64px)', minHeight: vp.phone ? '100vh' : 0,
       background: C.ground, fontFamily: FONT, color: C.ink }}>
       {vp.phone ? (
-        <nav aria-label={t('mn.title')} style={{ position: 'sticky', top: 0, zIndex: 400, display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: C.ground, borderBottom: `1px solid ${C.line}` }}>
+        <nav aria-label={t('mn.title')} ref={chipRef} onScroll={chipRow.onScroll} style={{ position: 'sticky', top: 0, zIndex: 400, display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: C.ground, borderBottom: `1px solid ${C.line}`, ...chipRow.style }}>
           {mine.map(a => <Chip key={a.id} on={a.id === cur.id} onClick={() => go(a.id)} aria-current={a.id === cur.id ? 'page' : undefined}>{t(`mn.nav.${a.id}`)}</Chip>)}
         </nav>
       ) : (

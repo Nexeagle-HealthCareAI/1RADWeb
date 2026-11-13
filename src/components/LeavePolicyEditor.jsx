@@ -85,6 +85,8 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
       name: '',
       annualQuota: 0,
       isPaid: true,
+      carryForwardMax: 0,
+      accrual: 'yearly',
       color: PALETTE[prev.length % PALETTE.length],
       _persisted: false, // new row — name editable until Save
     }]);
@@ -99,6 +101,9 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
         annualQuota: Math.max(0, Number(t.annualQuota) || 0),
         isPaid: !!t.isPaid,
         color: t.color || '#64748b',
+        // Nov 2026: what carries into next year at year end, and quota earned month by month.
+        carryForwardMax: t.isPaid ? Math.max(0, Number(t.carryForwardMax) || 0) : 0,
+        accrual: t.isPaid && t.accrual === 'monthly' ? 'monthly' : 'yearly',
       }))
       .filter(t => t.name);
 
@@ -312,7 +317,7 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
                 </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', justifyContent: isMobile ? 'space-between' : 'flex-end', flex: isMobile ? '1 1 100%' : '0 0 auto', borderTop: isMobile ? '1px dashed #e2e8f0' : 'none', paddingTop: isMobile ? '14px' : '0' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap', rowGap: '12px', justifyContent: isMobile ? 'space-between' : 'flex-end', flex: isMobile ? '1 1 100%' : '0 0 auto', borderTop: isMobile ? '1px dashed #e2e8f0' : 'none', paddingTop: isMobile ? '14px' : '0' }}>
                 {/* Quota stepper */}
                 <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
                   <label style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Quota</label>
@@ -378,6 +383,30 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
                     {t.isPaid ? 'PAID' : 'UNPAID'}
                   </span>
                 </button>
+
+                {/* Carry forward + monthly accrual (paid leave only, Nov 2026) */}
+                {t.isPaid && (
+                  <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                    <label htmlFor={`cf_${i}`} style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Carry to next year</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {embedded ? (
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#0a1628' }}>{t.carryForwardMax || 0}</div>
+                      ) : (
+                        <input id={`cf_${i}`} type="number" min="0" value={t.carryForwardMax ?? 0}
+                          title="Most days that carry into next year; the rest lapses. 0 = nothing carries."
+                          onChange={(e) => update(i, { carryForwardMax: e.target.value })}
+                          style={{ width: '56px', height: '36px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontWeight: 800, textAlign: 'center', color: '#0a1628', outline: 'none' }} />
+                      )}
+                      <button type="button" onClick={() => !embedded && update(i, { accrual: t.accrual === 'monthly' ? 'yearly' : 'monthly' })}
+                        title={t.accrual === 'monthly' ? 'Earned month by month (1/12 of the year each month)' : 'Whole year given on 1 January'}
+                        style={{ height: '36px', padding: '0 10px', borderRadius: '999px', border: `1px solid ${t.accrual === 'monthly' ? '#c7d2fe' : '#e2e8f0'}`,
+                          background: t.accrual === 'monthly' ? '#eef2ff' : '#f8fafc', color: t.accrual === 'monthly' ? '#3730a3' : '#64748b',
+                          fontSize: '10px', fontWeight: 800, letterSpacing: '0.5px', cursor: embedded ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                        {t.accrual === 'monthly' ? 'MONTHLY' : 'YEARLY'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Remove */}
                 {!embedded && (
@@ -491,6 +520,8 @@ function normalize(arr) {
     annualQuota: Number(t.annualQuota) || 0,
     isPaid: t.isPaid !== false,
     color: t.color || '#64748b',
+    carryForwardMax: Number(t.carryForwardMax) || 0,
+    accrual: t.accrual === 'monthly' ? 'monthly' : 'yearly',
     _persisted: true,  // loaded from API/cache → name locked
   })).filter(t => t.name);
 }

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLang } from '../i18n';
 import LanguageSwitcher from '../i18n/LanguageSwitcher';
+import { RadAIButton } from '../components/RadAI';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import '../styles/global.css';
@@ -93,6 +94,7 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
 
       {/* Right: Language + Switcher + Profile */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <RadAIButton compact />
         <LanguageSwitcher compact />
         
         {/* Centre Switcher */}

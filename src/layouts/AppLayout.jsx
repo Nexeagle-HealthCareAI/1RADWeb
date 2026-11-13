@@ -193,7 +193,7 @@ export default function AppLayout() {
         onTabClick={() => setIsMobileMenuOpen(false)} 
       />
 
-      {/* Floating RadAI help desk — on every authenticated page */}
+      {/* RadAI help drawer — opened from the Ask RadAI button in the top bar */}
       <RadAI />
     </div>
   );

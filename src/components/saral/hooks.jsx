@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { C, FONT } from './tokens';
 
 /**
@@ -59,4 +59,33 @@ export function useViewport() {
     return () => window.removeEventListener('resize', on);
   }, []);
   return { width: w, phone: w < 640, tablet: w >= 640 && w < 1100, desktop: w >= 1100 };
+}
+
+/**
+ * A sideways-scrolling chip row (phones): keeps the selected chip in view and
+ * fades the edge that has more chips past it, so a half-shown chip reads as
+ * "scroll for more" rather than "cut off". Returns [ref, { onScroll, style }] for the row.
+ */
+export function useChipRow(selectedKey) {
+  const ref = useRef(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const el = ref.current; if (!el) return;
+    const left = el.scrollLeft > 4;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+    setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
+  }, []);
+  useEffect(() => {
+    const el = ref.current; if (!el) return undefined;
+    const on = el.querySelector('[aria-current="page"]');
+    if (on) {
+      const target = on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2;
+      el.scrollTo({ left: Math.max(0, target), behavior: 'auto' });
+    }
+    const id = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => { cancelAnimationFrame(id); window.removeEventListener('resize', measure); };
+  }, [selectedKey, measure]);
+  const mask = `linear-gradient(to right, ${edges.left ? 'transparent 0, #000 28px' : '#000 0'}, ${edges.right ? '#000 calc(100% - 28px), transparent 100%' : '#000 100%'})`;
+  return [ref, { onScroll: measure, style: { scrollbarWidth: 'none', WebkitMaskImage: mask, maskImage: mask } }];
 }

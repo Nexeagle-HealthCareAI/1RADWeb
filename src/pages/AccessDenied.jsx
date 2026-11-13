@@ -34,32 +34,31 @@ export default function AccessDenied() {
     <div className="auth-container">
       <div className="auth-card" style={{ textAlign: 'center', maxWidth: '400px' }}>
         <div style={{ fontSize: '64px', marginBottom: '20px' }}>🚫</div>
-        <h1 className="auth-title">Access Denied</h1>
+        <h1 className="auth-title">Not available for your role</h1>
         <p className="auth-subtitle">
-          You do not have permission to access this page.
-          This area is restricted to authorized roles only.
+          This page is not part of your work in 1Rad. Ask your centre admin if you need it.
         </p>
 
-        {/* Primary escape — always available — back to the login screen so the
-            user can sign in with an account that has access. */}
-        <button
-          onClick={backToLogin}
-          className="btn-primary"
-          style={{ width: '100%', marginTop: '20px' }}
-        >
-          Back to Login
-        </button>
-
-        {/* Only offer "My Dashboard" when there's a page they can actually reach. */}
+        {/* Main way out: back to a page they can open, still signed in.
+            Only offered when there is one. */}
         {home && (
           <button
             onClick={goHome}
-            className="btn-logout"
-            style={{ width: '100%', marginTop: '12px' }}
+            className="btn-primary"
+            style={{ width: '100%', marginTop: '20px' }}
           >
-            Go to My Dashboard
+            Go to my home page
           </button>
         )}
+
+        {/* Signing out is the fallback — for when someone else should sign in. */}
+        <button
+          onClick={backToLogin}
+          className="btn-logout"
+          style={{ width: '100%', marginTop: '12px' }}
+        >
+          Sign in as someone else
+        </button>
       </div>
     </div>
   );
